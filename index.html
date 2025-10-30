@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dugnad+ Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #2d3748;
+        }
+        
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0;
+        }
+        
+        .nav-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .nav-tab:hover {
+            color: #667eea;
+        }
+        
+        .nav-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #1a202c;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+        }
+        
+        button.secondary {
+            background: #48bb78;
+        }
+        
+        button.secondary:hover {
+            background: #38a169;
+        }
+        
+        button.danger {
+            background: #f56565;
+        }
+        
+        button.danger:hover {
+            background: #e53e3e;
+        }
+        
+        .tier-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .tier-1 { background: #bee3f8; color: #2c5282; }
+        .tier-2 { background: #c6f6d5; color: #22543d; }
+        .tier-3 { background: #fed7d7; color: #742a2a; }
+        .tier-4 { background: #fbd38d; color: #744210; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .family-list, .dugnad-list {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .family-item, .dugnad-item {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .dugnad-item {
+            border-left: 4px solid #667eea;
+        }
+        
+        .family-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .family-info h3 {
+            margin-bottom: 5px;
+        }
+        
+        .family-children {
+            color: #718096;
+            font-size: 14px;
+        }
+        
+        .success-message {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .dugnad-meta {
+            display: flex;
+            gap: 20px;
+            color: #718096;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .child-input-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 2fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .form-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead tr {
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        th {
+            text-align: left;
+            padding: 12px;
+        }
+        
+        th:last-child {
+            text-align: right;
+        }
+        
+        tbody tr {
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        td {
+            padding: 12px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>⚽ Dugnad+</h1>
+            <p>Enklere organisering av dugnader for idrettslag</p>
+        </header>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('dashboard')">📊 Oversikt</button>
+            <button class="nav-tab" onclick="showTab('families')">👨‍👩‍👧‍👦 Familier</button>
+            <button class="nav-tab" onclick="showTab('dugnader')">🛠️ Dugnader</button>
+            <button class="nav-tab" onclick="showTab('points')">⭐ Poengsystem</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Registrerte Familier</div>
+                    <div class="stat-value" id="stat-families">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Aktive Dugnader</div>
+                    <div class="stat-value" id="stat-dugnader">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Fullførte Dugnader</div>
+                    <div class="stat-value" id="stat-completed">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Gjennomsnittlig Poeng</div>
+                    <div class="stat-value" id="stat-avg-points">0</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Kommende Dugnader</h2>
+                <div id="dashboard-dugnader" class="dugnad-list">
+                    <p style="color: #718096; text-align: center; padding: 40px;">
+                        Ingen dugnader registrert ennå.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Families Tab -->
+        <div id="families" class="tab-content">
+            <div id="family-success-message" class="success-message hidden"></div>
+            
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>Familier (<span id="family-count">0</span>)</h2>
+                    <button onclick="toggleFamilyForm()">➕ Registrer Familie</button>
+                </div>
+
+                <form id="family-form" class="form-section hidden" onsubmit="addFamily(event)">
+                    <h3 style="margin-bottom: 20px;">Ny Familie</h3>
+                    
+                    <div class="form-group">
+                        <label>Foreldrenavn *</label>
+                        <input type="text" id="parent-name" required placeholder="Ola Nordmann">
+                    </div>
+
+                    <div class="form-group">
+                        <label>E-post *</label>
+                        <input type="email" id="parent-email" required placeholder="ola@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Telefon</label>
+                        <input type="tel" id="parent-phone" placeholder="123 45 678">
+                    </div>
+
+                    <h4 style="margin-top: 20px; margin-bottom: 15px;">Barn</h4>
+                    <div id="children-inputs">
+                        <div class="child-input-row">
+                            <input type="text" placeholder="Barnets navn" class="child-name">
+                            <input type="number" placeholder="Alder" class="child-age">
+                            <input type="text" placeholder="Lag/idrett" class="child-team">
+                        </div>
+                    </div>
+                    
+                    <button type="button" onclick="addChildInput()" class="secondary" style="margin-bottom: 20px;">
+                        ➕ Legg til barn
+                    </button>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit">💾 Lagre Familie</button>
+                        <button type="button" onclick="toggleFamilyForm()" class="danger">Avbryt</button>
+                    </div>
+                </form>
+
+                <div id="family-list" class="family-list">
+                    <p style="color: #718096; text-align: center; padding: 40px;">
+                        Ingen familier registrert ennå. Klikk "Registrer Familie" for å begynne.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dugnader Tab -->
+        <div id="dugnader" class="tab-content">
+            <div id="dugnad-success-message" class="success-message hidden"></div>
+            
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>Dugnader (<span id="dugnad-count">0</span>)</h2>
+                    <button onclick="toggleDugnadForm()">➕ Opprett Dugnad</button>
+                </div>
+
+                <form id="dugnad-form" class="form-section hidden" onsubmit="addDugnad(event)">
+                    <h3 style="margin-bottom: 20px;">Ny Dugnad</h3>
+                    
+                    <div class="form-group">
+                        <label>Dugnadsnavn *</label>
+                        <input type="text" id="dugnad-name" required placeholder="F.eks. Kiosk Gjemselund Cup">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Dato *</label>
+                            <input type="date" id="dugnad-date" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tid *</label>
+                            <input type="time" id="dugnad-time" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Beskrivelse</label>
+                        <textarea id="dugnad-description" placeholder="Beskriv dugnadoppgaven..." rows="3"></textarea>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Poeng per time *</label>
+                            <input type="number" id="dugnad-points" required value="100" min="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Antall hjelpere nødvendig *</label>
+                            <input type="number" id="dugnad-needed" required value="1" min="1">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit">💾 Opprett Dugnad</button>
+                        <button type="button" onclick="toggleDugnadForm()" class="danger">Avbryt</button>
+                    </div>
+                </form>
+
+                <div id="dugnad-list" class="dugnad-list">
+                    <p style="color: #718096; text-align: center; padding: 40px;">
+                        Ingen dugnader opprettet ennå. Klikk "Opprett Dugnad" for å begynne.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Points Tab -->
+        <div id="points" class="tab-content">
+            <div class="card">
+                <h2>Poengregler - Grunnpoeng</h2>
+                <p style="margin-bottom: 20px; color: #718096;">
+                    Grunnpoeng gjelder kun for eget lag/barn
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Aktivitet</th>
+                            <th style="text-align: right;">Poeng</th>
+                            <th style="text-align: right;">Periode</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Hovedtrener</td><td style="text-align: right; font-weight: bold; color: #667eea;">1000</td><td style="text-align: right; color: #718096;">per sesong</td></tr>
+                        <tr><td>Trener</td><td style="text-align: right; font-weight: bold; color: #667eea;">500</td><td style="text-align: right; color: #718096;">per sesong</td></tr>
+                        <tr><td>Kasserer/utstyr</td><td style="text-align: right; font-weight: bold; color: #667eea;">300</td><td style="text-align: right; color: #718096;">per sesong</td></tr>
+                        <tr><td>Kiosk/billetter</td><td style="text-align: right; font-weight: bold; color: #667eea;">100</td><td style="text-align: right; color: #718096;">per time</td></tr>
+                        <tr><td>Rydde/rigge</td><td style="text-align: right; font-weight: bold; color: #667eea;">100</td><td style="text-align: right; color: #718096;">per time</td></tr>
+                        <tr><td>Bake/lage saft</td><td style="text-align: right; font-weight: bold; color: #667eea;">50</td><td style="text-align: right; color: #718096;">per gang</td></tr>
+                        <tr><td>Fair play ansvarlig</td><td style="text-align: right; font-weight: bold; color: #667eea;">200</td><td style="text-align: right; color: #718096;">per sesong</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Bonuspoeng</h2>
+                <p style="margin-bottom: 20px; color: #718096;">
+                    Overførbart på tvers av idrett/søsken
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Aktivitet</th>
+                            <th style="text-align: right;">Bonuspoeng</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Vikar kort varsel (&lt;48t)</td><td style="text-align: right; font-weight: bold; color: #48bb78;">+50</td></tr>
+                        <tr><td>Hjelpe andre bytte</td><td style="text-align: right; font-weight: bold; color: #48bb78;">+25</td></tr>
+                        <tr><td>Melder seg villig</td><td style="text-align: right; font-weight: bold; color: #48bb78;">+10</td></tr>
+                        <tr><td>Perfekt oppmøte (sesong)</td><td style="text-align: right; font-weight: bold; color: #48bb78;">+100</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Nivåer og Fordeler</h2>
+                <div style="display: grid; gap: 15px;">
+                    <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;">Nivå 1: Basis</h3>
+                                <p style="color: #718096; margin-bottom: 10px;">Minimum 100 poeng</p>
+                                <p style="color: #4a5568;">✨ Grunnrabatter (10%)</p>
+                            </div>
+                            <div class="tier-badge tier-1">Nivå 1</div>
+                        </div>
+                    </div>
+                    <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;">Nivå 2: Aktiv</h3>
+                                <p style="color: #718096; margin-bottom: 10px;">Minimum 300 poeng</p>
+                                <p style="color: #4a5568;">✨ Bedre rabatter (15%)</p>
+                            </div>
+                            <div class="tier-badge tier-2">Nivå 2</div>
+                        </div>
+                    </div>
+                    <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;">Nivå 3: Premium</h3>
+                                <p style="color: #718096; margin-bottom: 10px;">Minimum 500 poeng</p>
+                                <p style="color: #4a5568;">✨ Premium fordeler (20%)</p>
+                            </div>
+                            <div class="tier-badge tier-3">Nivå 3</div>
+                        </div>
+                    </div>
+                    <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;">Nivå 4: VIP</h3>
+                                <p style="color: #718096; margin-bottom: 10px;">Minimum 1000 poeng</p>
+                                <p style="color: #4a5568;">✨ VIP-status (25% + ekstra)</p>
+                            </div>
+                            <div class="tier-badge tier-4">Nivå 4</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Familier etter Nivå</h2>
+                <div id="points-family-list">
+                    <p style="color: #718096;">Ingen familier registrert ennå.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data storage
+        let families = [];
+        let dugnader = [];
+
+        // Load data from localStorage
+        function loadData() {
+            const savedFamilies = localStorage.getItem('dugnad-families');
+            const savedDugnader = localStorage.getItem('dugnad-dugnader');
+            
+            if (savedFamilies) families = JSON.parse(savedFamilies);
+            if (savedDugnader) dugnader = JSON.parse(savedDugnader);
+            
+            updateAllDisplays();
+        }
+
+        // Save data to localStorage
+        function saveData() {
+            localStorage.setItem('dugnad-families', JSON.stringify(families));
+            localStorage.setItem('dugnad-dugnader', JSON.stringify(dugnader));
+        }
+
+        // Tab management
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.nav-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+            
+            updateAllDisplays();
+        }
+
+        // Family management
+        function toggleFamilyForm() {
+            const form = document.getElementById('family-form');
+            form.classList.toggle('hidden');
+            if (!form.classList.contains('hidden')) {
+                document.getElementById('parent-name').focus();
+            }
+        }
+
+        function addChildInput() {
+            const container = document.getElementById('children-inputs');
+            const div = document.createElement('div');
+            div.className = 'child-input-row';
+            div.innerHTML = `
+                <input type="text" placeholder="Barnets navn" class="child-name">
+                <input type="number" placeholder="Alder" class="child-age">
+                <input type="text" placeholder="Lag/idrett" class="child-team">
+            `;
+            container.appendChild(div);
+        }
+
+        function addFamily(event) {
+            event.preventDefault();
+            
+            const children = [];
+            document.querySelectorAll('.child-input-row').forEach(row => {
+                const name = row.querySelector('.child-name').value;
+                const age = row.querySelector('.child-age').value;
+                const team = row.querySelector('.child-team').value;
+                if (name) {
+                    children.push({ name, age, team });
+                }
+            });
+            
+            const family = {
+                id: Date.now(),
+                parentName: document.getElementById('parent-name').value,
+                email: document.getElementById('parent-email').value,
+                phone: document.getElementById('parent-phone').value,
+                children: children,
+                points: 0,
+                tier: 1,
+                registeredDate: new Date().toISOString().split('T')[0]
+            };
+            
+            families.push(family);
+            saveData();
+            
+            showMessage('family-success-message', `Familie ${family.parentName} ble registrert!`);
+            
+            document.getElementById('family-form').reset();
+            document.getElementById('children-inputs').innerHTML = `
+                <div class="child-input-row">
+                    <input type="text" placeholder="Barnets navn" class="child-name">
+                    <input type="number" placeholder="Alder" class="child-age">
+                    <input type="text" placeholder="Lag/idrett" class="child-team">
+                </div>
+            `;
+            toggleFamilyForm();
+            updateAllDisplays();
+        }
+
+        // Dugnad management
+        function toggleDugnadForm() {
+            const form = document.getElementById('dugnad-form');
+            form.classList.toggle('hidden');
+            if (!form.classList.contains('hidden')) {
+                document.getElementById('dugnad-name').focus();
+            }
+        }
+
+        function addDugnad(event) {
+            event.preventDefault();
+            
+            const dugnad = {
+                id: Date.now(),
+                name: document.getElementById('dugnad-name').value,
+                date: document.getElementById('dugnad-date').value,
+                time: document.getElementById('dugnad-time').value,
+                description: document.getElementById('dugnad-description').value,
+                points: parseInt(document.getElementById('dugnad-points').value),
+                needed: parseInt(document.getElementById('dugnad-needed').value),
+                status: 'active',
+                assigned: 0,
+                createdDate: new Date().toISOString().split('T')[0]
+            };
+            
+            dugnader.push(dugnad);
+            saveData();
+            
+            showMessage('dugnad-success-message', `Dugnad "${dugnad.name}" ble opprettet!`);
+            
+            document.getElementById('dugnad-form').reset();
+            toggleDugnadForm();
+            updateAllDisplays();
+        }
+
+        // Display functions
+        function calculateTier(points) {
+            if (points >= 1000) return { tier: 4, label: 'VIP' };
+            if (points >= 500) return { tier: 3, label: 'Premium' };
+            if (points >= 300) return { tier: 2, label: 'Aktiv' };
+            return { tier: 1, label: 'Basis' };
+        }
+
+        function updateDashboard() {
+            document.getElementById('stat-families').textContent = families.length;
+            document.getElementById('stat-dugnader').textContent = dugnader.length;
+            document.getElementById('stat-completed').textContent = dugnader.filter(d => d.status === 'completed').length;
+            
+            const avgPoints = families.length > 0 
+                ? Math.round(families.reduce((sum, f) => sum + f.points, 0) / families.length)
+                : 0;
+            document.getElementById('stat-avg-points').textContent = avgPoints;
+            
+            const dashboardList = document.getElementById('dashboard-dugnader');
+            if (dugnader.length === 0) {
+                dashboardList.innerHTML = '<p style="color: #718096; text-align: center; padding: 40px;">Ingen dugnader registrert ennå.</p>';
+            } else {
+                dashboardList.innerHTML = dugnader.slice(0, 5).map(d => `
+                    <div class="dugnad-item">
+                        <h3>${d.name}</h3>
+                        <div class="dugnad-meta">
+                            <span>📅 ${d.date}</span>
+                            <span>⏰ ${d.time}</span>
+                            <span>⭐ ${d.points} poeng</span>
+                            <span>👥 ${d.assigned}/${d.needed} tildelt</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateFamilyList() {
+            document.getElementById('family-count').textContent = families.length;
+            
+            const list = document.getElementById('family-list');
+            if (families.length === 0) {
+                list.innerHTML = '<p style="color: #718096; text-align: center; padding: 40px;">Ingen familier registrert ennå. Klikk "Registrer Familie" for å begynne.</p>';
+            } else {
+                list.innerHTML = families.map(family => {
+                    const tierInfo = calculateTier(family.points);
+                    return `
+                        <div class="family-item">
+                            <div class="family-info">
+                                <h3>${family.parentName}</h3>
+                                <div class="family-children">
+                                    ${family.children.map(c => `${c.name} (${c.age} år, ${c.team})`).join(', ')}
+                                </div>
+                                <div style="margin-top: 8px;">
+                                    📧 ${family.email} | 📱 ${family.phone}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="tier-badge tier-${tierInfo.tier}">
+                                    Nivå ${tierInfo.tier}: ${tierInfo.label}
+                                </div>
+                                <div style="margin-top: 8px; font-size: 24px; font-weight: bold; color: #667eea;">
+                                    ${family.points} poeng
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        function updateDugnadList() {
+            document.getElementById('dugnad-count').textContent = dugnader.length;
+            
+            const list = document.getElementById('dugnad-list');
+            if (dugnader.length === 0) {
+                list.innerHTML = '<p style="color: #718096; text-align: center; padding: 40px;">Ingen dugnader opprettet ennå. Klikk "Opprett Dugnad" for å begynne.</p>';
+            } else {
+                list.innerHTML = dugnader.map(d => `
+                    <div class="dugnad-item">
+                        <h3>${d.name}</h3>
+                        ${d.description ? `<p style="margin: 10px 0; color: #4a5568;">${d.description}</p>` : ''}
+                        <div class="dugnad-meta">
+                            <span>📅 ${d.date}</span>
+                            <span>⏰ ${d.time}</span>
+                            <span>⭐ ${d.points} poeng/time</span>
+                            <span>👥 ${d.assigned}/${d.needed} tildelt</span>
+                        </div>
+                        <div style="margin-top: 15px;">
+                            <button class="secondary" style="margin-right: 10px;">Tildel automatisk</button>
+                            <button>Håndter påmeldinger</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updatePointsList() {
+            const list = document.getElementById('points-family-list');
+            if (families.length === 0) {
+                list.innerHTML = '<p style="color: #718096;">Ingen familier registrert ennå.</p>';
+            } else {
+                const sorted = [...families].sort((a, b) => b.points - a.points);
+                list.innerHTML = '<div style="display: grid; gap: 15px;">' + sorted.map((family, index) => {
+                    let tierNum = 1;
+                    if (family.points >= 1000) tierNum = 4;
+                    else if (family.points >= 500) tierNum = 3;
+                    else if (family.points >= 300) tierNum = 2;
+                    
+                    return `
+                        <div style="padding: 15px; background: #f7fafc; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-weight: bold; margin-right: 10px;">#${index + 1}</span>
+                                <span style="font-size: 18px;">${family.parentName}</span>
+                            </div>
+                            <div style="display: flex; gap: 15px; align-items: center;">
+                                <div class="tier-badge tier-${tierNum}">Nivå ${tierNum}</div>
+                                <span style="font-size: 24px; font-weight: bold; color: #667eea;">${family.points}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('') + '</div>';
+            }
+        }
+
+        function updateAllDisplays() {
+            updateDashboard();
+            updateFamilyList();
+            updateDugnadList();
+            updatePointsList();
+        }
+
+        function showMessage(elementId, message) {
+            const el = document.getElementById(elementId);
+            el.textContent = message;
+            el.classList.remove('hidden');
+            setTimeout(() => {
+                el.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Initialize
+        loadData();
+    </script>
+</body>
+</html>
