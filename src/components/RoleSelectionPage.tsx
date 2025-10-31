@@ -5,7 +5,7 @@ export const RoleSelectionPage: React.FC = () => {
     if (role === 'coordinator') {
       window.location.href = '/club-search';
     } else if (role === 'family') {
-      alert('Family flow coming soon!');
+      window.location.href = '/family-club-search';
     } else if (role === 'substitute') {
       alert('Substitute flow coming soon!');
     }
