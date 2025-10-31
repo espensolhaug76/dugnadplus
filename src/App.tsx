@@ -11,6 +11,7 @@ import { FamilyTeamSelectionPage } from './components/FamilyTeamSelectionPage'
 import { FamilyMembersPage } from './components/FamilyMembersPage'
 import { FamilyTeamAssignmentPage } from './components/FamilyTeamAssignmentPage'
 import { CoordinatorDashboard } from './components/CoordinatorDashboard'
+import { SeasonShiftCreatorPage } from './components/SeasonShiftCreatorPage'
 import './App.css'
 
 function App() {
@@ -58,6 +59,10 @@ function App() {
     return <FamilyTeamAssignmentPage />
   }
 
+  if (path === '/season-shift-creator') {
+    return <SeasonShiftCreatorPage />
+  }
+
   if (path === '/dashboard') {
     return <CoordinatorDashboard />
   }
@@ -66,3 +71,4 @@ function App() {
 }
 
 export default App
+

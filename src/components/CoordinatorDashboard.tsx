@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 
 export const CoordinatorDashboard: React.FC = () => {
   const [stats] = useState({
@@ -76,7 +76,7 @@ export const CoordinatorDashboard: React.FC = () => {
             textAlign: 'center',
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
           }}>
-            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>📅</div>
+            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>??</div>
             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#333' }}>{stats.totalShifts}</div>
             <div style={{ color: '#666', fontSize: '0.9em' }}>Totalt vakter</div>
           </div>
@@ -88,7 +88,7 @@ export const CoordinatorDashboard: React.FC = () => {
             textAlign: 'center',
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
           }}>
-            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>✅</div>
+            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>?</div>
             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#48bb78' }}>{stats.assignedShifts}</div>
             <div style={{ color: '#666', fontSize: '0.9em' }}>Tildelt</div>
           </div>
@@ -100,9 +100,9 @@ export const CoordinatorDashboard: React.FC = () => {
             textAlign: 'center',
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
           }}>
-            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>🏆</div>
+            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>??</div>
             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#f6ad55' }}>{stats.completedShifts}</div>
-            <div style={{ color: '#666', fontSize: '0.9em' }}>Fullført</div>
+            <div style={{ color: '#666', fontSize: '0.9em' }}>Fullf�rt</div>
           </div>
 
           <div style={{ 
@@ -112,7 +112,7 @@ export const CoordinatorDashboard: React.FC = () => {
             textAlign: 'center',
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
           }}>
-            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>⏰</div>
+            <div style={{ fontSize: '2.5em', marginBottom: '5px' }}>?</div>
             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#718096' }}>{stats.pendingShifts}</div>
             <div style={{ color: '#666', fontSize: '0.9em' }}>Venter</div>
           </div>
@@ -149,8 +149,8 @@ export const CoordinatorDashboard: React.FC = () => {
           }}
           onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
           onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <span style={{ fontSize: '20px' }}>📅</span>
+           onClick={() => window.location.href = '/season-shift-creator'}>
+            <span style={{ fontSize: '20px' }}>??</span>
             Legg inn vakter for sesongen
           </button>
 
@@ -174,8 +174,8 @@ export const CoordinatorDashboard: React.FC = () => {
           }}
           onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
           onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <span style={{ fontSize: '20px' }}>⚡</span>
+           onClick={() => window.location.href = '/season-shift-creator'}>
+            <span style={{ fontSize: '20px' }}>?</span>
             Tildel automatisk ({stats.pendingShifts} vakter)
           </button>
 
@@ -198,8 +198,8 @@ export const CoordinatorDashboard: React.FC = () => {
           }}
           onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
           onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <span style={{ fontSize: '20px' }}>👥</span>
+           onClick={() => window.location.href = '/season-shift-creator'}>
+            <span style={{ fontSize: '20px' }}>??</span>
             Se familier og poeng
           </button>
         </div>
@@ -207,3 +207,6 @@ export const CoordinatorDashboard: React.FC = () => {
     </div>
   );
 };
+
+
+
