@@ -1,0 +1,478 @@
+﻿import React, { useState, useEffect } from 'react';
+import { supabase } from '../../services/supabaseClient';
+
+interface ManualParent {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+}
+
+interface ManualPlayer {
+  id: string;
+  name: string;
+  subgroup?: string; // Valgfritt
+}
+
+interface ManualFamily {
+  id: string;
+  parents: ManualParent[];
+  players: ManualPlayer[];
+  verv: any[];
+  pointsHistory: any[];
+  totalPoints: number;
+}
+
+interface ManualShift {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  peopleNeeded: number;
+  assignedFamilies: string[]; // Liste av familie-IDer
+  description?: string;       // Valgfritt
+}
+
+interface ManualEvent {
+  id: string;
+  eventName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  shifts: ManualShift[];
+  subgroup?: string;          // Valgfritt
+}
+
+export const ManualShiftAssignment: React.FC = () => {
+  const [events, setEvents] = useState<ManualEvent[]>([]);
+  const [families, setFamilies] = useState<ManualFamily[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [draggedFamilyId, setDraggedFamilyId] = useState<string | null>(null);
+  const [dragSourceShiftId, setDragSourceShiftId] = useState<string | null>(null);
+  const [workingShifts, setWorkingShifts] = useState<ManualShift[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- HENT DATA FRA SUPABASE ---
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+        // 1. Hent Events
+        const { data: eventsData, error: eventError } = await supabase
+            .from('events')
+            .select(`
+                *,
+                shifts (
+                    *,
+                    assignments (family_id)
+                )
+            `)
+            .order('date', { ascending: true });
+        
+        if (eventError) throw eventError;
+
+        // 2. Hent Familier
+        const { data: familiesData, error: famError } = await supabase
+            .from('families')
+            .select('*, family_members(*)');
+
+        if (famError) throw famError;
+
+        // 3. Map Events
+        const mappedEvents: ManualEvent[] = eventsData.map((e: any) => ({
+            id: e.id,
+            eventName: e.name,
+            date: e.date,
+            startTime: e.start_time?.slice(0,5),
+            endTime: e.end_time?.slice(0,5),
+            subgroup: e.subgroup,
+            shifts: e.shifts.map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                startTime: s.start_time?.slice(0,5),
+                endTime: s.end_time?.slice(0,5),
+                peopleNeeded: s.people_needed,
+                description: s.description,
+                assignedFamilies: s.assignments?.map((a: any) => a.family_id) || []
+            })).sort((a: any, b: any) => a.name.localeCompare(b.name))
+        }));
+
+        setEvents(mappedEvents);
+
+        // 4. Map Familier
+        const mappedFamilies: ManualFamily[] = familiesData.map((f: any) => ({
+            id: f.id,
+            parents: f.family_members.filter((m: any) => m.role === 'parent'),
+            players: f.family_members.filter((m: any) => m.role === 'child'),
+            verv: [], 
+            pointsHistory: [], 
+            totalPoints: f.total_points || 0
+        }));
+
+        setFamilies(mappedFamilies);
+
+        // Sett standardvalg
+        if (mappedEvents.length > 0) {
+            setSelectedEventId(mappedEvents[0].id);
+            setWorkingShifts(mappedEvents[0].shifts || []);
+        }
+
+    } catch (error) {
+        console.error('Feil ved henting:', error);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // Oppdater workingShifts når event endres
+  useEffect(() => {
+    const event = events.find(e => e.id === selectedEventId);
+    if (event) {
+      setWorkingShifts(JSON.parse(JSON.stringify(event.shifts || [])));
+    }
+  }, [selectedEventId, events]);
+
+  // --- HJELPEFUNKSJONER ---
+
+  const calculateFamilyPoints = (family: ManualFamily): number => {
+    return family.totalPoints;
+  };
+
+  const getFamilyAssignmentCount = (familyId: string): number => {
+    return workingShifts.reduce((count, shift) => {
+      return count + (shift.assignedFamilies?.filter(fid => fid === familyId).length || 0);
+    }, 0);
+  };
+
+  const isShiftOverlap = (shift1: ManualShift, shift2: ManualShift): boolean => {
+    return shift1.startTime < shift2.endTime && shift1.endTime > shift2.startTime;
+  };
+
+  const getFamilyAssignedShifts = (familyId: string): ManualShift[] => {
+    return workingShifts.filter(shift => 
+      shift.assignedFamilies?.includes(familyId)
+    );
+  };
+
+  const canAssignFamily = (familyId: string, shiftId: string): boolean => {
+    const shift = workingShifts.find(s => s.id === shiftId);
+    if (!shift) return false;
+    if ((shift.assignedFamilies?.length || 0) >= shift.peopleNeeded) return false;
+    const assignedShifts = getFamilyAssignedShifts(familyId);
+    return !assignedShifts.some(s => isShiftOverlap(s, shift));
+  };
+
+  const sortedFamilies = [...families]
+    .map(f => ({
+      ...f,
+      currentPoints: calculateFamilyPoints(f),
+      shiftsNeeded: f.players?.length || 1,
+      shiftsAssigned: getFamilyAssignmentCount(f.id)
+    }))
+    .sort((a, b) => {
+      if (a.currentPoints !== b.currentPoints) {
+        return a.currentPoints - b.currentPoints;
+      }
+      return a.shiftsAssigned - b.shiftsAssigned;
+    });
+
+  // --- DRAG HANDLERS ---
+
+  const handleDragStart = (familyId: string, sourceShiftId?: string) => {
+    setDraggedFamilyId(familyId);
+    setDragSourceShiftId(sourceShiftId || null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFamilyId(null);
+    setDragSourceShiftId(null);
+  };
+
+  const handleDrop = (targetShiftId: string) => {
+    if (!draggedFamilyId) return;
+
+    if (dragSourceShiftId && dragSourceShiftId !== targetShiftId) {
+      const updatedShifts = workingShifts.map(shift => {
+        if (shift.id === dragSourceShiftId) {
+          return {
+            ...shift,
+            assignedFamilies: shift.assignedFamilies?.filter(fid => fid !== draggedFamilyId) || []
+          };
+        }
+        if (shift.id === targetShiftId) {
+          return {
+            ...shift,
+            assignedFamilies: [...(shift.assignedFamilies || []), draggedFamilyId]
+          };
+        }
+        return shift;
+      });
+      setWorkingShifts(updatedShifts);
+      return;
+    }
+
+    if (!dragSourceShiftId) {
+      if (!canAssignFamily(draggedFamilyId, targetShiftId)) {
+        alert('⚠️ Kan ikke tildele: Vakt er full eller overlapper.');
+        return;
+      }
+      const updatedShifts = workingShifts.map(shift => {
+        if (shift.id === targetShiftId) {
+          return {
+            ...shift,
+            assignedFamilies: [...(shift.assignedFamilies || []), draggedFamilyId]
+          };
+        }
+        return shift;
+      });
+      setWorkingShifts(updatedShifts);
+    }
+  };
+
+  const handleRemoveFamily = (shiftId: string, familyId: string) => {
+    const updatedShifts = workingShifts.map(shift => {
+      if (shift.id === shiftId) {
+        return {
+          ...shift,
+          assignedFamilies: shift.assignedFamilies?.filter(fid => fid !== familyId) || []
+        };
+      }
+      return shift;
+    });
+    setWorkingShifts(updatedShifts);
+  };
+
+  const handleAutoAssign = () => {
+    if (!confirm('Kjøre automatisk tildeling? (Prioriterer lavest poeng)')) return;
+
+    const familiesWithNeeds = sortedFamilies.map(f => ({
+      ...f,
+      tempPoints: f.currentPoints,
+      shiftsAssigned: getFamilyAssignmentCount(f.id)
+    }));
+
+    const updatedShifts = JSON.parse(JSON.stringify(workingShifts));
+    const familyAssignments: { [key: string]: ManualShift[] } = {};
+
+    updatedShifts.forEach((shift: ManualShift) => {
+        shift.assignedFamilies?.forEach(fid => {
+            if (!familyAssignments[fid]) familyAssignments[fid] = [];
+            familyAssignments[fid].push(shift);
+        });
+    });
+
+    for (const shift of updatedShifts) {
+      let assigned = shift.assignedFamilies.length;
+      
+      while (assigned < shift.peopleNeeded) {
+        const availableFamily = familiesWithNeeds.find(f => {
+          if (f.shiftsAssigned >= f.shiftsNeeded) return false;
+          const alreadyAssigned = familyAssignments[f.id] || [];
+          return !alreadyAssigned.some(s => isShiftOverlap(s, shift));
+        });
+
+        if (!availableFamily) break;
+
+        shift.assignedFamilies.push(availableFamily.id);
+        if (!familyAssignments[availableFamily.id]) familyAssignments[availableFamily.id] = [];
+        familyAssignments[availableFamily.id].push(shift);
+        
+        availableFamily.shiftsAssigned++;
+        assigned++;
+        availableFamily.tempPoints += 20; 
+        
+        familiesWithNeeds.sort((a, b) => a.tempPoints - b.tempPoints);
+      }
+    }
+
+    setWorkingShifts(updatedShifts);
+    alert(`✅ Automatisk tildeling fullført.`);
+  };
+
+  const handleSave = async () => {
+    const selectedEvent = events.find(e => e.id === selectedEventId);
+    if (!selectedEvent) return;
+    setLoading(true);
+
+    try {
+        const newAssignments: any[] = [];
+        // Her fjernet jeg den ubrukte variabelen familyPointsUpdate
+        
+        workingShifts.forEach(shift => {
+            shift.assignedFamilies?.forEach(fid => {
+                newAssignments.push({
+                    shift_id: shift.id,
+                    family_id: fid,
+                    status: 'assigned'
+                });
+            });
+        });
+
+        const shiftIds = workingShifts.map(s => s.id);
+        const { error: deleteError } = await supabase.from('assignments').delete().in('shift_id', shiftIds);
+        if (deleteError) throw deleteError;
+
+        if (newAssignments.length > 0) {
+            const { error: insertError } = await supabase.from('assignments').insert(newAssignments);
+            if (insertError) throw insertError;
+        }
+        
+        alert('✅ Vaktlisten er lagret i skyen!');
+        window.location.href = '/events-list';
+
+    } catch (error: any) {
+        alert('Feil ved lagring: ' + error.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const selectedEvent = events.find(e => e.id === selectedEventId);
+
+  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Laster... ☁️</div>;
+
+  return (
+    <div style={{ padding: '40px', maxWidth: '1600px', margin: '0 auto' }}>
+      <button 
+        onClick={() => window.location.href = '/events-list'}
+        className="btn btn-secondary"
+        style={{ marginBottom: '16px' }}
+      >
+        ← Tilbake
+      </button>
+
+      <div style={{ marginBottom: '32px' }}>
+        <h1 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
+          Tildel vakter manuelt
+        </h1>
+      </div>
+
+      <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'end' }}>
+          <div>
+            <label className="input-label">Velg arrangement</label>
+            <select
+              className="input"
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+            >
+              {events.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.eventName} - {e.date}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleAutoAssign} className="btn btn-primary">🤖 Auto-forslag</button>
+        </div>
+
+        {selectedEvent && (
+          <div style={{ marginTop: '16px', padding: '12px', background: 'var(--background)', borderRadius: 'var(--radius-md)', fontSize: '14px' }}>
+            <strong>Valgt:</strong> {selectedEvent.eventName} • {selectedEvent.date}
+            {selectedEvent.subgroup && <span style={{marginLeft:'8px', background:'#e0f2fe', color:'#0369a1', padding:'2px 6px', borderRadius:'4px'}}>{selectedEvent.subgroup}</span>}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+        {/* LEFT: Shifts */}
+        <div>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Vakter</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {workingShifts.map(shift => {
+              const assignedFamiliesObjs = (shift.assignedFamilies || []).map(fid => 
+                families.find(f => f.id === fid)
+              ).filter(Boolean) as ManualFamily[];
+              
+              const isFull = assignedFamiliesObjs.length >= shift.peopleNeeded;
+              const canDrop = draggedFamilyId && (dragSourceShiftId ? true : canAssignFamily(draggedFamilyId, shift.id));
+
+              return (
+                <div
+                  key={shift.id}
+                  onDragOver={(e) => { if (canDrop) e.preventDefault(); }}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(shift.id); }}
+                  style={{
+                    padding: '16px',
+                    background: canDrop ? '#dcfce7' : 'white',
+                    borderRadius: 'var(--radius-md)',
+                    border: canDrop ? '2px dashed var(--primary-color)' : '2px solid var(--border-color)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: '600' }}>{shift.name}</div>
+                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{shift.startTime} - {shift.endTime}</div>
+                      {shift.description && <div style={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>{shift.description}</div>}
+                    </div>
+                    <div style={{ padding: '4px 12px', borderRadius: 'var(--radius-md)', background: isFull ? '#dcfce7' : '#fee2e2', color: isFull ? '#166534' : '#991b1b', fontSize: '12px', fontWeight: '600', height: 'fit-content' }}>
+                      {assignedFamiliesObjs.length}/{shift.peopleNeeded}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {assignedFamiliesObjs.map((family) => (
+                        <div
+                          key={family.id}
+                          draggable
+                          onDragStart={() => handleDragStart(family.id, shift.id)}
+                          onDragEnd={handleDragEnd}
+                          style={{ padding: '8px 12px', background: 'white', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', cursor: 'grab' }}
+                        >
+                          <span>{family.players[0]?.name || family.id}</span>
+                          <button onClick={() => handleRemoveFamily(shift.id, family.id)} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>×</button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* RIGHT: Families */}
+        <div>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Familier</h2>
+          <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {sortedFamilies.map((family) => {
+                const isDragging = draggedFamilyId === family.id && !dragSourceShiftId;
+                const needsMore = family.shiftsAssigned < family.shiftsNeeded;
+                return (
+                  <div
+                    key={family.id}
+                    draggable
+                    onDragStart={() => handleDragStart(family.id)}
+                    onDragEnd={handleDragEnd}
+                    style={{
+                      padding: '12px',
+                      background: isDragging ? '#e0f2fe' : needsMore ? 'white' : '#f3f4f6',
+                      borderRadius: 'var(--radius-md)',
+                      border: needsMore ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                      cursor: 'grab', opacity: isDragging ? 0.5 : 1
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div style={{ fontWeight: '600', fontSize: '14px' }}>{family.players[0]?.name || family.id}</div>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--primary-color)' }}>{family.currentPoints}p</div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                        {family.shiftsAssigned}/{family.shiftsNeeded} vakter
+                        {family.players[0]?.subgroup && ` • ${family.players[0].subgroup}`}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: '32px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+        <button onClick={() => window.location.href = '/events-list'} className="btn btn-secondary">Avbryt</button>
+        <button onClick={handleSave} className="btn btn-primary" style={{ padding: '12px 32px' }}>{loading ? 'Lagrer...' : '💾 Lagre tildelinger'}</button>
+      </div>
+    </div>
+  );
+};

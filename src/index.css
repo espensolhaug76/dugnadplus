@@ -1,0 +1,136 @@
+﻿/* src/index.css - Med padding for å lage luft */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+
+  --primary-color: #16a8b8;
+  --primary-hover: #1298a6;
+  --secondary-color: #334155;
+  --danger-color: #ef4444;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --background: #f8fafc;
+  --text-primary: #1f2937;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+}
+
+html {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  overflow-x: hidden !important;
+}
+
+body {
+  margin: 0 !important;
+  padding: 16px !important;
+  padding-right: 0 !important;
+  padding-bottom: 0 !important;
+  width: 100% !important;
+  min-height: 100vh !important;
+  background-color: #f8fafc !important;
+  color: #1f2937;
+  -webkit-font-smoothing: antialiased;
+  box-sizing: border-box !important;
+}
+
+#root {
+  width: 100% !important;
+  min-height: 100vh !important;
+}
+
+#root > div {
+  width: 100% !important;
+  min-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  font-weight: 500;
+  color: #16a8b8;
+  text-decoration: inherit;
+}
+
+a:hover {
+  color: #0d7f8a;
+}
+
+button, .btn {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 8px 16px;
+  font-size: 1em;
+  font-weight: 500;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.25s;
+  color: #1f2937;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+button:hover, .btn:hover {
+  border-color: #16a8b8;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+button.btn-primary, .btn-primary {
+  background-color: #16a8b8;
+  color: white;
+  border: 1px solid #16a8b8;
+}
+
+button.btn-primary:hover, .btn-primary:hover {
+  background-color: #1298a6;
+  border-color: #1298a6;
+}
+
+button.btn-secondary, .btn-secondary {
+  background-color: transparent;
+  color: #16a8b8;
+  border: 2px solid #16a8b8;
+}
+
+button.btn-secondary:hover, .btn-secondary:hover {
+  background-color: #16a8b8;
+  color: white;
+}
+
+.card {
+  background-color: white;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="date"], input[type="time"], select, textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: white;
+  font-size: 1em;
+  color: #1f2937;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #16a8b8;
+  outline: none;
+}

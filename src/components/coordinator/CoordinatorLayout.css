@@ -1,0 +1,193 @@
+﻿/* coordinator/CoordinatorLayout.css - Med padding på layout */
+
+.coordinator-layout {
+  display: flex !important;
+  min-height: 100vh !important;
+  width: 100% !important;
+  background-color: #f8fafc !important;
+  padding-left: 16px !important;
+  padding-top: 16px !important;
+}
+
+.coordinator-sidebar {
+  width: 260px !important;
+  min-width: 260px !important;
+  position: sticky !important;
+  top: 0 !important;
+  height: calc(100vh - 32px) !important;
+  overflow-y: auto !important;
+  background-color: white !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+  z-index: 100 !important;
+  padding: 0 !important;
+  border: 1px solid #e2e8f0 !important;
+  flex-shrink: 0 !important;
+}
+
+.sidebar-header {
+  padding: 24px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.sidebar-logo {
+  width: 56px !important;
+  height: 56px !important;
+  background: linear-gradient(135deg, #16a8b8 0%, #0d7f8a 100%) !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: white !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  margin-bottom: 12px !important;
+}
+
+.sidebar-club-name {
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  margin: 0 0 4px 0 !important;
+  color: #1f2937 !important;
+}
+
+.sidebar-season {
+  font-size: 13px !important;
+  color: #64748b !important;
+  margin: 0 !important;
+}
+
+.sidebar-section {
+  padding: 16px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.sidebar-section-title {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin-bottom: 12px !important;
+  padding-left: 4px !important;
+}
+
+.team-button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  padding: 12px 16px !important;
+  margin-bottom: 4px !important;
+  border: none !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #64748b !important;
+  font-weight: 500 !important;
+  font-size: 15px !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.team-button:hover {
+  background: #f8fafc !important;
+  color: #1f2937 !important;
+}
+
+.team-button.active {
+  background: #16a8b8 !important;
+  color: white !important;
+  font-weight: 600 !important;
+}
+
+.team-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.team-dot {
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+}
+
+.sidebar-actions {
+  padding: 16px !important;
+}
+
+.action-button {
+  width: 100% !important;
+  margin-bottom: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+}
+
+.coordinator-main {
+  flex: 1 !important;
+  min-height: 100vh !important;
+  padding: 0 24px !important;
+  margin-left: 16px !important;
+  background-color: #f8fafc !important;
+}
+
+.dashboard-banner {
+  background: linear-gradient(135deg, #16a8b8 0%, #0d7f8a 100%) !important;
+  padding: 24px !important;
+  color: white !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  border-radius: 12px !important;
+  margin-bottom: 24px !important;
+}
+
+.dashboard-title {
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+
+.dashboard-subtitle {
+  font-size: 15px !important;
+  opacity: 0.9 !important;
+  margin: 4px 0 0 0 !important;
+}
+
+.dashboard-tabs {
+  background-color: white !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  display: flex !important;
+  padding: 0 16px !important;
+  gap: 8px !important;
+  border-top-left-radius: 12px !important;
+  border-top-right-radius: 12px !important;
+}
+
+.tab-button {
+  padding: 12px 16px !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 3px solid transparent !important;
+  color: #64748b !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+}
+
+.tab-button.active {
+  border-bottom-color: #16a8b8 !important;
+  color: #16a8b8 !important;
+  font-weight: 600 !important;
+}
+
+.dashboard-content {
+  padding: 24px !important;
+}
+
+.stats-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+  gap: 20px !important;
+  margin-bottom: 24px !important;
+}
