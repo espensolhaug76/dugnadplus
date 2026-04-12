@@ -20,12 +20,20 @@
 # - style-src tillater 'unsafe-inline' fordi hele appen bruker React
 #   inline style-objekter. Å stramme dette inn krever å flytte alle
 #   styles til CSS-filer eller bruke nonces/hashes — egen runde.
+#   https://fonts.googleapis.com er lagt til fordi index.html laster
+#   DM Sans / DM Serif Display via Google Fonts CSS.
 # - script-src har IKKE 'unsafe-inline' eller 'unsafe-eval'. Inline
 #   event-handlers (onclick="...") ville blitt blokkert. Vi fjernet
 #   den siste gjenværende i KioskAdmin.printQR i forrige commit.
 # - img-src tillater data: for base64-bilder i marketplace (midlertidig
 #   til post-pilot Storage-migreringen) og https: for eksterne bilder
-#   som api.qrserver.com QR-koden og sponsor-logoer.
+#   som api.qrserver.com (QR-kode i kiosk-print-vinduet) og
+#   sponsor-logoer (bruker-kontrollert URL, egen backlog-runde for
+#   validering — se SECURITY_BACKLOG.md U4). Vi kunne narrowed til en
+#   allowlist, men sponsor-URL-ene er unbounded så vi må beholde
+#   wildcardet inntil U4 migrerer til Storage-bucket.
+# - font-src tillater data: for eventuelle base64-fonter i bygget, og
+#   https://fonts.gstatic.com for selve .woff2-filene bak Google Fonts.
 # - connect-src tillater wss://*.supabase.co for Supabase Realtime
 #   (websockets) i tillegg til https-API-endpointet.
 # - frame-ancestors 'none' og X-Frame-Options: DENY gir dobbel
@@ -33,10 +41,16 @@
 #   CSP for moderne).
 # - object-src 'none' blokkerer <object>, <embed>, <applet> — ingen
 #   plugins, ingen Flash, ingen PDF-viewer-eskalering.
+#
+# Eksterne ressurser som IKKE trenger CSP-oppføring:
+# - calendar.google.com brukes av FamilyDashboard.addToCalendar via
+#   window.open(url, '_blank'). CSP-en gater ikke navigering til en
+#   ny top-level browsing context, så ingen policy-endring kreves.
+# - "Spond"-referanser i kodebasen er kun UI-tekst, ingen nettverkskall.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
