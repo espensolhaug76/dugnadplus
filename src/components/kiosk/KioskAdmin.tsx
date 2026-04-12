@@ -164,21 +164,73 @@ export const KioskAdmin: React.FC = () => {
   };
 
   const printQR = () => {
+    // Print-vinduet bygges via DOM-API med textContent, IKKE innerHTML
+    // eller document.write. Tidligere versjon interpolerte clubName og
+    // kioskUrl direkte inn i en HTML-streng, noe som ga stored XSS:
+    // en koordinator kunne sette klubbnavn til `<img src=x onerror=...>`
+    // og eksfiltrere auth-token fra window.opener.localStorage når en
+    // annen koordinator i samme klubb printet QR-koden.
+    //
+    // Ved å bruke createElement + textContent blir <, >, ", ', & og
+    // andre tegn i bruker-kontrollert state rendret som ren tekst av
+    // nettleseren — ingen mulighet for HTML-injeksjon. Print-knappen
+    // bruker addEventListener i stedet for inline onclick for å unngå
+    // å måtte skrive JavaScript som streng (og være CSP-kompatibel
+    // når vi slår på Content-Security-Policy med restriktiv script-src).
     const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(kioskUrl)}`;
     const win = window.open('', '_blank');
     if (!win) return;
-    win.document.write(`
-      <html><head><title>Kiosk QR-kode</title>
-      <style>body{font-family:sans-serif;text-align:center;padding:40px}@media print{button{display:none}}</style>
-      </head><body>
-        <h1 style="font-size:36px;margin-bottom:8px">🛒 ${clubName || 'Kiosk'}</h1>
-        <p style="font-size:20px;color:#6b7f70;margin-bottom:32px">Skann QR-koden for å bestille og betale med Vipps</p>
-        <img src="${qrApiUrl}" width="300" height="300" style="border:8px solid #2d6a4f;border-radius:16px" />
-        <p style="font-size:14px;color:#6b7f70;margin-top:24px">${kioskUrl}</p>
-        <button onclick="window.print()" style="margin-top:24px;padding:12px 32px;font-size:16px;background:#2d6a4f;color:white;border:none;border-radius:8px;cursor:pointer">Skriv ut</button>
-      </body></html>
-    `);
-    win.document.close();
+    const doc = win.document;
+
+    doc.title = 'Kiosk QR-kode';
+
+    const style = doc.createElement('style');
+    style.textContent = 'body{font-family:sans-serif;text-align:center;padding:40px}@media print{button{display:none}}';
+    doc.head.appendChild(style);
+
+    const h1 = doc.createElement('h1');
+    h1.style.fontSize = '36px';
+    h1.style.marginBottom = '8px';
+    h1.textContent = `🛒 ${clubName || 'Kiosk'}`;
+    doc.body.appendChild(h1);
+
+    const intro = doc.createElement('p');
+    intro.style.fontSize = '20px';
+    intro.style.color = '#6b7f70';
+    intro.style.marginBottom = '32px';
+    intro.textContent = 'Skann QR-koden for å bestille og betale med Vipps';
+    doc.body.appendChild(intro);
+
+    const img = doc.createElement('img');
+    img.src = qrApiUrl;           // qrApiUrl er bygget av encodeURIComponent(kioskUrl)
+    img.width = 300;
+    img.height = 300;
+    img.alt = 'QR-kode';
+    img.style.border = '8px solid #2d6a4f';
+    img.style.borderRadius = '16px';
+    doc.body.appendChild(img);
+
+    const urlLine = doc.createElement('p');
+    urlLine.style.fontSize = '14px';
+    urlLine.style.color = '#6b7f70';
+    urlLine.style.marginTop = '24px';
+    urlLine.textContent = kioskUrl;
+    doc.body.appendChild(urlLine);
+
+    const printBtn = doc.createElement('button');
+    printBtn.textContent = 'Skriv ut';
+    printBtn.style.marginTop = '24px';
+    printBtn.style.padding = '12px 32px';
+    printBtn.style.fontSize = '16px';
+    printBtn.style.background = '#2d6a4f';
+    printBtn.style.color = 'white';
+    printBtn.style.border = 'none';
+    printBtn.style.borderRadius = '8px';
+    printBtn.style.cursor = 'pointer';
+    printBtn.addEventListener('click', () => win.print());
+    doc.body.appendChild(printBtn);
+
+    doc.close();
   };
 
   if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#4a5e50' }}>Laster...</div>;
