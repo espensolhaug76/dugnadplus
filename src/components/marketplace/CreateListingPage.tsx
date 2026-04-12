@@ -4,6 +4,21 @@ const CATEGORIES = ['Sko', 'Treningsklær', 'Sportsutstyr', 'Vesker', 'Verneutst
 
 type ListingType = 'sell' | 'free' | 'wanted';
 
+// Tillatte MIME-typer for markedsplass-bilder. SVG er eksplisitt IKKE i
+// lista — SVG kan inneholde <script>-tagger og event-handlers som kan
+// eksekvere når bildet rendres utenfor en <img>-tag (f.eks. i fremtidig
+// liste-visning med <object>, <iframe> eller direkte data-URL-navigering).
+// MIME-typen blir sjekket på File.type i tillegg til accept-attributtet,
+// siden accept-attributtet bare er et klient-side hint og trivielt kan
+// omgås i DevTools.
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+// 5 MB. Hevet fra 2 MB fordi moderne telefonkamera-bilder ofte er større,
+// men stoppet godt under localStorage-quota (5-10 MB per origin i de
+// fleste browsere) siden bildet lagres som base64 i localStorage.
+// Post-pilot: skal migreres til Supabase Storage, se SECURITY_BACKLOG.md.
+const MAX_MARKETPLACE_IMAGE_BYTES = 5 * 1024 * 1024;
+
 export const CreateListingPage: React.FC = () => {
   const [listingType, setListingType] = useState<ListingType>('sell');
   const [title, setTitle] = useState('');
@@ -19,8 +34,20 @@ export const CreateListingPage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Bildet er for stort. Maks 2 MB.');
+    // MIME-type allowlist. Både blokkerer SVG eksplisitt og hindrer at
+    // en angriper laster opp en HTML/JS-fil med bildenavn.
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert(
+        'Bildet må være i et av følgende formater: JPG, PNG, WebP eller GIF. ' +
+        'SVG og andre filtyper er ikke tillatt.'
+      );
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_MARKETPLACE_IMAGE_BYTES) {
+      alert('Bildet er for stort. Maks 5 MB.');
+      e.target.value = '';
       return;
     }
 

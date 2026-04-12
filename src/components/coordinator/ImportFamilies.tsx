@@ -26,9 +26,21 @@ export const ImportFamilies: React.FC = () => {
   const [importResults, setImportResults] = useState<ImportedFamilyResult[]>([]);
   const [skipCount, setSkipCount] = useState(0);
 
+  // Max 10 MB på import-fila. Beskytter mot klient-side DoS via en
+  // stor Excel med millioner av tomme rader, og mot å fylle DB-quota
+  // hvis XLSX-parseren produserer hundretusenvis av familie-rader.
+  // En ekte Spond-eksport for et helt idrettslag er typisk <1 MB.
+  const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFile = e.target.files?.[0];
     if (!uploadedFile) return;
+
+    if (uploadedFile.size > MAX_IMPORT_FILE_BYTES) {
+      alert('Fila er for stor. Maks 10 MB for familie-import.');
+      e.target.value = '';
+      return;
+    }
 
     setFile(uploadedFile); // Her settes filen
     const reader = new FileReader();
