@@ -56,6 +56,14 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
       }
   };
 
+  const getUserId = (): string | null => {
+    try {
+      const stored = localStorage.getItem('dugnad_user');
+      if (stored) return JSON.parse(stored).id || null;
+    } catch {}
+    return null;
+  };
+
   const loadTeams = () => {
     try {
       const storedTeams = localStorage.getItem('dugnad_teams');
@@ -70,9 +78,23 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
 
       setGroupedTeams(groups);
 
-      const activeFilter = localStorage.getItem('dugnad_active_team_filter');
-      if (activeFilter && teams.some(t => t.id === activeFilter)) {
-          setSelectedTeam(activeFilter);
+      // 1. Sjekk bruker-spesifikk "sist brukte lag"
+      const userId = getUserId();
+      const userLastTeam = userId ? localStorage.getItem(`dugnad_last_team_${userId}`) : null;
+
+      if (userLastTeam && teams.some(t => t.id === userLastTeam)) {
+          setSelectedTeam(userLastTeam);
+          localStorage.setItem('dugnad_active_team_filter', userLastTeam);
+      } else {
+          // 2. Fallback: dugnad_active_team_filter (bakoverkompatibelt)
+          const activeFilter = localStorage.getItem('dugnad_active_team_filter');
+          if (activeFilter && teams.some(t => t.id === activeFilter)) {
+              setSelectedTeam(activeFilter);
+          } else if (teams.length > 0) {
+              // 3. Siste fallback: velg første lag
+              setSelectedTeam(teams[0].id);
+              localStorage.setItem('dugnad_active_team_filter', teams[0].id);
+          }
       }
     } catch (error) {
       console.error('Feil ved henting av lag:', error);
@@ -84,6 +106,11 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
   const handleTeamClick = (teamId: string) => {
       setSelectedTeam(teamId);
       localStorage.setItem('dugnad_active_team_filter', teamId);
+      // Lagre bruker-spesifikk preferanse
+      const userId = getUserId();
+      if (userId) {
+          localStorage.setItem(`dugnad_last_team_${userId}`, teamId);
+      }
       // Naviger til dashboard (fungerer som lagets startside)
       if (window.location.pathname !== '/coordinator-dashboard') {
           window.location.href = '/coordinator-dashboard';
