@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
 
 interface Prize {
   id: string;
@@ -364,12 +365,25 @@ export const LotteryAdmin: React.FC = () => {
   };
 
   const exportBuyersCsv = () => {
-    const header = 'Navn;Telefon;Antall lodd;Beløp;Vinner\n';
-    const rows = buyers.map(b => `${b.name};${b.phone};${b.totalTickets};${b.totalAmount};${b.isWinner ? b.wonPrize || 'Ja' : 'Nei'}`).join('\n');
-    const blob = new Blob(['\ufeff' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    // CSV-injection-beskyttelse: buyers-raden kommer fra lottery_sales, som
+    // er skrivbar fra den ANONYME LotteryShop-flyten (Vipps deep link, ingen
+    // auth). Uten escape ville en angriper kunne plante =cmd|... i buyer_name
+    // og få kodekjøring på koordinatorens maskin når hun åpner eksporten.
+    // Se src/utils/csvSafe.ts.
+    const header = 'Navn;Telefon;Antall lodd;Beløp;Vinner';
+    const rows = buyers.map(b => csvRow([
+      b.name,
+      b.phone,
+      b.totalTickets,
+      b.totalAmount,
+      b.isWinner ? (b.wonPrize || 'Ja') : 'Nei',
+    ])).join('\n');
+    const blob = new Blob(['\ufeff' + header + '\n' + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `kjopere_${lottery?.name || 'lotteri'}.csv`; a.click();
+    a.href = url;
+    a.download = `kjopere_${sanitizeCsvFilename(lottery?.name, 'lotteri')}.csv`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 

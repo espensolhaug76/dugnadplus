@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { csvRow } from '../../utils/csvSafe';
 
 interface Member {
   id: string;
@@ -549,7 +550,10 @@ export const ManageFamilies: React.FC = () => {
     const toExport = bulkMode && selectedFamilyIds.size > 0
       ? filteredFamilies.filter(f => selectedFamilyIds.has(f.id))
       : filteredFamilies;
-    const header = 'Spillernavn;Familienavn;Foresatte;Telefon;E-post;Gruppe;Poeng\n';
+    // CSV-injection-beskyttelse: celler bygges via csvRow() som prefikser
+    // formel-trigger-tegn (=, +, -, @, \t, \r) med apostrof og quoter
+    // spesialtegn. Se src/utils/csvSafe.ts.
+    const header = 'Spillernavn;Familienavn;Foresatte;Telefon;E-post;Gruppe;Poeng';
     const rows = toExport.map(f => {
       const children = f.members.filter(m => m.role === 'child');
       const parents = f.members.filter(m => m.role === 'parent');
@@ -558,9 +562,9 @@ export const ManageFamilies: React.FC = () => {
       const phones = parents.map(p => p.phone || '').filter(Boolean).join(', ');
       const emails = parents.map(p => p.email || '').filter(Boolean).join(', ');
       const subgroup = children[0]?.subgroup || '';
-      return `${childNames};${f.name};${parentNames};${phones};${emails};${subgroup};${f.total_points}`;
+      return csvRow([childNames, f.name, parentNames, phones, emails, subgroup, f.total_points]);
     }).join('\n');
-    const blob = new Blob(['\ufeff' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + header + '\n' + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'familier.csv'; a.click();
     URL.revokeObjectURL(url);

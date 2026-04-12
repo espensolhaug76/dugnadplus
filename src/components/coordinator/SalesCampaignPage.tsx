@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
 
 interface Campaign { id: string; title: string; description: string; product_name: string; unit_price: number; target_per_family: number; start_date: string; end_date: string; status: string; vipps_number: string; }
 interface Sale { id: string; seller_family_id: string; buyer_name: string; quantity: number; amount: number; paid: boolean; delivered: boolean; sellerName: string; }
@@ -99,11 +100,21 @@ export const SalesCampaignPage: React.FC = () => {
   };
 
   const exportCsv = () => {
-    const header = 'Familie;Antall;Beløp;Status\n';
+    // CSV-injection-beskyttelse: sellerName kommer fra campaign_sales, som
+    // er skrivbar fra den anonyme CampaignShop-flyten. Se src/utils/csvSafe.ts.
+    const header = 'Familie;Antall;Beløp;Status';
     const grouped = getSellerStats();
-    const rows = grouped.map(s => `${s.name};${s.qty};${s.amount};${s.delivered ? 'Innlevert' : 'Venter'}`).join('\n');
-    const blob = new Blob(['\ufeff' + header + rows], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `leveringsliste_${campaign?.title || 'kampanje'}.csv`; a.click();
+    const rows = grouped.map(s => csvRow([
+      s.name,
+      s.qty,
+      s.amount,
+      s.delivered ? 'Innlevert' : 'Venter',
+    ])).join('\n');
+    const blob = new Blob(['\ufeff' + header + '\n' + rows], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `leveringsliste_${sanitizeCsvFilename(campaign?.title, 'kampanje')}.csv`;
+    a.click();
   };
 
   const getSellerStats = () => {
