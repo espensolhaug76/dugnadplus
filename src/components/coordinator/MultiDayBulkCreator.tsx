@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../../services/supabaseClient';
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -210,10 +211,16 @@ export const MultiDayBulkCreator: React.FC = () => {
     setEvents(events.map(e => e.id === eventId ? { ...e, shifts: e.shifts.filter(s => s.id !== shiftId) } : e));
   };
 
-  const saveAllEvents = () => {
+  const [saving, setSaving] = useState(false);
+
+  const saveAllEvents = async () => {
     const validEvents = events.filter(e => e.date && e.shifts.length > 0);
     if (validEvents.length === 0) {
       alert('⚠️ Legg til minst én dag med dato og vakter!');
+      return;
+    }
+    if (!eventName.trim()) {
+      alert('⚠️ Fyll inn arrangementsnavn!');
       return;
     }
     if (assignmentMode === 'self-service' && !selfServiceOpenDate) {
@@ -221,32 +228,68 @@ export const MultiDayBulkCreator: React.FC = () => {
       return;
     }
 
+    setSaving(true);
+
     try {
-      const stored = localStorage.getItem('dugnad_events');
-      const existingEvents = stored ? JSON.parse(stored) : [];
-      const eventsToSave = validEvents.map(e => ({
-        id: `${Date.now()}-${Math.random()}`,
-        eventName: `${eventName} - Dag ${events.indexOf(e) + 1}`,
-        date: e.date,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        location: e.location,
-        sport: e.sport,
-        slotDuration: e.slotDuration,
-        shifts: e.shifts.map(s => ({ ...s, assignedPeople: 0, status: 'open' })),
-        assignmentMode,
-        selfServiceOpenDate: assignmentMode === 'self-service' ? `${selfServiceOpenDate}T${selfServiceOpenTime}` : null,
-        selfServiceStatus: assignmentMode === 'self-service' ? 'pending' : null,
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        type: 'multiday'
-      }));
-      localStorage.setItem('dugnad_events', JSON.stringify([...existingEvents, ...eventsToSave]));
-      alert(`✅ ${eventsToSave.length} arrangementer lagret!`);
+      // Hent aktivt lag for subgroup
+      let subgroup = '';
+      try {
+        const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
+        const teams = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
+        const activeTeam = activeTeamId ? teams.find((t: any) => t.id === activeTeamId) : teams[0];
+        if (activeTeam) subgroup = activeTeam.name;
+      } catch {}
+
+      let savedCount = 0;
+
+      for (let i = 0; i < validEvents.length; i++) {
+        const e = validEvents[i];
+        const dayLabel = validEvents.length > 1 ? ` - Dag ${i + 1}` : '';
+
+        // Opprett event i Supabase
+        const { data: eventData, error: eventError } = await supabase
+          .from('events')
+          .insert({
+            name: `${eventName}${dayLabel}`,
+            date: e.date,
+            start_time: e.startTime,
+            end_time: e.endTime,
+            location: e.location,
+            sport: e.sport,
+            subgroup,
+            assignment_mode: assignmentMode,
+            self_service_open_date: assignmentMode === 'self-service' ? `${selfServiceOpenDate}T${selfServiceOpenTime}` : null,
+            self_service_status: assignmentMode === 'self-service' ? 'pending' : null
+          })
+          .select()
+          .single();
+
+        if (eventError) throw eventError;
+
+        // Opprett vakter
+        if (e.shifts.length > 0) {
+          const shiftsToInsert = e.shifts.map(s => ({
+            event_id: eventData.id,
+            name: s.name,
+            start_time: s.startTime,
+            end_time: s.endTime,
+            people_needed: s.peopleNeeded,
+            description: ''
+          }));
+          const { error: shiftError } = await supabase.from('shifts').insert(shiftsToInsert);
+          if (shiftError) throw shiftError;
+        }
+
+        savedCount++;
+      }
+
+      alert(`✅ ${savedCount} arrangementer lagret i skyen!`);
       window.location.href = '/events-list';
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Feil ved lagring');
+      alert('Feil ved lagring: ' + error.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -330,7 +373,7 @@ export const MultiDayBulkCreator: React.FC = () => {
 
       <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
         <button onClick={() => window.location.href = '/coordinator-dashboard'} className="btn">Avbryt</button>
-        <button onClick={saveAllEvents} className="btn btn-primary" style={{ flex: 1 }}>💾 Lagre alle</button>
+        <button onClick={saveAllEvents} className="btn btn-primary" style={{ flex: 1 }} disabled={saving}>{saving ? 'Lagrer...' : '💾 Lagre alle'}</button>
       </div>
     </div>
   );

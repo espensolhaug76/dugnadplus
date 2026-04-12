@@ -137,7 +137,7 @@ export const MySubstituteJobsPage: React.FC = () => {
                             <div style={{ fontSize: '14px', fontFamily: 'monospace', background: '#edf2f7', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
                                 ⏰ {job.startTime} - {job.endTime}
                             </div>
-                            <div style={{ marginTop: '16px', fontSize: '13px', color: '#718096', fontStyle: 'italic' }}>
+                            <div style={{ marginTop: '16px', fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                                 Husk å avtale betaling direkte med familien som la ut vakten.
                             </div>
                         </div>

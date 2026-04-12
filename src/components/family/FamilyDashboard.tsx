@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { VikarChat } from '../substitute/VikarChat';
 
 interface SwapProposal {
   id: string;
@@ -25,7 +26,11 @@ interface Shift {
   isConfirmed: boolean;
   swapRequestId?: string;
   substituteRequestId?: string;
-  description?: string; // Lagt til for beskrivelse
+  bidAmount?: number;
+  bidMessage?: string;
+  bidFamilyId?: string;
+  bidStatus?: string;
+  description?: string;
 }
 
 interface PendingEvent {
@@ -44,6 +49,8 @@ export const FamilyDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentFamily, setCurrentFamily] = useState<any>(null);
   const [displayName, setDisplayName] = useState('');
+  const [sponsorsVisible, setSponsorsVisible] = useState(false);
+  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
 
   useEffect(() => {
     fetchCloudData();
@@ -54,10 +61,13 @@ export const FamilyDashboard: React.FC = () => {
     try {
       const userJson = localStorage.getItem('dugnad_user');
       const localUser = userJson ? JSON.parse(userJson) : null;
-      
-      // Sjekk auth
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      const userId = authUser?.id || localUser?.id;
+
+      // Bruk localStorage-ID først (for DevTools), deretter auth
+      let userId = localUser?.id;
+      if (!userId) {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          userId = authUser?.id;
+      }
 
       if (!userId) {
           setLoading(false);
@@ -126,7 +136,7 @@ export const FamilyDashboard: React.FC = () => {
 
       const myEventIds = new Set(assignments?.map((a: any) => a.shift.event.id));
       const missingEvents = allFutureEvents?.filter((e: any) => !myEventIds.has(e.id)) || [];
-      
+
       setPendingEvents(missingEvents.map((e:any) => ({
           id: e.id,
           name: e.name,
@@ -187,7 +197,11 @@ export const FamilyDashboard: React.FC = () => {
             description: a.shift.description,
             isConfirmed: a.status === 'confirmed',
             swapRequestId: activeReq?.type === 'swap' ? activeReq.id : undefined,
-            substituteRequestId: activeReq?.type === 'substitute' ? activeReq.id : undefined
+            substituteRequestId: activeReq?.type === 'substitute' ? activeReq.id : undefined,
+            bidAmount: activeReq?.bid_amount,
+            bidMessage: activeReq?.bid_message,
+            bidFamilyId: activeReq?.bid_family_id,
+            bidStatus: activeReq?.bid_status
         };
       }) || [];
 
@@ -200,8 +214,15 @@ export const FamilyDashboard: React.FC = () => {
         .select('*')
         .eq('is_active', true)
         .limit(1);
-      
+
       if (lotteries && lotteries.length > 0) setActiveLottery(lotteries[0]);
+
+      // Sjekk om sponsorer er synlige
+      const { data: sponsorSetting } = await supabase.from('settings').select('value').eq('key', 'sponsors_visible').maybeSingle();
+      if (sponsorSetting?.value === 'true') {
+        const { data: activeSponsors } = await supabase.from('sponsors').select('id').eq('is_active', true).limit(1);
+        setSponsorsVisible(activeSponsors && activeSponsors.length > 0);
+      }
 
     } catch (error) {
       console.error('Feil ved henting av data:', error);
@@ -232,6 +253,16 @@ export const FamilyDashboard: React.FC = () => {
     else { if (!confirm('Søke etter vikar?')) return; await supabase.from('requests').insert({ shift_id: shiftId, from_family_id: currentFamily.id, type: 'substitute', is_active: true }); }
     fetchCloudData();
   };
+  const handleAcceptBid = async (requestId: string, bidFamilyId: string, shiftId: string, amount: number) => {
+    if (!confirm(`Akseptere budet på ${amount} kr?`)) return;
+    // Aksepter bud
+    await supabase.from('requests').update({ bid_status: 'accepted', is_active: false }).eq('id', requestId);
+    // Opprett assignment for vikar
+    await supabase.from('assignments').insert({ shift_id: shiftId, family_id: bidFamilyId, status: 'assigned' });
+    alert(`✅ Bud akseptert! Betal ${amount} kr via Vipps.`);
+    fetchCloudData();
+  };
+
   const handleProposalResponse = async (proposal: SwapProposal, accept: boolean) => {
       if (!currentFamily) return;
       if (!accept) { if (confirm('Avslå tilbudet?')) { await supabase.from('requests').update({ is_active: false }).eq('id', proposal.id); fetchCloudData(); } return; }
@@ -248,38 +279,38 @@ export const FamilyDashboard: React.FC = () => {
     const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(shift.name)}&dates=${dateStr}T${sTime}00/${dateStr}T${eTime}00&details=${encodeURIComponent(shift.eventName)}&location=${encodeURIComponent(shift.location)}`;
     window.open(url, '_blank');
   };
-  
+
   const progressPercentage = Math.min(100, (points / nextTierPoints) * 100);
 
-  if (loading) return <div style={{padding: '40px', textAlign: 'center'}}>Laster... ☁️</div>;
-  if (!currentFamily) return <div style={{padding: '40px', textAlign: 'center'}}><h2>Ingen familie valgt</h2><p>Logg inn på nytt.</p><button onClick={handleLogout} className="btn">Logg ut</button></div>;
+  if (loading) return <div style={{padding: '40px', textAlign: 'center', background: '#faf8f4', minHeight: '100vh', color: '#1a2e1f'}}>Laster...</div>;
+  if (!currentFamily) return <div style={{padding: '40px', textAlign: 'center', background: '#faf8f4', minHeight: '100vh'}}><h2 style={{color: '#1a2e1f'}}>Ingen familie valgt</h2><p style={{color: '#4a5e50'}}>Logg inn på nytt.</p><button onClick={handleLogout} style={{background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '8px 16px', color: '#1a2e1f', cursor: 'pointer'}}>Logg ut</button></div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', paddingBottom: '80px' }}>
-      
+    <div style={{ minHeight: '100vh', background: '#faf8f4', paddingBottom: '80px' }}>
+
       {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, #16a8b8 0%, #1298a6 100%)', padding: '24px', color: 'white' }}>
+      <div style={{ background: '#1e3a2f', padding: '24px', color: '#fff' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-                <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>Hei, {displayName || 'Familie'}!</h1>
-                <div className="badge badge-basis" style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', padding: '4px 12px', borderRadius: '12px', marginTop:'4px' }}>
+                <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: '#fff' }}>Hei, {displayName || 'Familie'}!</h1>
+                <div style={{ background: 'rgba(255,255,255,0.15)', color: '#7ec8a0', border: '1px solid rgba(255,255,255,0.3)', padding: '4px 12px', borderRadius: '12px', marginTop:'4px', fontSize: '12px', fontWeight: '600', display: 'inline-block' }}>
                     {points < 100 ? 'Basis' : points < 300 ? 'Aktiv' : 'Premium'} Nivå
                 </div>
             </div>
-            <button onClick={handleLogout} style={{background:'none', border:'1px solid white', color:'white', borderRadius:'8px', padding:'6px 12px', cursor:'pointer', fontSize:'12px'}}>
+            <button onClick={handleLogout} style={{background:'none', border:'1px solid rgba(255,255,255,0.4)', color:'#fff', borderRadius:'8px', padding:'6px 12px', cursor:'pointer', fontSize:'12px'}}>
                 Logg ut
             </button>
         </div>
-        
-        <div style={{ background: 'white', borderRadius: '12px', padding: '20px', color: 'var(--text-primary)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+
+        <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', color: '#1a2e1f', border: '0.5px solid #dedddd' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                <span style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: '600' }}>DINE POENG</span>
-                <span style={{ fontSize: '32px', fontWeight: '700', color: 'var(--primary-color)' }}>{points}</span>
+                <span style={{ fontSize: '14px', color: '#4a5e50', fontWeight: '600' }}>DINE POENG</span>
+                <span style={{ fontSize: '32px', fontWeight: '700', color: '#2d6a4f' }}>{points}</span>
             </div>
-            <div className="progress-bar" style={{ height: '8px', background: '#edf2f7', borderRadius: '4px', overflow: 'hidden' }}>
-                <div className="progress-fill" style={{ height: '100%', background: '#16a8b8', width: `${progressPercentage}%` }} />
+            <div style={{ height: '8px', background: '#e8e0d0', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: '#2d6a4f', width: `${progressPercentage}%`, borderRadius: '4px', transition: 'width 0.3s ease' }} />
             </div>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px', textAlign: 'right' }}>
+            <p style={{ fontSize: '13px', color: '#4a5e50', marginTop: '8px', textAlign: 'right' }}>
                 {nextTierPoints - points} poeng til neste nivå
             </p>
         </div>
@@ -288,22 +319,22 @@ export const FamilyDashboard: React.FC = () => {
       <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
 
         {activeLottery && (
-            <div className="card" style={{ padding: '24px', marginBottom: '24px', border: '2px solid #16a8b8', background: '#f0fdf4' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#166534', marginBottom: '8px', margin: 0 }}>🎟️ {activeLottery.name}</h2>
-                <p style={{ color: '#14532d', marginBottom: '16px' }}>Bli med å støtte laget! Selg lodd digitalt.</p>
-                <button onClick={() => window.location.href = '/my-lottery'} className="btn btn-primary" style={{ width: '100%', background: '#16a8b8', border: 'none' }}>Gå til min loddbok →</button>
+            <div style={{ padding: '24px', marginBottom: '24px', border: '2px solid #2d6a4f', background: '#e8f5ef', borderRadius: '8px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#2d6a4f', marginBottom: '8px', margin: 0 }}>🎟️ {activeLottery.name}</h2>
+                <p style={{ color: '#2d6a4f', marginBottom: '16px' }}>Bli med å støtte laget! Selg lodd digitalt.</p>
+                <button onClick={() => window.location.href = '/my-lottery'} style={{ width: '100%', background: '#2d6a4f', border: 'none', color: '#fff', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til min loddbok →</button>
             </div>
         )}
 
         {incomingProposals.length > 0 && (
             <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '12px', color: '#2c7a7b' }}>🔔 Du har mottatt tilbud!</h2>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '12px', color: '#2d6a4f' }}>🔔 Du har mottatt tilbud!</h2>
                 {incomingProposals.map((prop, idx) => (
-                    <div key={idx} className="card" style={{ padding: '20px', border: '2px solid #38b2ac', background: '#e6fffa', marginBottom: '12px' }}>
-                        <p style={{ marginBottom: '12px', fontSize: '14px' }}><strong>{prop.fromFamilyName}</strong> vil {prop.type === 'swap' ? 'bytte' : 'gi deg'} vakt: <br/> {prop.shiftName}</p>
+                    <div key={idx} style={{ padding: '20px', border: '2px solid #2d6a4f', background: '#e8f5ef', marginBottom: '12px', borderRadius: '8px' }}>
+                        <p style={{ marginBottom: '12px', fontSize: '14px', color: '#1a2e1f' }}><strong>{prop.fromFamilyName}</strong> vil {prop.type === 'swap' ? 'bytte' : 'gi deg'} vakt: <br/> {prop.shiftName}</p>
                         <div style={{ display: 'flex', gap: '12px' }}>
-                            <button onClick={() => handleProposalResponse(prop, true)} className="btn btn-primary" style={{ flex: 1 }}>✅ Godta</button>
-                            <button onClick={() => handleProposalResponse(prop, false)} className="btn" style={{ flex: 1, background: 'white', border: '1px solid #e53e3e', color: '#e53e3e' }}>❌ Avslå</button>
+                            <button onClick={() => handleProposalResponse(prop, true)} style={{ flex: 1, background: '#2d6a4f', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Godta</button>
+                            <button onClick={() => handleProposalResponse(prop, false)} style={{ flex: 1, background: '#fff', border: '1px solid #dc2626', color: '#dc2626', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Avslå</button>
                         </div>
                     </div>
                 ))}
@@ -312,25 +343,25 @@ export const FamilyDashboard: React.FC = () => {
 
         {pendingEvents.length > 0 && (
             <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '12px', color: '#c05621' }}>⚠️ Handlinger kreves</h2>
-                <div className="card" style={{ padding: '20px', border: '2px solid #f6ad55', background: '#fffaf0' }}>
-                    <p style={{ marginBottom: '16px', fontWeight: '600' }}>Du har {pendingEvents.length} arrangementer hvor du må velge vakt:</p>
-                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: 'var(--text-secondary)' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '12px', color: '#854f0b' }}>⚠️ Handlinger kreves</h2>
+                <div style={{ padding: '20px', border: '2px solid #fac775', background: '#fff8e6', borderRadius: '8px' }}>
+                    <p style={{ marginBottom: '16px', fontWeight: '600', color: '#854f0b' }}>Du har {pendingEvents.length} arrangementer hvor du må velge vakt:</p>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#854f0b' }}>
                         {pendingEvents.map(e => <li key={e.id}>{e.name} ({new Date(e.date).toLocaleDateString()})</li>)}
                     </ul>
-                    <button onClick={() => window.location.href = '/my-shifts'} className="btn btn-primary" style={{ width: '100%', background: '#ed8936', border: 'none' }}>Gå til vaktvalg →</button>
+                    <button onClick={() => window.location.href = '/my-shifts'} style={{ width: '100%', background: '#854f0b', border: 'none', color: '#fff', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til vaktvalg →</button>
                 </div>
             </div>
         )}
 
-        <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: 'var(--text-primary)' }}>Dine kommende vakter</h2>
+        <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: '#1a2e1f' }}>Dine kommende vakter</h2>
 
         {myShifts.length === 0 ? (
-            <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
+            <div style={{ padding: '32px', textAlign: 'center', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px' }}>
                 <div style={{ fontSize: '40px', marginBottom: '12px' }}>📅</div>
-                <p style={{ color: 'var(--text-secondary)' }}>Du har ingen kommende vakter.</p>
+                <p style={{ color: '#4a5e50' }}>Du har ingen kommende vakter.</p>
                 {pendingEvents.length === 0 && (
-                    <button onClick={() => window.location.href = '/my-shifts'} className="btn btn-primary" style={{ marginTop: '16px' }}>Se etter ledige vakter</button>
+                    <button onClick={() => window.location.href = '/my-shifts'} style={{ marginTop: '16px', background: '#2d6a4f', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Se etter ledige vakter</button>
                 )}
             </div>
         ) : (
@@ -342,35 +373,69 @@ export const FamilyDashboard: React.FC = () => {
                     const isCritical = (startDateTime.getTime() - new Date().getTime()) / (1000 * 60 * 60) < 48;
 
                     return (
-                        <div key={shift.id} className="card" style={{ padding: '0', overflow: 'hidden', border: isCritical ? '2px solid #e53e3e' : '1px solid var(--border-color)' }}>
-                            {isCritical && <div style={{ background: '#e53e3e', color: 'white', padding: '8px 16px', fontSize: '13px', fontWeight: '700' }}>⚠️ Under 48 timer til start!</div>}
+                        <div key={shift.id} style={{ padding: '0', overflow: 'hidden', border: isCritical ? '2px solid #dc2626' : '0.5px solid #dedddd', borderRadius: '8px', background: '#fff' }}>
+                            {isCritical && <div style={{ background: '#dc2626', color: '#fff', padding: '8px 16px', fontSize: '13px', fontWeight: '700' }}>⚠️ Under 48 timer til start!</div>}
                             {(isSwapRequested || isSubstituteRequested) && !isCritical && (
-                                <div style={{ background: isSubstituteRequested ? '#fee2e2' : '#fef9c3', color: isSubstituteRequested ? '#991b1b' : '#854d0e', padding: '8px 16px', fontSize: '12px', fontWeight: '600', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+                                <div style={{ background: isSubstituteRequested ? '#fff5f5' : '#fff8e6', color: isSubstituteRequested ? '#dc2626' : '#854f0b', padding: '8px 16px', fontSize: '12px', fontWeight: '600', borderBottom: isSubstituteRequested ? '1px solid #fecaca' : '1px solid #fac775' }}>
                                     {isSubstituteRequested ? '📢 Søker vikar' : '🔄 På byttebørsen'}
+                                </div>
+                            )}
+                            {shift.bidStatus === 'pending' && shift.bidAmount && (
+                                <div style={{ padding: '10px 16px', background: '#fff8e6', borderBottom: '1px solid #fac775', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#854f0b' }}>💰 Bud mottatt: {shift.bidAmount} kr</div>
+                                        {shift.bidMessage && <div style={{ fontSize: '11px', color: '#854f0b' }}>"{shift.bidMessage}"</div>}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬</button>
+                                        <button onClick={() => handleAcceptBid(shift.substituteRequestId!, shift.bidFamilyId!, shift.id, shift.bidAmount!)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
+                                    </div>
+                                </div>
+                            )}
+                            {shift.bidStatus === 'accepted' && shift.substituteRequestId && (
+                                <div style={{ padding: '10px 16px', background: '#e8f5ef', borderBottom: '1px solid #b8dfc9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#2d6a4f' }}>Vikar bekreftet</div>
+                                    <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 14px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬 Chat med vikar</button>
                                 </div>
                             )}
                             <div style={{ background: 'rgba(0,0,0,0.03)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{new Date(shift.date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' })}</span>
-                                    <span style={{ color: 'var(--text-secondary)' }}>•</span>
-                                    <span style={{ fontSize: '14px', fontWeight: '500' }}>{shift.eventName}</span>
+                                    <span style={{ fontWeight: '700', color: '#1a2e1f' }}>{new Date(shift.date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' })}</span>
+                                    <span style={{ color: '#6b7f70' }}>•</span>
+                                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#1a2e1f' }}>{shift.eventName}</span>
                                 </div>
-                                {shift.isConfirmed ? <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>✅ Bekreftet</span> : <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>Må bekreftes</span>}
+                                {shift.isConfirmed ? <span style={{ background: '#e8f5ef', color: '#2d6a4f', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Bekreftet</span> : <span style={{ background: '#fff8e6', color: '#854f0b', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Må bekreftes</span>}
                             </div>
                             <div style={{ padding: '16px' }}>
                                 <div style={{ marginBottom: '16px' }}>
-                                    <div style={{ fontSize: '16px', fontWeight: '700' }}>{shift.name}</div>
-                                    <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                                        ⏰ {shift.startTime} - {shift.endTime} <br/> 
+                                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#1a2e1f' }}>{shift.name}</div>
+                                    <div style={{ fontSize: '14px', color: '#4a5e50' }}>
+                                        ⏰ {shift.startTime} - {shift.endTime} <br/>
                                         📍 {shift.location || 'Sted ikke angitt'}
                                     </div>
-                                    {shift.description && <div style={{marginTop:'8px', fontSize:'13px', background:'#f8fafc', padding:'8px', borderRadius:'4px', color:'#4b5563', fontStyle:'italic'}}>ℹ️ {shift.description}</div>}
+                                    {shift.description && <div style={{marginTop:'8px', fontSize:'13px', background:'#faf8f4', padding:'8px', borderRadius:'4px', color:'#4a5e50', fontStyle:'italic'}}>ℹ️ {shift.description}</div>}
                                 </div>
-                                <div style={{ display: 'flex', gap: '12px' }}>
-                                    {!shift.isConfirmed && !isCritical && <button onClick={() => handleConfirmShift(shift.assignmentId)} className="btn btn-primary" style={{ flex: 1, background: '#48bb78' }}>👍 Jeg kommer</button>}
-                                    {!isCritical && <button onClick={() => handleSwapToggle(shift.id, shift.swapRequestId)} className="btn" style={{ flex: 1, border: '1px solid #ddd' }}>{isSwapRequested ? '↩️ Trekk' : '↔️ Bytt'}</button>}
-                                    <button onClick={() => handleSubstituteToggle(shift.id, shift.substituteRequestId)} className="btn" style={{ flex: 1, border: '1px solid #ddd' }}>{isSubstituteRequested ? '↩️ Trekk' : '💰 Vikar'}</button>
-                                    <button onClick={() => addToCalendar(shift)} className="btn" style={{ flex: 1, background: 'white', border: '1px solid #d1d5db', color: '#374151' }}>📅 Kalender</button>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                    {!shift.isConfirmed && !isCritical && (
+                                      <button onClick={() => handleConfirmShift(shift.assignmentId)} style={{ flex: 1, background: '#2d6a4f', minWidth: '120px', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                                        <div style={{ fontSize: '16px' }}>👍</div>
+                                        <div style={{ fontSize: '12px', fontWeight: '600' }}>Jeg kommer</div>
+                                      </button>
+                                    )}
+                                    {!isCritical && (
+                                      <button onClick={() => handleSwapToggle(shift.id, shift.swapRequestId)} style={{ flex: 1, border: '0.5px solid #dedddd', minWidth: '100px', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                                        <div style={{ fontSize: '16px' }}>{isSwapRequested ? '↩️' : '↔️'}</div>
+                                        <div style={{ fontSize: '11px', color: '#4a5e50' }}>{isSwapRequested ? 'Avbryt bytte' : 'Bytt med noen'}</div>
+                                      </button>
+                                    )}
+                                    <button onClick={() => handleSubstituteToggle(shift.id, shift.substituteRequestId)} style={{ flex: 1, border: '0.5px solid #dedddd', minWidth: '100px', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                                      <div style={{ fontSize: '16px' }}>{isSubstituteRequested ? '↩️' : '🙋'}</div>
+                                      <div style={{ fontSize: '11px', color: '#4a5e50' }}>{isSubstituteRequested ? 'Avbryt vikar-søk' : 'Finn vikar'}</div>
+                                    </button>
+                                    <button onClick={() => addToCalendar(shift)} style={{ flex: 1, background: '#fff', border: '0.5px solid #dedddd', minWidth: '100px', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                                      <div style={{ fontSize: '16px' }}>📅</div>
+                                      <div style={{ fontSize: '11px', color: '#4a5e50' }}>Legg i kalender</div>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -379,18 +444,49 @@ export const FamilyDashboard: React.FC = () => {
             </div>
         )}
 
-        <div className="card" style={{ padding: '20px', marginTop: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💰 Vil du tjene ekstra?</h3>
-            <button onClick={() => window.location.href = '/substitute-marketplace'} className="btn btn-primary" style={{ width: '100%', background: '#16a8b8', border: 'none' }}>Gå til Vikar-børsen →</button>
+        <div style={{ padding: '20px', marginTop: '20px', background: '#e8f5ef', border: '1px solid #b8dfc9', borderRadius: '8px' }}>
+            {sponsorsVisible && (
+              <>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f', marginBottom: '8px' }}>🏪 Sponsorrabatter</h3>
+                <p style={{ fontSize: '13px', color: '#4a5e50', marginBottom: '12px' }}>Se dine rabatter basert på ditt poengnivå.</p>
+                <button onClick={() => window.location.href = '/sponsors'} style={{ width: '100%', marginBottom: '16px', background: '#2d6a4f', color: '#fff', border: 'none', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Se mine rabatter →</button>
+              </>
+            )}
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f', marginBottom: '8px' }}>🙋 Jeg vil ha vakter</h3>
+            <p style={{ fontSize: '12px', color: '#4a5e50', marginBottom: '8px' }}>Meld din interesse — du prioriteres ved tildeling.</p>
+            <button onClick={async () => {
+              if (!currentFamily) return;
+              const types = ['Kioskvakt', 'Billettsalg', 'Fair play', 'Rydding', 'Rigging', 'Baking', 'Alle typer'];
+              const current = (() => { try { return JSON.parse(currentFamily.willing_shift_types || '[]'); } catch { return []; } })();
+              const chosen = prompt('Hvilke vakttyper ønsker du?\n\n' + types.map((t, i) => `${current.includes(t) ? '✅' : '☐'} ${t}`).join('\n') + '\n\nSkriv inn nummer (kommaseparert) eller "alle":', current.length > 0 ? current.join(', ') : '');
+              if (chosen === null) return;
+              const selected = chosen.toLowerCase() === 'alle' ? ['Alle typer'] : chosen.split(',').map(s => s.trim()).filter(Boolean);
+              await supabase.from('families').update({ willing_shift_types: JSON.stringify(selected) }).eq('id', currentFamily.id);
+              alert('✅ Registrert! Koordinator ser din interesse.');
+            }} style={{ width: '100%', marginBottom: '16px', fontSize: '13px', background: '#fff', color: '#2d6a4f', border: '0.5px solid #dedddd', padding: '10px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+              Meld interesse for vakter
+            </button>
+
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f', marginBottom: '8px' }}>💰 Vil du tjene ekstra?</h3>
+            <button onClick={() => window.location.href = '/substitute-marketplace'} style={{ width: '100%', background: '#2d6a4f', border: 'none', color: '#fff', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til Vikar-børsen →</button>
         </div>
 
       </div>
-      <div className="bottom-nav">
-        <button className="bottom-nav-item active"><div className="bottom-nav-icon">🏠</div>Hjem</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/my-lottery'}><div className="bottom-nav-icon">🎟️</div>Lodd</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/my-shifts'}><div className="bottom-nav-icon">📅</div>Vakter</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/family-members'}><div className="bottom-nav-icon">👨‍👩‍👧</div>Familie</button>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '0.5px solid #dedddd', display: 'flex', justifyContent: 'space-around', padding: '8px 0', zIndex: 100 }}>
+        <button style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#2d6a4f', fontSize: '11px', fontWeight: '600', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🏠</div>Hjem</button>
+        <button onClick={() => window.location.href = '/my-lottery'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🎟️</div>Lodd</button>
+        <button onClick={() => window.location.href = '/my-shifts'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>📅</div>Vakter</button>
+        <button onClick={() => window.location.href = '/family-members'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>👨‍👩‍👧</div>Familie</button>
       </div>
+      {chatOpen && currentFamily && (
+        <VikarChat
+          requestId={chatOpen.requestId}
+          currentUserId={currentFamily.id}
+          currentUserName={displayName}
+          otherName={chatOpen.otherName}
+          onClose={() => setChatOpen(null)}
+        />
+      )}
     </div>
   );
 };

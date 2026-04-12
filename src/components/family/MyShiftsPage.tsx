@@ -5,7 +5,7 @@ interface SwapRequest {
   id?: string;
   familyId: string;
   date: string;
-  type: 'market' | 'direct'; 
+  type: 'market' | 'direct';
   targetFamilyId?: string;
   comment?: string;
 }
@@ -27,6 +27,7 @@ interface Shift {
   endTime: string;
   peopleNeeded: number;
   assignedFamilies: string[];
+  assignedNames?: string[];
   assignedPeople?: number;
   swapRequest?: SwapRequest;
   swapProposal?: SwapProposal;
@@ -42,6 +43,7 @@ interface Event {
   sport?: string;
   shifts: Shift[];
   assignmentMode?: string;
+  selfServiceOpenDate?: string;
 }
 
 export const MyShiftsPage: React.FC = () => {
@@ -51,7 +53,7 @@ export const MyShiftsPage: React.FC = () => {
   const [activeTeamName, setActiveTeamName] = useState('Gutter 2016');
   const [activeTab, setActiveTab] = useState<'available' | 'mine' | 'swap'>('available');
   const [loading, setLoading] = useState(true);
-  
+
   // Vi trenger en liste over andre familier KUN for bytte-modalen (hvem skal vi bytte med?)
   // Men vi trenger ikke vise den i headeren.
   const [otherFamilies, setOtherFamilies] = useState<any[]>([]);
@@ -62,8 +64,8 @@ export const MyShiftsPage: React.FC = () => {
   const [swapComment, setSwapComment] = useState('');
   const [swapTargetFamily, setSwapTargetFamily] = useState('');
 
-  useEffect(() => { 
-      fetchSupabaseData(); 
+  useEffect(() => {
+      fetchSupabaseData();
   }, []);
 
   const fetchSupabaseData = async () => {
@@ -81,7 +83,7 @@ export const MyShiftsPage: React.FC = () => {
 
         // 2. Finn MIN familie (via Auth eller LocalStorage)
         let myFamilyId = user?.id;
-        
+
         // Hvis vi mangler ID, prøv å finne via e-post i databasen
         if (!myFamilyId && user?.email) {
              const { data: familyByEmail } = await supabase
@@ -119,7 +121,8 @@ export const MyShiftsPage: React.FC = () => {
                     assignments (
                         id,
                         family_id,
-                        status
+                        status,
+                        families (name, family_members(name, role))
                     ),
                     requests (
                         id,
@@ -144,13 +147,26 @@ export const MyShiftsPage: React.FC = () => {
                 location: e.location,
                 sport: e.sport,
                 assignmentMode: e.assignment_mode,
+                selfServiceOpenDate: e.self_service_open_date,
                 shifts: e.shifts.map((s: any) => {
                     const assignedIds = s.assignments?.map((a: any) => a.family_id) || [];
                     const myAssignment = s.assignments?.find((a: any) => a.family_id === myFamilyId);
                     const activeRequests = s.requests?.filter((r: any) => r.is_active) || [];
                     const swapReq = activeRequests.find((r: any) => r.type === 'swap');
                     const subReq = activeRequests.find((r: any) => r.type === 'substitute');
-                    
+
+                    // Finn hvem som søker vikar (de skal ikke vises som tildelt)
+                    const subRequesterIds = new Set(
+                        activeRequests.filter((r: any) => r.type === 'substitute').map((r: any) => r.family_id)
+                    );
+
+                    const assignedNames = s.assignments
+                        ?.filter((a: any) => !subRequesterIds.has(a.family_id))
+                        .map((a: any) => {
+                            const children = a.families?.family_members?.filter((m: any) => m.role === 'child') || [];
+                            return children.length > 0 ? children[0].name : a.families?.name || 'Ukjent';
+                        }) || [];
+
                     return {
                         id: s.id,
                         name: s.name,
@@ -158,6 +174,7 @@ export const MyShiftsPage: React.FC = () => {
                         endTime: s.end_time?.slice(0,5),
                         peopleNeeded: s.people_needed,
                         assignedFamilies: assignedIds,
+                        assignedNames,
                         assignedPeople: assignedIds.length,
                         assignmentId: myAssignment?.id,
                         swapRequest: swapReq ? {
@@ -226,7 +243,7 @@ export const MyShiftsPage: React.FC = () => {
   const cancelSwapRequest = async (requestId?: string) => {
     if (!requestId) return;
     if (!confirm('Vil du trekke tilbake bytteforespørselen?')) return;
-    
+
     await supabase.from('requests').update({ is_active: false }).eq('id', requestId);
     fetchSupabaseData();
   };
@@ -249,10 +266,21 @@ export const MyShiftsPage: React.FC = () => {
 
   const claimShift = async (shiftId: string) => {
     if (!currentFamilyId) return alert('Ingen familie valgt');
+
+    // Sjekk i DB om allerede tildelt denne vakten
+    const { data: existing } = await supabase
+      .from('assignments')
+      .select('id')
+      .eq('shift_id', shiftId)
+      .eq('family_id', currentFamilyId)
+      .maybeSingle();
+    if (existing) { alert('Du er allerede registrert på denne vakten.'); return; }
+
+    // Sjekk om familien har vakt på dette arrangementet allerede
     const event = events.find(e => e.shifts.some(s => s.id === shiftId));
     if (event) {
         const hasShift = event.shifts.some(s => s.assignedFamilies.includes(currentFamilyId));
-        if (hasShift) { alert('Du har allerede en vakt på dette arrangementet.'); return; }
+        if (hasShift) { alert('Du har allerede valgt en vakt på dette arrangementet.'); return; }
     }
 
     const { error } = await supabase.from('assignments').insert({
@@ -294,10 +322,21 @@ export const MyShiftsPage: React.FC = () => {
     alert('✅ Vakt overtatt!');
     fetchSupabaseData();
   };
-  
+
   const scrollToEvent = (id: string) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const isSelfServiceOpen = (event: Event): boolean => {
+    if (event.assignmentMode !== 'self-service') return true;
+    if (!event.selfServiceOpenDate) return true; // Ingen dato satt = alltid åpen
+    return new Date() >= new Date(event.selfServiceOpenDate);
+  };
+
+  const formatOpenDate = (isoDate: string): string => {
+    const d = new Date(isoDate);
+    return `${d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' })} kl ${d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   const getFilteredEvents = () => {
@@ -312,7 +351,8 @@ export const MyShiftsPage: React.FC = () => {
 
         if (activeTab === 'mine') return isTakenByMe;
         if (activeTab === 'swap') return (swapReq && !isMySwap) || isDirectToMe;
-        return event.assignmentMode === 'self-service' && spotsLeft > 0 && !isTakenByMe;
+        // Vis alle vakter i selvvalg (inkl. din egen og fulle)
+        return event.assignmentMode === 'self-service';
       });
 
       if (relevantShifts.length > 0) {
@@ -335,45 +375,47 @@ export const MyShiftsPage: React.FC = () => {
         const spotsLeft = s.peopleNeeded - (s.assignedFamilies?.length || 0);
         const swapReq = s.swapRequest;
         const isDirectToMe = swapReq?.type === 'direct' && swapReq?.targetFamilyId === currentFamilyId;
-        
+
         if (type === 'mine' && isTakenByMe) count++;
-        if (type === 'available' && e.assignmentMode === 'self-service' && spotsLeft > 0 && !isTakenByMe) count++;
+        if (type === 'available' && e.assignmentMode === 'self-service') count++;
         if (type === 'swap' && swapReq && (swapReq.familyId !== currentFamilyId || isDirectToMe)) count++;
     }));
     return count;
   };
 
-  if (loading) return <div style={{padding: '40px', textAlign:'center'}}>Laster vaktliste... ☁️</div>;
+  if (loading) return <div style={{padding: '40px', textAlign:'center', color: '#1a2e1f'}}>Laster vaktliste... ☁️</div>;
 
   if (!currentFamilyId) {
       return (
-          <div style={{padding: '40px', textAlign: 'center'}}>
+          <div style={{padding: '40px', textAlign: 'center', color: '#1a2e1f'}}>
               <h2>Ingen familie valgt</h2>
-              <p>Du må være registrert i en familie for å velge vakter.</p>
+              <p style={{ color: '#4a5e50' }}>Du må være registrert i en familie for å velge vakter.</p>
           </div>
       );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', paddingBottom: '80px' }}>
-      <div style={{ background: 'linear-gradient(135deg, #16a8b8 0%, #1298a6 100%)', padding: '24px', color: 'white' }}>
+    <div style={{ minHeight: '100vh', background: '#faf8f4', paddingBottom: '80px' }}>
+      <div style={{ background: '#1e3a2f', padding: '24px', color: 'white' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', maxWidth: '1200px', margin: '0 auto' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Velg vakter</h1>
-            <p style={{ fontSize: '14px', opacity: 0.9, marginTop: '4px' }}>Logget inn som: {currentUserEmail}</p>
+            <h1 style={{ fontSize: '24px', fontWeight: '700', color: 'white' }}>Velg vakter</h1>
+            <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)', marginTop: '4px' }}>
+              {(() => { try { const u = JSON.parse(localStorage.getItem('dugnad_user') || '{}'); return u.name || u.fullName || currentUserEmail; } catch { return currentUserEmail; } })()}
+            </p>
           </div>
           {/* Slettet dropdown herfra. Bruk DevTools for å bytte. */}
         </div>
       </div>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: 'white', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid #dedddd', background: '#fff', justifyContent: 'center' }}>
         <div style={{ display: 'flex', width: '100%', maxWidth: '1200px' }}>
             {['available', 'mine', 'swap'].map(t => (
                 <button key={t} onClick={() => setActiveTab(t as any)} style={{
                     flex: 1, padding: '16px', border: 'none', background: 'none', fontSize: '14px', cursor: 'pointer',
                     fontWeight: activeTab === t ? '600' : '400',
-                    color: activeTab === t ? 'var(--primary-color)' : 'var(--text-secondary)',
-                    borderBottom: activeTab === t ? '2px solid var(--primary-color)' : '2px solid transparent'
+                    color: activeTab === t ? '#1a2e1f' : '#6b7f70',
+                    borderBottom: activeTab === t ? '2px solid #2d6a4f' : '2px solid transparent'
                 }}>
                     {t === 'available' ? '📋 Ledige' : t === 'mine' ? '✅ Mine vakter' : '🔄 Byttebørs'} ({getCount(t)})
                 </button>
@@ -382,11 +424,11 @@ export const MyShiftsPage: React.FC = () => {
       </div>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px', display: 'grid', gridTemplateColumns: '280px 1fr', gap: '32px' }}>
-        
+
         {/* Sidebar */}
         <div style={{ display: sortedKeys.length === 0 ? 'none' : 'block' }}>
-          <div style={{ position: 'sticky', top: '20px', background: 'white', borderRadius: 'var(--radius-lg)', padding: '16px', border: '1px solid var(--border-color)', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: 'var(--text-secondary)' }}>
+          <div style={{ position: 'sticky', top: '20px', background: '#fff', borderRadius: '8px', padding: '16px', border: '0.5px solid #dedddd', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#4a5e50' }}>
               {activeTab === 'swap' ? 'BYTTEFORESPØRSLER' : 'ARRANGEMENTER'}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -394,9 +436,9 @@ export const MyShiftsPage: React.FC = () => {
                 const day = groupedEvents[name][0];
                 const date = new Date(day.date);
                 return (
-                  <button key={name} onClick={() => scrollToEvent(name)} style={{ textAlign: 'left', padding: '10px', background: 'var(--background)', border: '1px solid transparent', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <button key={name} onClick={() => scrollToEvent(name)} style={{ textAlign: 'left', padding: '10px', background: '#faf8f4', border: '1px solid transparent', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#1a2e1f' }}>
                     <div style={{ fontWeight: '600' }}>{date.toLocaleDateString('nb-NO', { day: '2-digit', month: '2-digit' })} - {name}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>⚽ {activeTeamName}</div>
+                    <div style={{ fontSize: '12px', color: '#4a5e50' }}>⚽ {activeTeamName}</div>
                   </button>
                 );
               })}
@@ -407,9 +449,9 @@ export const MyShiftsPage: React.FC = () => {
         {/* Main List */}
         <div>
           {sortedKeys.length === 0 ? (
-            <div className="card" style={{ padding: '48px', textAlign: 'center' }}>
+            <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '48px', textAlign: 'center' }}>
               <div style={{ fontSize: '40px', marginBottom: '16px' }}>📭</div>
-              <p style={{ color: 'var(--text-secondary)' }}>
+              <p style={{ color: '#4a5e50' }}>
                 {activeTab === 'swap' ? 'Ingen bytteforespørsler akkurat nå.' : activeTab === 'mine' ? 'Ingen vakter.' : 'Ingen ledige vakter.'}
               </p>
             </div>
@@ -421,93 +463,123 @@ export const MyShiftsPage: React.FC = () => {
               const hasShiftInGroup = events.some(e => e.eventName.startsWith(name) && e.shifts.some(s => s.assignedFamilies?.includes(currentFamilyId)));
 
               return (
-                <div key={name} id={name} className="card" style={{ padding: '24px', marginBottom: '32px', scrollMarginTop: '20px' }}>
-                  <div style={{ marginBottom: '24px', borderBottom: '2px solid var(--primary-color)', paddingBottom: '16px' }}>
+                <div key={name} id={name} style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '24px', marginBottom: '32px', scrollMarginTop: '20px' }}>
+                  <div style={{ marginBottom: '24px', borderBottom: '2px solid #2d6a4f', paddingBottom: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>{name}</h2>
-                        {hasShiftInGroup && activeTab === 'available' && <span className="badge" style={{background:'#dcfce7', color:'#166534'}}>✓ Vakt valgt</span>}
+                        <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: '#1a2e1f' }}>{name}</h2>
+                        {hasShiftInGroup && activeTab === 'available' && <span style={{background:'#e8f5ef', color:'#2d6a4f', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '600'}}>✓ Vakt valgt</span>}
                     </div>
-                    <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>📍 {location}</div>
+                    <div style={{ fontSize: '14px', color: '#4a5e50', marginTop: '4px' }}>📍 {location}</div>
                   </div>
 
                   {group.map((event: Event) => (
                     <div key={event.id} style={{ marginBottom: '24px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', background: '#f0f9ff', padding: '8px 12px', borderRadius: '4px', display: 'inline-block' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', background: '#e8f5ef', color: '#1a2e1f', padding: '8px 12px', borderRadius: '4px', display: 'inline-block' }}>
                         📅 {new Date(event.date).toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}
                       </h3>
-                      
+                      {activeTab === 'available' && !isSelfServiceOpen(event) && event.selfServiceOpenDate && (
+                        <div style={{ padding: '10px 14px', background: '#fff8e6', borderRadius: '8px', border: '1px solid #fac775', marginBottom: '12px', fontSize: '13px', color: '#854f0b' }}>
+                          🕐 Selvvalg av vakter åpner <strong>{formatOpenDate(event.selfServiceOpenDate)}</strong>. Du kan se vaktene, men ikke velge ennå.
+                        </div>
+                      )}
+
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {event.shifts.map((shift) => {
                           const isTakenByMe = shift.assignedFamilies?.includes(currentFamilyId);
                           const spotsLeft = shift.peopleNeeded - (shift.assignedFamilies?.length || 0);
                           const isFull = spotsLeft <= 0;
-                          
+
                           const swapReq = shift.swapRequest;
                           const subReq = shift.substituteRequest;
-                          
+
                           const isDirectToMe = swapReq?.type === 'direct' && swapReq?.targetFamilyId === currentFamilyId;
                           const swapperName = swapReq ? otherFamilies.find(f => f.id === swapReq.familyId)?.name || 'Ukjent' : 'Ukjent';
-                          
+
                           return (
-                            <div key={shift.id} style={{ 
-                                display: 'grid', gridTemplateColumns: '2fr 140px 100px 140px', alignItems: 'center',
-                                padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)',
-                                background: isDirectToMe ? '#ebf8ff' : isTakenByMe ? '#fff' : '#fff',
-                                borderColor: isDirectToMe ? '#3182ce' : 'var(--border-color)'
+                            <div key={shift.id} style={{
+                                display: 'grid', gridTemplateColumns: '2fr 140px 100px 160px', alignItems: 'center',
+                                padding: '16px', borderRadius: '8px', border: isTakenByMe ? '2px solid #2d6a4f' : isDirectToMe ? '1px solid #2d6a4f' : '0.5px solid #dedddd',
+                                background: isTakenByMe ? '#e8f5ef' : isDirectToMe ? '#e8f5ef' : '#ffffff',
+                                fontStyle: isTakenByMe && activeTab === 'available' ? 'italic' : 'normal'
                             }}>
                               <div>
-                                <div style={{ fontWeight: '600' }}>{shift.name}</div>
-                                
+                                <div style={{ fontWeight: '600', color: '#1a2e1f' }}>{shift.name}</div>
+
                                 {isTakenByMe && swapReq && (
                                     <div style={{ marginTop: '6px', fontSize: '12px' }}>
-                                        <span style={{color: '#d97706', fontWeight:'600', background:'#fef3c7', padding:'2px 6px', borderRadius:'4px'}}>🔄 Ligger ute på byttebørsen</span>
+                                        <span style={{color: '#854f0b', fontWeight:'600', background:'#fff8e6', padding:'2px 6px', borderRadius:'4px', border: '1px solid #fac775'}}>🔄 Ligger ute på byttebørsen</span>
                                     </div>
                                 )}
-                                
-                                {isDirectToMe && <div style={{fontSize: '12px', color: '#2b6cb0', fontWeight: '600'}}>📨 Tilbud fra {swapperName}</div>}
-                                {swapReq?.type === 'market' && activeTab === 'swap' && <div style={{fontSize: '12px', color: '#d97706'}}>Fra {swapperName}: <em>"{swapReq.comment}"</em></div>}
+
+                                {isDirectToMe && <div style={{fontSize: '12px', color: '#2d6a4f', fontWeight: '600'}}>📨 Tilbud fra {swapperName}</div>}
+                                {swapReq?.type === 'market' && activeTab === 'swap' && <div style={{fontSize: '12px', color: '#854f0b'}}>Fra {swapperName}: <em>"{swapReq.comment}"</em></div>}
                               </div>
 
-                              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                              <div style={{ fontSize: '13px', color: '#4a5e50' }}>
                                 {activeTab === 'swap' ? 'Ønsker bytte' : isFull ? 'Fulltegnet' : `${spotsLeft} ledig`}
+                                {activeTab === 'available' && shift.assignedNames && shift.assignedNames.length > 0 && !isFull && (
+                                  <div style={{ fontSize: '11px', color: '#6b7f70', marginTop: '2px' }}>{shift.assignedNames.join(', ')}</div>
+                                )}
                               </div>
 
-                              <div style={{ fontSize: '13px', fontFamily: 'monospace' }}>{shift.startTime}-{shift.endTime}</div>
+                              <div style={{ fontSize: '13px', fontFamily: 'monospace', color: '#1a2e1f' }}>{shift.startTime}-{shift.endTime}</div>
 
                               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                 {activeTab === 'mine' ? (
                                   <div style={{ display: 'flex', gap: '8px' }}>
                                     {!swapReq ? (
-                                        <button onClick={() => openSwapModal(event.id, shift.id)} className="btn" style={{ fontSize: '12px', padding: '6px 12px', background: 'white', border: '1px solid var(--border-color)' }} disabled={!!subReq}>
+                                        <button onClick={() => openSwapModal(event.id, shift.id)} style={{ fontSize: '12px', padding: '6px 12px', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }} disabled={!!subReq}>
                                             ↔️ Bytt
                                         </button>
                                     ) : (
                                         <>
-                                            <button onClick={() => openSwapModal(event.id, shift.id, swapReq)} className="btn" style={{ fontSize: '12px', padding: '6px 12px', background: '#fefce8', border: '1px solid #eab308', color: '#854d0e' }}>
+                                            <button onClick={() => openSwapModal(event.id, shift.id, swapReq)} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff8e6', border: '1px solid #fac775', color: '#854f0b', borderRadius: '8px', cursor: 'pointer' }}>
                                                 ✏️ Endre
                                             </button>
-                                            <button onClick={() => cancelSwapRequest(swapReq.id)} className="btn" style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '1px solid #e53e3e', color: '#e53e3e' }}>
+                                            <button onClick={() => cancelSwapRequest(swapReq.id)} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '1px solid #dc2626', color: '#dc2626', borderRadius: '8px', cursor: 'pointer' }}>
                                                 ❌ Trekk
                                             </button>
                                         </>
                                     )}
-                                    
+
                                     {!subReq ? (
-                                        <button onClick={() => handleSubstituteToggle(shift.id, undefined, false)} className="btn" style={{ fontSize: '12px', padding: '6px 12px', background: 'white', border: '1px solid var(--border-color)' }} disabled={!!swapReq}>
+                                        <button onClick={() => handleSubstituteToggle(shift.id, undefined, false)} style={{ fontSize: '12px', padding: '6px 12px', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }} disabled={!!swapReq}>
                                             💰 Vikar
                                         </button>
                                     ) : (
-                                        <button onClick={() => handleSubstituteToggle(shift.id, subReq.id, true)} className="btn" style={{ fontSize: '12px', padding: '6px 12px', background: '#fff5f5', border: '1px solid #f43f5e', color: '#be123c' }}>
+                                        <button onClick={() => handleSubstituteToggle(shift.id, subReq.id, true)} style={{ fontSize: '12px', padding: '6px 12px', background: '#fef2f2', border: '1px solid #dc2626', color: '#dc2626', borderRadius: '8px', cursor: 'pointer' }}>
                                             ❌ Trekk vikar
                                         </button>
                                     )}
                                   </div>
                                 ) : activeTab === 'swap' ? (
-                                  <button onClick={() => initiateSwapOrTake(shift, swapReq!.familyId)} className="btn btn-primary" style={{ fontSize: '13px', padding: '6px 16px' }}>Ta / Bytt</button>
+                                  <button onClick={() => initiateSwapOrTake(shift, swapReq!.familyId)} style={{ fontSize: '13px', padding: '6px 16px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Ta / Bytt</button>
+                                ) : isSelfServiceOpen(event) ? (
+                                  isTakenByMe ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#2d6a4f', background: '#e8f5ef', padding: '4px 10px', borderRadius: '8px' }}>✅ Din</span>
+                                      <button onClick={() => { if (confirm('Vil du trekke deg fra denne vakten?')) { supabase.from('assignments').delete().eq('shift_id', shift.id).eq('family_id', currentFamilyId).then(() => fetchSupabaseData()); } }} style={{ fontSize: '11px', padding: '4px 10px', color: '#6b7f70', border: '0.5px solid #dedddd', background: '#ffffff', borderRadius: '8px', cursor: 'pointer' }}>
+                                        Bytt
+                                      </button>
+                                    </div>
+                                  ) : isFull ? (
+                                    <span style={{ fontSize: '12px', color: '#6b7f70' }}>
+                                      {shift.assignedNames && shift.assignedNames.length > 0 ? shift.assignedNames.join(', ') : 'Fulltegnet'}
+                                    </span>
+                                  ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {shift.assignedNames && shift.assignedNames.length > 0 && (
+                                        <span style={{ fontSize: '11px', color: '#6b7f70' }}>{shift.assignedNames.join(', ')}</span>
+                                      )}
+                                      <button onClick={() => claimShift(shift.id)} style={{ fontSize: '13px', padding: '6px 16px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>
+                                        Velg
+                                      </button>
+                                    </div>
+                                  )
                                 ) : (
-                                  <button onClick={() => claimShift(shift.id)} className="btn btn-primary" style={{ fontSize: '13px', padding: '6px 16px', opacity: (isFull || hasShiftInGroup) ? 0.5 : 1, cursor: (isFull || hasShiftInGroup) ? 'not-allowed' : 'pointer' }} disabled={isFull || hasShiftInGroup}>
-                                    {hasShiftInGroup ? 'Har vakt' : 'Velg'}
-                                  </button>
+                                  <span style={{ fontSize: '12px', color: '#854f0b', background: '#fff8e6', padding: '6px 12px', borderRadius: '8px', textAlign: 'center', lineHeight: '1.3', border: '1px solid #fac775' }}>
+                                    🕐 Åpner {formatOpenDate(event.selfServiceOpenDate!)}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -525,30 +597,33 @@ export const MyShiftsPage: React.FC = () => {
 
       {swapModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div className="card" style={{ width: '400px', padding: '24px' }}>
-                <h3 style={{ marginTop: 0 }}>Bytt vakt</h3>
+            <div style={{ width: '400px', padding: '24px', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px' }}>
+                <h3 style={{ marginTop: 0, color: '#1a2e1f' }}>Bytt vakt</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', background: swapType === 'market' ? '#ebf8ff' : 'white' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', background: swapType === 'market' ? '#e8f5ef' : '#ffffff' }}>
                         <input type="radio" name="swapType" checked={swapType === 'market'} onChange={() => setSwapType('market')} />
-                        <div><div style={{ fontWeight: '600' }}>📢 Legg ut på Byttebørs</div></div>
+                        <div><div style={{ fontWeight: '600', color: '#1a2e1f' }}>📢 Legg ut på Byttebørs</div></div>
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', background: swapType === 'direct' ? '#ebf8ff' : 'white' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', background: swapType === 'direct' ? '#e8f5ef' : '#ffffff' }}>
                         <input type="radio" name="swapType" checked={swapType === 'direct'} onChange={() => setSwapType('direct')} />
-                        <div><div style={{ fontWeight: '600' }}>✅ Jeg har avtalt bytte</div></div>
+                        <div><div style={{ fontWeight: '600', color: '#1a2e1f' }}>✅ Jeg har avtalt bytte</div></div>
                     </label>
                 </div>
-                {swapType === 'market' && <div style={{ marginBottom: '16px' }}><label className="input-label">Melding</label><input type="text" className="input" value={swapComment} onChange={(e) => setSwapComment(e.target.value)} placeholder="F.eks. 'Bytter mot søndag'..." /></div>}
-                {swapType === 'direct' && <div style={{ marginBottom: '16px' }}><label className="input-label">Hvem har du avtalt med?</label><select className="input" value={swapTargetFamily} onChange={(e) => setSwapTargetFamily(e.target.value)}><option value="">-- Velg familie --</option>{otherFamilies.filter(f => f.id !== currentFamilyId).map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}</select></div>}
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><button onClick={() => setSwapModal(null)} className="btn">Avbryt</button><button onClick={confirmSwapRequest} className="btn btn-primary">Bekreft</button></div>
+                {swapType === 'market' && <div style={{ marginBottom: '16px' }}><label style={{ fontSize: '13px', fontWeight: '600', color: '#4a5e50', display: 'block', marginBottom: '4px' }}>Melding</label><input type="text" value={swapComment} onChange={(e) => setSwapComment(e.target.value)} placeholder="F.eks. 'Bytter mot søndag'..." style={{ width: '100%', padding: '8px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', boxSizing: 'border-box' }} /></div>}
+                {swapType === 'direct' && <div style={{ marginBottom: '16px' }}><label style={{ fontSize: '13px', fontWeight: '600', color: '#4a5e50', display: 'block', marginBottom: '4px' }}>Hvem har du avtalt med?</label><select value={swapTargetFamily} onChange={(e) => setSwapTargetFamily(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', boxSizing: 'border-box', background: '#ffffff' }}><option value="">-- Velg familie --</option>{otherFamilies.filter(f => f.id !== currentFamilyId).map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}</select></div>}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button onClick={() => setSwapModal(null)} style={{ padding: '8px 16px', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f', fontSize: '14px' }}>Avbryt</button>
+                    <button onClick={confirmSwapRequest} style={{ padding: '8px 16px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>Bekreft</button>
+                </div>
             </div>
         </div>
       )}
 
-      <div className="bottom-nav">
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/family-dashboard'}><div className="bottom-nav-icon">🏠</div>Hjem</button>
-        <button className="bottom-nav-item active"><div className="bottom-nav-icon">📅</div>Vakter</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/family-members'}><div className="bottom-nav-icon">👨‍👩‍👧</div>Familie</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/points-tier'}><div className="bottom-nav-icon">⭐</div>Poeng</button>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-around', background: '#ffffff', borderTop: '1px solid #dedddd', padding: '8px 0', zIndex: 100 }}>
+        <button onClick={() => window.location.href = '/family-dashboard'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7f70', fontSize: '11px', padding: '4px 12px' }}><div style={{ fontSize: '20px' }}>🏠</div>Hjem</button>
+        <button style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', color: '#2d6a4f', fontSize: '11px', fontWeight: '600', padding: '4px 12px' }}><div style={{ fontSize: '20px' }}>📅</div>Vakter</button>
+        <button onClick={() => window.location.href = '/family-members'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7f70', fontSize: '11px', padding: '4px 12px' }}><div style={{ fontSize: '20px' }}>👨‍👩‍👧</div>Familie</button>
+        <button onClick={() => window.location.href = '/points-tier'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7f70', fontSize: '11px', padding: '4px 12px' }}><div style={{ fontSize: '20px' }}>⭐</div>Poeng</button>
       </div>
     </div>
   );

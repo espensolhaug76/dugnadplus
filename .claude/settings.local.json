@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(find /c/Users/espen/Documents/Dugnad+/DugnadNY -name *supabase* -o -name *database* -o -name *schema*)",
+      "Bash(find /c/Users/espen/Documents/Dugnad+/DugnadNY -name *.md -o -name README*)",
+      "Bash(find /c/Users/espen/Documents/Dugnad+/DugnadNY/src -type f \\\\\\(-name *.sql -o -name *schema* -o -name *database* \\\\\\))",
+      "Bash(find /c/Users/espen/Documents/Dugnad+/DugnadNY -type f \\\\\\(-name *.md -o -name README* \\\\\\))",
+      "Bash(grep -rn \"background: ''''white''''\" --include=\"*.tsx\" components/coordinator/ components/family/)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''white''/background: ''var\\(--card-bg, white\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''#f8fafc''/background: ''var\\(--bg-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''#f9fafb''/background: ''var\\(--bg-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''#f3f4f6''/background: ''var\\(--bg-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''#f7fafc''/background: ''var\\(--bg-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#1f2937''/color: ''var\\(--text-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#374151''/color: ''var\\(--text-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#111827''/color: ''var\\(--text-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#2d3748''/color: ''var\\(--text-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#6b7280''/color: ''var\\(--text-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#718096''/color: ''var\\(--text-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#9ca3af''/color: ''var\\(--text-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#4b5563''/color: ''var\\(--text-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#64748b''/color: ''var\\(--text-secondary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/border: ''1px solid #e5e7eb''/border: ''1px solid var\\(--border-color\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/border: ''1px solid #e2e8f0''/border: ''1px solid var\\(--border-color\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/border: ''1px solid #edf2f7''/border: ''1px solid var\\(--border-color\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#16a8b8''/color: ''var\\(--color-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/color: ''#0d9488''/color: ''var\\(--color-primary\\)''/g\" {} +)",
+      "Bash(find components/ -name \"*.tsx\" -exec sed -i \"s/background: ''#16a8b8''/background: ''var\\(--color-primary\\)''/g\" {} +)",
+      "Bash(ls \"C:/Users/espen/Documents/Dugnad+/DugnadNY/src/services/supabaseClient\"*)",
+      "Bash(ls /c/Users/espen/Documents/Dugnad+/DugnadNY/src/components/parent*)",
+      "Bash(find /c/Users/espen/Documents/Dugnad+/DugnadNY -type f \\\\\\(-name *.sql -o -name *schema* \\\\\\))",
+      "Bash(grep -r \"sms_credits\\\\|sms_log\" /c/Users/espen/Documents/Dugnad+/DugnadNY/supabase*.sql)",
+      "Bash(node:*)",
+      "Bash(npx --yes sharp-cli -i public/icon-192.svg -o public/icon-192.png resize 192 192)",
+      "Bash(npx --yes svg2png-cli public/icon-192.svg public/icon-192.png)",
+      "Bash(npx sharp-cli:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

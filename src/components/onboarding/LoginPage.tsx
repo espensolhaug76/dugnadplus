@@ -8,6 +8,7 @@ export const LoginPage: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -37,23 +38,45 @@ export const LoginPage: React.FC = () => {
       // 2. Hent mer info om brukeren (metadata lagret ved registrering)
       const userMeta = data.user.user_metadata;
       
-      // 3. Oppdater localStorage (for kompatibilitet)
+      // 3. Bestem rolle — sjekk metadata, localStorage og klubb/lag
+      let role = userMeta.role || 'family';
+
+      // Hvis klubb/lag finnes i metadata → bruker er koordinator
+      if (userMeta.club || userMeta.teams) {
+        role = 'coordinator';
+      }
+
+      // Sjekk også localStorage (fra tidligere onboarding)
+      const existingClub = localStorage.getItem('dugnad_club');
+      const existingTeams = localStorage.getItem('dugnad_teams');
+      if (existingClub || existingTeams) {
+        role = 'coordinator';
+      }
+
       const localUser = {
         id: data.user.id,
         email: data.user.email,
-        fullName: userMeta.full_name,
-        role: userMeta.role || 'family', // Default rolle
+        fullName: userMeta.full_name || data.user.email?.split('@')[0],
+        name: userMeta.full_name || data.user.email?.split('@')[0],
+        role,
         createdAt: data.user.created_at
       };
       localStorage.setItem('dugnad_user', JSON.stringify(localUser));
 
-      // 4. Send til riktig side basert på rolle
-      if (localUser.role === 'coordinator') {
+      // 4. Gjenopprett klubb/lag fra metadata hvis tilgjengelig
+      if (userMeta.club && !existingClub) {
+        localStorage.setItem('dugnad_club', JSON.stringify(userMeta.club));
+      }
+      if (userMeta.teams && !existingTeams) {
+        localStorage.setItem('dugnad_teams', JSON.stringify(userMeta.teams));
+      }
+
+      // 5. Send til riktig side basert på rolle
+      if (role === 'coordinator') {
         window.location.href = '/coordinator-dashboard';
-      } else if (localUser.role === 'substitute') {
+      } else if (role === 'substitute') {
         window.location.href = '/substitute-marketplace';
       } else {
-        // Default for familier
         window.location.href = '/family-dashboard';
       }
     }
@@ -88,15 +111,25 @@ export const LoginPage: React.FC = () => {
 
             <div>
               <label className="input-label">Passord</label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                className="input"
-                placeholder="Ditt passord"
-                required
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="Ditt passord"
+                  required
+                  style={{ paddingRight: '44px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', color: 'var(--text-secondary)' }}
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
 
             <div style={{ textAlign: 'right' }}>

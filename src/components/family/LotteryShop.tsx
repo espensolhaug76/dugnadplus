@@ -52,7 +52,7 @@ export const LotteryShop: React.FC = () => {
             // 2. Finn selger fra URL
             const params = new URLSearchParams(window.location.search);
             const sid = params.get('seller');
-            
+
             if (sid) {
                 setSellerId(sid);
                 const { data: family } = await supabase
@@ -94,7 +94,7 @@ export const LotteryShop: React.FC = () => {
     // Vipps-simulering (Her ville vi kalt et API for ekte "Krav" hvis vi hadde Vipps Bedrift)
     // Nå bruker vi Deep Link for å åpne Vipps
     const message = `Lodd ${sellerName}`;
-    
+
     if (confirm(`Åpne Vipps og betal ${totalAmount} kr til ${lottery.vippsNumber}?\n\nMerk betalingen: "${message}"`)) {
         setPurchasing(true);
         try {
@@ -111,15 +111,15 @@ export const LotteryShop: React.FC = () => {
                 });
 
             if (error) throw error;
-            
+
             // Prøv å åpne Vipps (fungerer best på mobil)
             window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
-            
+
             alert('🎉 Takk for støtten! Loddene er registrert i systemet.');
             setBuyerName('');
             setBuyerPhone('');
             setTicketCount(10);
-            
+
         } catch (error: any) {
             console.error('Kjøp feilet:', error);
             alert('Beklager, noe gikk galt med registreringen: ' + error.message);
@@ -129,28 +129,28 @@ export const LotteryShop: React.FC = () => {
     }
   };
 
-  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Laster lotteri...</div>;
-  
+  if (loading) return <div style={{padding:'40px', textAlign:'center', background: '#faf8f4', color: '#1a2e1f'}}>Laster lotteri...</div>;
+
   if (!lottery) return (
-      <div style={{padding:'40px', textAlign:'center'}}>
-          <h2>Ingen aktive lotterier</h2>
-          <p>Det er ingen pågående lotterier for øyeblikket.</p>
+      <div style={{padding:'40px', textAlign:'center', background: '#faf8f4', color: '#1a2e1f'}}>
+          <h2 style={{ color: '#1a2e1f' }}>Ingen aktive lotterier</h2>
+          <p style={{ color: '#4a5e50' }}>Det er ingen pågående lotterier for øyeblikket.</p>
       </div>
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f2f4f8', display: 'flex', justifyContent: 'center', padding: '20px 10px' }}>
-        <div className="card" style={{ maxWidth: '500px', width: '100%', padding: '0', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-            
+    <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', justifyContent: 'center', padding: '20px 10px' }}>
+        <div style={{ maxWidth: '500px', width: '100%', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '0', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+
             {/* Header */}
-            <div style={{ background: 'linear-gradient(135deg, #ff5b24 0%, #e0400b 100%)', padding: '32px 20px', color: 'white', textAlign: 'center' }}>
+            <div style={{ background: '#1e3a2f', padding: '32px 20px', color: 'white', textAlign: 'center' }}>
                 <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎟️</div>
                 <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800' }}>{lottery.name}</h1>
-                <p style={{ opacity: 0.9, marginTop: '8px', fontSize: '16px' }}>Støtt {sellerName} og laget!</p>
+                <p style={{ color: 'rgba(255,255,255,0.6)', marginTop: '8px', fontSize: '16px' }}>Støtt {sellerName} og laget!</p>
             </div>
-            
+
             <div style={{ padding: '24px' }}>
-                <p style={{ color: '#6b7280', marginBottom: '24px', textAlign: 'center', fontSize: '14px' }}>{lottery.description}</p>
+                <p style={{ color: '#4a5e50', marginBottom: '24px', textAlign: 'center', fontSize: '14px' }}>{lottery.description}</p>
 
                 {/* PAKKEVELGER */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
@@ -160,8 +160,8 @@ export const LotteryShop: React.FC = () => {
                             onClick={() => setTicketCount(pkg.count)}
                             style={{
                                 padding: '16px',
-                                border: ticketCount === pkg.count ? '2px solid #ff5b24' : '1px solid #e5e7eb',
-                                background: ticketCount === pkg.count ? '#fff5f0' : 'white',
+                                border: ticketCount === pkg.count ? '2px solid #2d6a4f' : '0.5px solid #dedddd',
+                                background: ticketCount === pkg.count ? '#e8f5ef' : '#ffffff',
                                 borderRadius: '12px',
                                 cursor: 'pointer',
                                 position: 'relative',
@@ -172,55 +172,56 @@ export const LotteryShop: React.FC = () => {
                             }}
                         >
                             {pkg.popular && (
-                                <span style={{ position: 'absolute', top: '-10px', background: '#16a8b8', color: 'white', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
+                                <span style={{ position: 'absolute', top: '-10px', background: '#2d6a4f', color: 'white', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
                                     MEST POPULÆR
                                 </span>
                             )}
-                            <span style={{ fontSize: '20px', fontWeight: '800', color: '#1f2937' }}>{pkg.count} lodd</span>
-                            <span style={{ fontSize: '12px', color: '#6b7280' }}>{pkg.count * lottery.ticketPrice} kr</span>
+                            <span style={{ fontSize: '20px', fontWeight: '800', color: '#1a2e1f' }}>{pkg.count} lodd</span>
+                            <span style={{ fontSize: '12px', color: '#4a5e50' }}>{pkg.count * lottery.ticketPrice} kr</span>
                         </button>
                     ))}
                     {/* Egendefinert */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', border: '0.5px solid #dedddd', borderRadius: '12px', background: '#ffffff' }}>
                         <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                            <button onClick={() => setTicketCount(Math.max(1, ticketCount-1))} className="btn" style={{padding:'4px 10px', borderRadius:'8px'}}>-</button>
-                            <span style={{fontWeight:'700'}}>{ticketCount}</span>
-                            <button onClick={() => setTicketCount(ticketCount+1)} className="btn" style={{padding:'4px 10px', borderRadius:'8px'}}>+</button>
+                            <button onClick={() => setTicketCount(Math.max(1, ticketCount-1))} style={{padding:'4px 10px', borderRadius:'8px', border: '0.5px solid #dedddd', background: '#ffffff', color: '#1a2e1f', cursor: 'pointer', fontWeight: '600'}}>-</button>
+                            <span style={{fontWeight:'700', color: '#1a2e1f'}}>{ticketCount}</span>
+                            <button onClick={() => setTicketCount(ticketCount+1)} style={{padding:'4px 10px', borderRadius:'8px', border: '0.5px solid #dedddd', background: '#ffffff', color: '#1a2e1f', cursor: 'pointer', fontWeight: '600'}}>+</button>
                         </div>
                     </div>
                 </div>
 
                 {/* TOTALSUM */}
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '24px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '14px', color: '#6b7280' }}>Du betaler</div>
-                    <div style={{ fontSize: '32px', fontWeight: '800', color: '#16a8b8' }}>
+                <div style={{ background: '#faf8f4', padding: '16px', borderRadius: '12px', marginBottom: '24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '14px', color: '#4a5e50' }}>Du betaler</div>
+                    <div style={{ fontSize: '32px', fontWeight: '800', color: '#2d6a4f' }}>
                         {ticketCount * lottery.ticketPrice} kr
                     </div>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>for {ticketCount} lodd à {lottery.ticketPrice} kr</div>
+                    <div style={{ fontSize: '12px', color: '#4a5e50' }}>for {ticketCount} lodd à {lottery.ticketPrice} kr</div>
                 </div>
 
                 {/* KJØPERS INFO */}
                 <div style={{ marginBottom: '24px' }}>
-                    <label className="input-label">Ditt navn</label>
-                    <input className="input" value={buyerName} onChange={e => setBuyerName(e.target.value)} placeholder="Ola Nordmann" />
-                    <label className="input-label" style={{marginTop:'12px'}}>Mobilnummer (Vipps)</label>
-                    <input className="input" type="tel" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} placeholder="99 88 77 66" />
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px' }}>Ditt navn</label>
+                    <input value={buyerName} onChange={e => setBuyerName(e.target.value)} placeholder="Ola Nordmann" style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }} />
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px', marginTop: '12px' }}>Mobilnummer (Vipps)</label>
+                    <input type="tel" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} placeholder="99 88 77 66" style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }} />
                 </div>
 
                 {/* BETALINGSKNAPP */}
-                <button 
+                <button
                     onClick={handlePurchase}
-                    className="btn"
-                    style={{ 
-                        width: '100%', 
-                        background: '#ff5b24', 
-                        color: 'white', 
-                        border: 'none', 
-                        fontSize: '18px', 
-                        padding: '16px', 
-                        borderRadius: '30px', 
+                    style={{
+                        width: '100%',
+                        background: '#2d6a4f',
+                        color: 'white',
+                        border: 'none',
+                        fontSize: '18px',
+                        padding: '16px',
+                        borderRadius: '10px',
+                        fontWeight: '700',
                         opacity: purchasing ? 0.7 : 1,
-                        boxShadow: '0 4px 12px rgba(255, 91, 36, 0.3)'
+                        boxShadow: '0 4px 12px rgba(45, 106, 79, 0.3)',
+                        cursor: 'pointer'
                     }}
                     disabled={purchasing}
                 >
@@ -229,12 +230,12 @@ export const LotteryShop: React.FC = () => {
             </div>
 
             {/* PREMIER */}
-            <div style={{ background: '#f8fafc', padding: '24px', borderTop: '1px solid #e5e7eb' }}>
-                <h4 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#1f2937', textAlign: 'center' }}>🏆 Premieoversikt</h4>
-                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#4b5563', lineHeight: '1.6' }}>
+            <div style={{ background: '#faf8f4', padding: '24px', borderTop: '0.5px solid #dedddd' }}>
+                <h4 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#1a2e1f', textAlign: 'center' }}>🏆 Premieoversikt</h4>
+                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
                     {lottery.prizes.map((p:any) => (
                         <li key={p.id}>
-                            <strong>{p.name}</strong> {p.donor && <span style={{color: '#16a8b8', fontSize: '12px'}}> (Sponset av {p.donor})</span>}
+                            <strong>{p.name}</strong> {p.donor && <span style={{color: '#2d6a4f', fontSize: '12px'}}> (Sponset av {p.donor})</span>}
                         </li>
                     ))}
                 </ul>

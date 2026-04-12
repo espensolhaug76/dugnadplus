@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { VikarChat } from './VikarChat';
 
 export const SubstituteDashboard: React.FC = () => {
   const [stats, setStats] = useState({ completed: 0, upcoming: 0, potentialEarnings: 0 });
@@ -8,6 +9,7 @@ export const SubstituteDashboard: React.FC = () => {
   const [myJobs, setMyJobs] = useState<any[]>([]); 
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -247,18 +249,18 @@ export const SubstituteDashboard: React.FC = () => {
             </button>
         </div>
         
-        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', color: 'var(--text-primary)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between' }}>
+        <div style={{ background: 'var(--card-bg, white)', borderRadius: '12px', padding: '16px', color: 'var(--text-primary)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between' }}>
             <div style={{ textAlign: 'center', flex: 1, borderRight: '1px solid #edf2f7' }}>
-                <div style={{ fontSize: '20px', fontWeight: '700', color: '#2d3748' }}>{stats.upcoming}</div>
-                <div style={{ fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Kommende</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>{stats.upcoming}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Kommende</div>
             </div>
             <div style={{ textAlign: 'center', flex: 1, borderRight: '1px solid #edf2f7' }}>
                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#38a169' }}>{stats.completed}</div>
-                <div style={{ fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Fullført</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Fullført</div>
             </div>
             <div style={{ textAlign: 'center', flex: 1 }}>
                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#d69e2e' }}>{stats.potentialEarnings},-</div>
-                <div style={{ fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Inntjent*</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Inntjent*</div>
             </div>
         </div>
       </div>
@@ -277,10 +279,10 @@ export const SubstituteDashboard: React.FC = () => {
                             <strong>{offer.requesterName}</strong> lurer på om du kan ta en vakt:
                         </p>
                         
-                        <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #fed7aa', marginBottom: '16px' }}>
-                            <div style={{ fontWeight: '700', fontSize: '16px', color: '#2d3748' }}>{offer.shiftName}</div>
+                        <div style={{ background: 'var(--card-bg, white)', padding: '16px', borderRadius: '8px', border: '1px solid #fed7aa', marginBottom: '16px' }}>
+                            <div style={{ fontWeight: '700', fontSize: '16px', color: 'var(--text-primary)' }}>{offer.shiftName}</div>
                             <div style={{ fontSize: '14px', color: '#4a5568', marginTop: '4px' }}>{offer.eventName}</div>
-                            <div style={{ fontSize: '13px', color: '#718096', marginTop: '8px', display: 'flex', gap: '12px' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px', display: 'flex', gap: '12px' }}>
                                 <span>📅 {new Date(offer.date).toLocaleDateString()}</span>
                                 <span>⏰ {offer.startTime}-{offer.endTime}</span>
                             </div>
@@ -288,7 +290,7 @@ export const SubstituteDashboard: React.FC = () => {
 
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button onClick={() => handleResponse(offer, true)} className="btn btn-primary" style={{ flex: 1, background: '#ed8936', border: 'none' }}>✅ Ja, jeg tar den</button>
-                            <button onClick={() => handleResponse(offer, false)} className="btn" style={{ flex: 1, background: 'white', border: '1px solid #e53e3e', color: '#e53e3e' }}>❌ Nei, passer ikke</button>
+                            <button onClick={() => handleResponse(offer, false)} className="btn" style={{ flex: 1, background: 'var(--card-bg, white)', border: '1px solid #e53e3e', color: '#e53e3e' }}>❌ Nei, passer ikke</button>
                         </div>
                     </div>
                 ))}
@@ -305,7 +307,7 @@ export const SubstituteDashboard: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                     <div>
                         <div style={{ fontSize: '18px', fontWeight: '700' }}>{nextJob.eventName}</div>
-                        <div style={{ fontSize: '16px', color: '#2d3748', marginTop: '4px' }}>{nextJob.name}</div>
+                        <div style={{ fontSize: '16px', color: 'var(--text-primary)', marginTop: '4px' }}>{nextJob.name}</div>
                     </div>
                     <div style={{ background: '#f0fff4', color: '#166534', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' }}>
                         {Math.ceil((new Date(nextJob.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} dager til
@@ -318,7 +320,7 @@ export const SubstituteDashboard: React.FC = () => {
                 </div>
             </div>
         ) : (
-            <div className="card" style={{ padding: '32px', textAlign: 'center', color: '#718096' }}>
+            <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                 <p>Du har ingen kommende jobber.</p>
                 <button onClick={() => window.location.href = '/substitute-marketplace'} className="btn btn-primary" style={{ marginTop: '12px' }}>Finn oppdrag i markedet</button>
             </div>

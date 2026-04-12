@@ -15,21 +15,24 @@ export const RoleSelectionPage: React.FC = () => {
 
     setIsSubmitting(true);
 
-    // Update user with role in localStorage (beholder eksisterende logikk for komp.)
+    // Oppdater rolle i både localStorage OG Supabase metadata
     const storedUser = localStorage.getItem('dugnad_user');
     if (storedUser) {
       const user = JSON.parse(storedUser);
       user.role = selectedRole;
       localStorage.setItem('dugnad_user', JSON.stringify(user));
 
+      // Synk til Supabase metadata
+      await supabase.auth.updateUser({ data: { role: selectedRole } });
+
       // --- SUPABASE INTEGRASJON: OPPRETT NY FAMILIE ---
       // Hvis brukeren velger "Familie" (og ikke har trykket på "Har kode"-knappen),
       // oppretter vi en ny, tom familieprofil.
       if (selectedRole === 'family' && user.id) {
         try {
-          // 1. Generer et familienavn (f.eks "Familien Hansen")
+          // 1. Generer familienavn fra etternavn
           const lastName = user.fullName ? user.fullName.split(' ').pop() : 'Ukjent';
-          const familyName = `Familien ${lastName}`;
+          const familyName = `Fam. ${lastName}`;
 
           // 2. Opprett rad i 'families' tabellen
           const { error: famError } = await supabase
@@ -218,7 +221,7 @@ export const RoleSelectionPage: React.FC = () => {
             <button 
                 onClick={() => window.location.href = '/claim-family'}
                 className="btn btn-secondary"
-                style={{ background: 'white', border: '2px solid #e2e8f0' }}
+                style={{ background: 'var(--card-bg, white)', border: '2px solid #e2e8f0' }}
             >
                 🔗 Jeg har en kode
             </button>

@@ -13,6 +13,8 @@ interface Shift {
   name: string;
   startTime: string;
   endTime: string;
+  durationHours: number | null;
+  shiftType: string | null; // 'standard', 'weekend', 'holiday'
   people: Person[];
 }
 
@@ -46,6 +48,8 @@ export const AttendancePage: React.FC = () => {
           name,
           start_time,
           end_time,
+          duration_hours,
+          shift_type,
           assignments (
             id,
             status,
@@ -73,6 +77,8 @@ export const AttendancePage: React.FC = () => {
         name: s.name,
         startTime: s.start_time?.slice(0, 5),
         endTime: s.end_time?.slice(0, 5),
+        durationHours: s.duration_hours ?? null,
+        shiftType: s.shift_type ?? null,
         people: s.assignments?.map((a: any) => ({
           assignmentId: a.id,
           familyId: a.family_id,
@@ -86,11 +92,46 @@ export const AttendancePage: React.FC = () => {
     setLoading(false);
   };
 
-  const calculatePoints = (start: string, end: string) => {
+  // Referanseoversikt over poeng per aktivitet (for visning)
+  const ACTIVITY_POINTS: Record<string, number> = {
+    'Kioskvakt': 100,
+    'Billettsalg': 100,
+    'Rydding/rigging': 100,
+    'Fair play/kampvert': 100,
+    'Sekretæriat': 100,
+    'Garderobe': 100,
+    'Baking/saft': 50,
+  };
+
+  // Poeng per time basert på vakttype
+  const RATE_PER_HOUR: Record<string, number> = {
+    'standard': 100,
+    'weekend': 150,
+    'holiday': 200,
+  };
+
+  const calculateDurationFromTimes = (start: string, end: string): number => {
     const [startH, startM] = start.split(':').map(Number);
     const [endH, endM] = end.split(':').map(Number);
-    const hours = ((endH * 60 + endM) - (startH * 60 + startM)) / 60;
-    return Math.round(hours * 10);
+    return ((endH * 60 + endM) - (startH * 60 + startM)) / 60;
+  };
+
+  const calculatePoints = (shift: Shift): number => {
+    const { durationHours, shiftType, startTime, endTime } = shift;
+
+    // Bruk duration_hours og shift_type fra vakten hvis tilgjengelig
+    if (durationHours != null && shiftType && RATE_PER_HOUR[shiftType]) {
+      return Math.round(durationHours * RATE_PER_HOUR[shiftType]);
+    }
+
+    // Fallback: beregn varighet fra start_time/end_time med standard rate
+    if (startTime && endTime) {
+      const hours = calculateDurationFromTimes(startTime, endTime);
+      const rate = (shiftType && RATE_PER_HOUR[shiftType]) ? RATE_PER_HOUR[shiftType] : RATE_PER_HOUR['standard'];
+      return Math.round(hours * rate);
+    }
+
+    return 0;
   };
 
   const handleAttendance = async (shift: Shift, person: Person, newStatus: 'completed' | 'missed') => {
@@ -102,7 +143,7 @@ export const AttendancePage: React.FC = () => {
     const shouldAwardPoints = newStatus === 'completed' && person.status !== 'completed';
     const shouldDeductPoints = person.status === 'completed' && newStatus !== 'completed'; // Hvis man angrer en godkjenning
 
-    const points = calculatePoints(shift.startTime, shift.endTime);
+    const points = calculatePoints(shift);
 
     try {
         // 1. Oppdater status på assignment
@@ -179,7 +220,7 @@ export const AttendancePage: React.FC = () => {
                         <h3 style={{ fontSize: '20px', fontWeight: '600', margin: 0 }}>
                             {event.eventName}
                         </h3>
-                        <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                        <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                             {new Date(event.date).toLocaleDateString('nb-NO')}
                         </span>
                     </div>
@@ -191,9 +232,10 @@ export const AttendancePage: React.FC = () => {
                             if (shift.people.length === 0) return null; // Skjul vakter uten folk
 
                             return (
-                                <div key={shift.id} style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                <div key={shift.id} style={{ padding: '16px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                                     <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>
                                         {shift.name} <span style={{fontWeight:'400', color:'#6b7280'}}>({shift.startTime}-{shift.endTime})</span>
+                                        {' '}<span style={{ fontSize: '12px', color: '#2d6a4f', fontWeight: '500' }}>{calculatePoints(shift)} poeng</span>
                                     </div>
                                     
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -204,7 +246,7 @@ export const AttendancePage: React.FC = () => {
                                             return (
                                                 <div key={person.assignmentId} style={{ 
                                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                                    background: 'white', padding: '10px 14px', borderRadius: '6px',
+                                                    background: 'var(--card-bg, white)', padding: '10px 14px', borderRadius: '6px',
                                                     border: isCompleted ? '1px solid #48bb78' : isMissed ? '1px solid #f56565' : '1px solid #e2e8f0',
                                                     boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                                                 }}>
@@ -212,7 +254,7 @@ export const AttendancePage: React.FC = () => {
                                                         <span style={{ fontSize: '18px' }}>
                                                             {isCompleted ? '✅' : isMissed ? '❌' : '👤'}
                                                         </span>
-                                                        <span style={{ fontWeight: '500', color: '#374151' }}>{person.name}</span>
+                                                        <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{person.name}</span>
                                                     </div>
                                                     
                                                     <div style={{ display: 'flex', gap: '8px' }}>

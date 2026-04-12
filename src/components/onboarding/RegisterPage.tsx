@@ -10,6 +10,7 @@ export const RegisterPage: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -30,8 +31,8 @@ export const RegisterPage: React.FC = () => {
       options: {
         data: {
           full_name: formData.fullName,
-          phone: formData.phone,
-          role: 'family' // Standard rolle ved registrering
+          phone: formData.phone
+          // Rolle settes i neste steg (RoleSelectionPage)
         }
       }
     });
@@ -48,8 +49,8 @@ export const RegisterPage: React.FC = () => {
         id: authData.user.id,
         email: authData.user.email,
         fullName: formData.fullName,
+        name: formData.fullName,
         phone: formData.phone,
-        role: 'family',
         createdAt: new Date().toISOString(),
       };
       localStorage.setItem('dugnad_user', JSON.stringify(user));
@@ -115,16 +116,22 @@ export const RegisterPage: React.FC = () => {
 
             <div>
               <label className="input-label">Passord *</label>
+              <div style={{ position: 'relative' }}>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
                 className="input"
                 placeholder="Minimum 6 tegn"
                 minLength={6}
+                style={{ paddingRight: '44px' }}
                 required
               />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '4px', color: 'var(--text-secondary)' }}>
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading}>

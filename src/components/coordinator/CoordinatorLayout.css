@@ -4,36 +4,37 @@
   display: flex !important;
   min-height: 100vh !important;
   width: 100% !important;
-  background-color: #f8fafc !important;
+  background-color: var(--bg-secondary, #f8fafc) !important;
   padding-left: 16px !important;
   padding-top: 16px !important;
 }
 
 .coordinator-sidebar {
-  width: 260px !important;
-  min-width: 260px !important;
+  width: 320px !important;
+  min-width: 320px !important;
   position: sticky !important;
   top: 0 !important;
   height: calc(100vh - 32px) !important;
   overflow-y: auto !important;
-  background-color: white !important;
+  overflow-x: hidden !important;
+  background-color: var(--card-bg, white) !important;
   border-radius: 12px !important;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
   z-index: 100 !important;
   padding: 0 !important;
-  border: 1px solid #e2e8f0 !important;
+  border: 1px solid var(--border-color, #e2e8f0) !important;
   flex-shrink: 0 !important;
 }
 
 .sidebar-header {
   padding: 24px !important;
-  border-bottom: 1px solid #e2e8f0 !important;
+  border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
 }
 
 .sidebar-logo {
   width: 56px !important;
   height: 56px !important;
-  background: linear-gradient(135deg, #16a8b8 0%, #0d7f8a 100%) !important;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%) !important;
   border-radius: 8px !important;
   display: flex !important;
   align-items: center !important;
@@ -48,24 +49,24 @@
   font-size: 17px !important;
   font-weight: 600 !important;
   margin: 0 0 4px 0 !important;
-  color: #1f2937 !important;
+  color: var(--text-primary, #1f2937) !important;
 }
 
 .sidebar-season {
   font-size: 13px !important;
-  color: #64748b !important;
+  color: var(--text-secondary, #64748b) !important;
   margin: 0 !important;
 }
 
 .sidebar-section {
   padding: 16px !important;
-  border-bottom: 1px solid #e2e8f0 !important;
+  border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
 }
 
 .sidebar-section-title {
   font-size: 11px !important;
   font-weight: 600 !important;
-  color: #64748b !important;
+  color: var(--text-secondary, #64748b) !important;
   text-transform: uppercase !important;
   letter-spacing: 0.5px !important;
   margin-bottom: 12px !important;
@@ -82,7 +83,7 @@
   border: none !important;
   border-radius: 8px !important;
   background: transparent !important;
-  color: #64748b !important;
+  color: var(--text-secondary, #64748b) !important;
   font-weight: 500 !important;
   font-size: 15px !important;
   cursor: pointer !important;
@@ -90,14 +91,22 @@
 }
 
 .team-button:hover {
-  background: #f8fafc !important;
-  color: #1f2937 !important;
+  background: var(--bg-secondary, #f8fafc) !important;
+  color: var(--text-primary, #1f2937) !important;
 }
 
 .team-button.active {
-  background: #16a8b8 !important;
+  background: var(--color-primary) !important;
   color: white !important;
   font-weight: 600 !important;
+}
+
+.team-button:hover .team-delete-btn {
+  opacity: 0.6 !important;
+}
+
+.team-delete-btn:hover {
+  opacity: 1 !important;
 }
 
 .team-info {
@@ -130,11 +139,11 @@
   min-height: 100vh !important;
   padding: 0 24px !important;
   margin-left: 16px !important;
-  background-color: #f8fafc !important;
+  background-color: var(--bg-secondary, #f8fafc) !important;
 }
 
 .dashboard-banner {
-  background: linear-gradient(135deg, #16a8b8 0%, #0d7f8a 100%) !important;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%) !important;
   padding: 24px !important;
   color: white !important;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
@@ -156,7 +165,7 @@
 
 .dashboard-tabs {
   background-color: white !important;
-  border-bottom: 1px solid #e2e8f0 !important;
+  border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
   display: flex !important;
   padding: 0 16px !important;
   gap: 8px !important;
@@ -169,7 +178,7 @@
   background: transparent !important;
   border: none !important;
   border-bottom: 3px solid transparent !important;
-  color: #64748b !important;
+  color: var(--text-secondary, #64748b) !important;
   font-size: 15px !important;
   font-weight: 500 !important;
   cursor: pointer !important;
@@ -190,4 +199,138 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
   gap: 20px !important;
   margin-bottom: 24px !important;
+}
+
+/* ============================================ */
+/* MOBIL-RESPONSIVT DESIGN                      */
+/* ============================================ */
+
+/* Hamburger-knapp (skjult på desktop) */
+.mobile-menu-toggle {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  /* Layout: stacker sidebar over main */
+  .coordinator-layout {
+    flex-direction: column !important;
+    padding-left: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  /* Sidebar: kollapsbar */
+  .coordinator-sidebar {
+    width: 100% !important;
+    min-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    position: relative !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
+    box-shadow: none !important;
+  }
+
+  .coordinator-sidebar.collapsed {
+    max-height: 70px !important;
+    overflow: hidden !important;
+  }
+
+  .mobile-menu-toggle {
+    display: flex !important;
+    position: absolute !important;
+    top: 20px !important;
+    right: 16px !important;
+    background: #16a8b8 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    font-size: 18px !important;
+    cursor: pointer !important;
+    z-index: 10 !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar-header {
+    padding: 16px !important;
+  }
+
+  .sidebar-logo {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 16px !important;
+    margin-bottom: 0 !important;
+    display: inline-flex !important;
+  }
+
+  .sidebar-club-name {
+    display: inline !important;
+    margin-left: 12px !important;
+    vertical-align: middle !important;
+  }
+
+  .sidebar-season {
+    display: inline !important;
+    margin-left: 8px !important;
+  }
+
+  .sidebar-section {
+    padding: 12px !important;
+  }
+
+  .sidebar-actions {
+    padding: 12px !important;
+  }
+
+  .action-button {
+    padding: 10px !important;
+    font-size: 14px !important;
+  }
+
+  .team-button {
+    padding: 10px 12px !important;
+    font-size: 14px !important;
+  }
+
+  /* Main content */
+  .coordinator-main {
+    margin-left: 0 !important;
+    padding: 0 12px !important;
+    min-height: auto !important;
+  }
+
+  .dashboard-content {
+    padding: 16px 12px !important;
+  }
+
+  .dashboard-banner {
+    margin-bottom: 16px !important;
+    padding: 16px !important;
+    border-radius: 0 !important;
+  }
+}
+
+/* Generell mobil-responsivitet for alle sider */
+@media (max-width: 768px) {
+  body {
+    padding: 0 !important;
+  }
+
+  /* Tabs: scrollbar horisontalt */
+  [style*="display: flex"][style*="gap: 24px"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Inputs: større touch-target */
+  input, select, textarea, .input {
+    min-height: 44px !important;
+    font-size: 16px !important; /* Forhindrer iOS zoom */
+  }
+
+  /* Knapper: bedre touch-target */
+  button, .btn {
+    min-height: 44px !important;
+  }
 }

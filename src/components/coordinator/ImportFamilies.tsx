@@ -88,6 +88,20 @@ export const ImportFamilies: React.FC = () => {
     return code;
   };
 
+  const generateJoinCode = (): string => {
+    // Hent klubbforkortelse fra localStorage
+    let prefix = 'DUG';
+    try {
+      const club = JSON.parse(localStorage.getItem('dugnad_club') || '{}');
+      if (club.name) {
+        // Lag forkortelse: første 3 bokstaver i store bokstaver
+        prefix = club.name.replace(/[^a-zA-ZæøåÆØÅ]/g, '').substring(0, 3).toUpperCase();
+      }
+    } catch {}
+    const num = Math.floor(1000 + Math.random() * 9000); // 4 siffer
+    return `${prefix}-${num}`;
+  };
+
   const handleImport = async () => {
     if (parsedData.length === 0) return;
     setImporting(true);
@@ -144,24 +158,27 @@ export const ImportFamilies: React.FC = () => {
             continue;
         }
 
-        let familyName = 'Ukjent Familie';
-        if (famData.parents.length > 0) {
-           const lastName = famData.parents[0].split(' ').pop();
-           familyName = `Familien ${lastName}`;
-        } else if (famData.children.length > 0) {
-           const lastName = famData.children[0].name.split(' ').pop();
-           familyName = `Familien ${lastName}`;
+        // Bruk barnets etternavn som familienavn
+        let familyName = 'Ukjent';
+        if (famData.children.length > 0) {
+           familyName = famData.children[0].name.split(' ').pop() || 'Ukjent';
+        } else if (famData.parents.length > 0) {
+           familyName = famData.parents[0].split(' ').pop() || 'Ukjent';
         }
 
         const importCode = generateImportCode();
+
+        // Hent aktivt lag-ID
+        const activeTeamId = localStorage.getItem('dugnad_active_team_filter') || '';
 
         const { data: insertedFamily, error: famError } = await supabase
           .from('families')
           .insert({
             name: familyName,
-            contact_email: '', 
+            contact_email: '',
             contact_phone: '',
-            import_code: importCode
+            import_code: importCode,
+            team_id: activeTeamId || null
           })
           .select()
           .single();
@@ -184,22 +201,34 @@ export const ImportFamilies: React.FC = () => {
             await supabase.from('family_members').insert(parentInserts);
         }
 
-        const childInserts = famData.children.map(child => ({
-          family_id: newFamilyUUID,
-          name: child.name,
-          role: 'child',
-          birth_year: child.birthDate ? new Date(child.birthDate).getFullYear() : 2016,
-          subgroup: child.subgroup
-        }));
+        const childCodesMap: Record<string, string> = {};
+        const childInserts = famData.children.map(child => {
+          const joinCode = generateJoinCode();
+          childCodesMap[child.name] = joinCode;
+          return {
+            family_id: newFamilyUUID,
+            name: child.name,
+            role: 'child',
+            birth_year: child.birthDate ? new Date(child.birthDate).getFullYear() : 2016,
+            subgroup: child.subgroup,
+            join_code: joinCode
+          };
+        });
 
         if (childInserts.length > 0) {
-            await supabase.from('family_members').insert(childInserts);
+            const { error: childError } = await supabase.from('family_members').insert(childInserts);
+            if (childError) {
+                console.error('Feil ved barn-insert:', childError);
+                // Fallback: prøv uten join_code
+                const withoutCode = childInserts.map(({ join_code, ...rest }) => rest);
+                await supabase.from('family_members').insert(withoutCode);
+            }
         }
-        
+
         results.push({
             name: familyName,
             code: importCode,
-            children: famData.children.map(c => `${c.name} (${c.subgroup || 'Ingen gruppe'})`)
+            children: famData.children.map(c => `${c.name} → ${childCodesMap[c.name]} (${c.subgroup || 'Ingen gruppe'})`)
         });
       }
 
@@ -274,7 +303,7 @@ export const ImportFamilies: React.FC = () => {
                 />
                 {/* Her bruker vi filnavnet, som fjerner feilmeldingen */}
                 {file && (
-                  <p style={{ marginTop: '12px', color: '#16a8b8', fontSize: '14px', fontWeight: '600' }}>
+                  <p style={{ marginTop: '12px', color: 'var(--color-primary)', fontSize: '14px', fontWeight: '600' }}>
                     ✓ Fil valgt: {file.name}
                   </p>
                 )}
@@ -286,7 +315,7 @@ export const ImportFamilies: React.FC = () => {
                     <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>📊 Forhåndsvisning ({parsedData.length} spillere)</h3>
                     <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: '#f7fafc', position: 'sticky', top: 0 }}>
+                        <thead style={{ background: 'var(--bg-secondary)', position: 'sticky', top: 0 }}>
                         <tr>
                             <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px' }}>Navn</th>
                             <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px' }}>Lag</th>

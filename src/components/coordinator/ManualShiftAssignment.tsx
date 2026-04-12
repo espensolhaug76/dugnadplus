@@ -102,22 +102,29 @@ export const ManualShiftAssignment: React.FC = () => {
 
         setEvents(mappedEvents);
 
-        // 4. Map Familier
-        const mappedFamilies: ManualFamily[] = familiesData.map((f: any) => ({
-            id: f.id,
-            parents: f.family_members.filter((m: any) => m.role === 'parent'),
-            players: f.family_members.filter((m: any) => m.role === 'child'),
-            verv: [], 
-            pointsHistory: [], 
-            totalPoints: f.total_points || 0
-        }));
+        // 4. Map Familier — filtrer bort skjermede (full) og fritatte
+        const mappedFamilies: ManualFamily[] = familiesData
+            .filter((f: any) => !f.exempt_from_shifts && (f.shield_level || 'none') !== 'full')
+            .map((f: any) => ({
+                id: f.id,
+                parents: f.family_members.filter((m: any) => m.role === 'parent'),
+                players: f.family_members.filter((m: any) => m.role === 'child'),
+                verv: f.verv ? JSON.parse(f.verv) : [],
+                pointsHistory: [],
+                totalPoints: f.total_points || 0,
+                shieldLevel: f.shield_level || 'none'
+            }));
 
         setFamilies(mappedFamilies);
 
-        // Sett standardvalg
-        if (mappedEvents.length > 0) {
-            setSelectedEventId(mappedEvents[0].id);
-            setWorkingShifts(mappedEvents[0].shifts || []);
+        // Sett standardvalg — les ?event= fra URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlEventId = urlParams.get('event');
+        const matchEvent = urlEventId ? mappedEvents.find(e => e.id === urlEventId) : null;
+        const defaultEvent = matchEvent || mappedEvents[0];
+        if (defaultEvent) {
+            setSelectedEventId(defaultEvent.id);
+            setWorkingShifts(defaultEvent.shifts || []);
         }
 
     } catch (error) {
@@ -160,18 +167,23 @@ export const ManualShiftAssignment: React.FC = () => {
   const canAssignFamily = (familyId: string, shiftId: string): boolean => {
     const shift = workingShifts.find(s => s.id === shiftId);
     if (!shift) return false;
-    if ((shift.assignedFamilies?.length || 0) >= shift.peopleNeeded) return false;
-    const assignedShifts = getFamilyAssignedShifts(familyId);
-    return !assignedShifts.some(s => isShiftOverlap(s, shift));
+    // Sjekk at familien ikke allerede er på denne vakten
+    if (shift.assignedFamilies?.includes(familyId)) return false;
+    // Tillat alltid drop — koordinator bestemmer (overlap/full vises som advarsel)
+    return true;
   };
 
   const sortedFamilies = [...families]
-    .map(f => ({
-      ...f,
-      currentPoints: calculateFamilyPoints(f),
-      shiftsNeeded: f.players?.length || 1,
-      shiftsAssigned: getFamilyAssignmentCount(f.id)
-    }))
+    .map(f => {
+      const childCount = f.players?.length || 1;
+      const isReduced = (f as any).shieldLevel === 'reduced';
+      return {
+        ...f,
+        currentPoints: calculateFamilyPoints(f),
+        shiftsNeeded: isReduced ? Math.max(1, Math.ceil(childCount / 2)) : childCount,
+        shiftsAssigned: getFamilyAssignmentCount(f.id)
+      };
+    })
     .sort((a, b) => {
       if (a.currentPoints !== b.currentPoints) {
         return a.currentPoints - b.currentPoints;
@@ -215,10 +227,21 @@ export const ManualShiftAssignment: React.FC = () => {
     }
 
     if (!dragSourceShiftId) {
-      if (!canAssignFamily(draggedFamilyId, targetShiftId)) {
-        alert('⚠️ Kan ikke tildele: Vakt er full eller overlapper.');
-        return;
+      const targetShift = workingShifts.find(s => s.id === targetShiftId);
+      if (targetShift?.assignedFamilies?.includes(draggedFamilyId)) return;
+
+      // Sjekk overlap og antall vakter
+      const existingShifts = getFamilyAssignedShifts(draggedFamilyId);
+      const hasOverlap = targetShift && existingShifts.some(s => isShiftOverlap(s, targetShift));
+      const familyName = families.find(f => f.id === draggedFamilyId)?.players?.[0]?.name || 'Denne familien';
+
+      if (existingShifts.length > 0 || hasOverlap) {
+        const warnings: string[] = [];
+        if (hasOverlap) warnings.push('har en vakt som overlapper i tid');
+        if (existingShifts.length >= 1) warnings.push(`har allerede ${existingShifts.length} vakt${existingShifts.length > 1 ? 'er' : ''}`);
+        if (!confirm(`${familyName} ${warnings.join(' og ')}.\n\nVil du fortsatt tildele denne vakten?`)) return;
       }
+
       const updatedShifts = workingShifts.map(shift => {
         if (shift.id === targetShiftId) {
           return {
@@ -377,18 +400,30 @@ export const ManualShiftAssignment: React.FC = () => {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-        {/* LEFT: Shifts */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', alignItems: 'start' }}>
+        {/* LEFT: Shifts — scrollbar vaktliste */}
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Vakter</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', paddingRight: '8px' }}
+            onDragOver={(e) => {
+              // Auto-scroll når man drar nær topp/bunn
+              const el = e.currentTarget;
+              const rect = el.getBoundingClientRect();
+              const y = e.clientY - rect.top;
+              if (y < 60) el.scrollTop -= 8;
+              else if (y > rect.height - 60) el.scrollTop += 8;
+            }}
+          >
             {workingShifts.map(shift => {
-              const assignedFamiliesObjs = (shift.assignedFamilies || []).map(fid => 
+              const assignedFamiliesObjs = (shift.assignedFamilies || []).map(fid =>
                 families.find(f => f.id === fid)
               ).filter(Boolean) as ManualFamily[];
-              
+
               const isFull = assignedFamiliesObjs.length >= shift.peopleNeeded;
-              const canDrop = draggedFamilyId && (dragSourceShiftId ? true : canAssignFamily(draggedFamilyId, shift.id));
+              const isOver = assignedFamiliesObjs.length > shift.peopleNeeded;
+              const alreadyHere = draggedFamilyId ? shift.assignedFamilies?.includes(draggedFamilyId) : false;
+              const canDrop = draggedFamilyId && !alreadyHere;
 
               return (
                 <div
@@ -397,35 +432,41 @@ export const ManualShiftAssignment: React.FC = () => {
                   onDrop={(e) => { e.preventDefault(); handleDrop(shift.id); }}
                   style={{
                     padding: '16px',
-                    background: canDrop ? '#dcfce7' : 'white',
+                    background: canDrop ? (isFull ? '#fef3c7' : '#dcfce7') : 'white',
                     borderRadius: 'var(--radius-md)',
-                    border: canDrop ? '2px dashed var(--primary-color)' : '2px solid var(--border-color)'
+                    border: canDrop ? `2px dashed ${isFull ? '#f59e0b' : 'var(--primary-color)'}` : '2px solid var(--border-color)',
+                    transition: 'background 0.15s, border 0.15s'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <div>
                       <div style={{ fontWeight: '600' }}>{shift.name}</div>
                       <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{shift.startTime} - {shift.endTime}</div>
-                      {shift.description && <div style={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>{shift.description}</div>}
+                      {shift.description && <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{shift.description}</div>}
                     </div>
-                    <div style={{ padding: '4px 12px', borderRadius: 'var(--radius-md)', background: isFull ? '#dcfce7' : '#fee2e2', color: isFull ? '#166534' : '#991b1b', fontSize: '12px', fontWeight: '600', height: 'fit-content' }}>
+                    <div style={{ padding: '4px 12px', borderRadius: 'var(--radius-md)', background: isOver ? '#fef3c7' : isFull ? '#dcfce7' : '#fee2e2', color: isOver ? '#92400e' : isFull ? '#166534' : '#991b1b', fontSize: '12px', fontWeight: '600', height: 'fit-content' }}>
                       {assignedFamiliesObjs.length}/{shift.peopleNeeded}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '32px' }}>
                       {assignedFamiliesObjs.map((family) => (
                         <div
                           key={family.id}
                           draggable
                           onDragStart={() => handleDragStart(family.id, shift.id)}
                           onDragEnd={handleDragEnd}
-                          style={{ padding: '8px 12px', background: 'white', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', cursor: 'grab' }}
+                          style={{ padding: '8px 12px', background: 'var(--card-bg, white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', cursor: 'grab' }}
                         >
                           <span>{family.players[0]?.name || family.id}</span>
-                          <button onClick={() => handleRemoveFamily(shift.id, family.id)} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>×</button>
+                          <button onClick={() => handleRemoveFamily(shift.id, family.id)} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer', fontSize: '16px' }}>×</button>
                         </div>
                       ))}
+                      {assignedFamiliesObjs.length === 0 && (
+                        <div style={{ padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'center', border: '1px dashed #e5e7eb', borderRadius: 'var(--radius-md)' }}>
+                          Dra en familie hit
+                        </div>
+                      )}
                   </div>
                 </div>
               );
@@ -433,10 +474,10 @@ export const ManualShiftAssignment: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT: Families */}
-        <div>
+        {/* RIGHT: Families — sticky */}
+        <div style={{ position: 'sticky', top: '20px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Familier</h2>
-          <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
               {sortedFamilies.map((family) => {
                 const isDragging = draggedFamilyId === family.id && !dragSourceShiftId;
                 const needsMore = family.shiftsAssigned < family.shiftsNeeded;
@@ -451,15 +492,17 @@ export const ManualShiftAssignment: React.FC = () => {
                       background: isDragging ? '#e0f2fe' : needsMore ? 'white' : '#f3f4f6',
                       borderRadius: 'var(--radius-md)',
                       border: needsMore ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                      cursor: 'grab', opacity: isDragging ? 0.5 : 1
+                      cursor: 'grab', opacity: isDragging ? 0.5 : 1,
+                      transition: 'opacity 0.15s'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <div style={{ fontWeight: '600', fontSize: '14px' }}>{family.players[0]?.name || family.id}</div>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--primary-color)' }}>{family.currentPoints}p</div>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                    <div style={{ fontSize: '11px', color: family.shiftsAssigned > family.shiftsNeeded ? '#c0392b' : 'var(--text-secondary)' }}>
                         {family.shiftsAssigned}/{family.shiftsNeeded} vakter
+                        {family.shiftsAssigned > family.shiftsNeeded && ' ⚠️'}
                         {family.players[0]?.subgroup && ` • ${family.players[0].subgroup}`}
                     </div>
                   </div>

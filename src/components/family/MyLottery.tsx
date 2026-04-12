@@ -20,7 +20,7 @@ export const MyLottery: React.FC = () => {
   // State for premiedonasjon
   const [donationName, setDonationName] = useState('');
   const [donationValue, setDonationValue] = useState('');
-  const [donationDonor, setDonationDonor] = useState(''); 
+  const [donationDonor, setDonationDonor] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -32,7 +32,7 @@ export const MyLottery: React.FC = () => {
         // 1. Identifiser bruker og familie
         const userJson = localStorage.getItem('dugnad_user');
         const user = userJson ? JSON.parse(userJson) : null;
-        
+
         let familyId = '';
 
         if (user) {
@@ -42,7 +42,7 @@ export const MyLottery: React.FC = () => {
                 .select('id, name')
                 .eq('id', user.id)
                 .single();
-            
+
             if (familyById) {
                 familyId = familyById.id;
             } else {
@@ -52,7 +52,7 @@ export const MyLottery: React.FC = () => {
                     .select('id, name')
                     .eq('contact_email', user.email)
                     .single();
-                
+
                 if (familyByEmail) familyId = familyByEmail.id;
             }
         }
@@ -82,7 +82,7 @@ export const MyLottery: React.FC = () => {
                 .from('prizes')
                 .select('*')
                 .eq('lottery_id', lotteryData.id);
-            
+
             if (prizeData) setPrizes(prizeData);
 
             // 4. Hent salgstall for denne familien
@@ -92,7 +92,7 @@ export const MyLottery: React.FC = () => {
                     .select('tickets')
                     .eq('lottery_id', lotteryData.id)
                     .eq('seller_family_id', familyId);
-                
+
                 if (salesData) {
                     const total = salesData.reduce((sum, sale) => sum + (sale.tickets || 0), 0);
                     setMySales(total);
@@ -133,9 +133,6 @@ export const MyLottery: React.FC = () => {
                 name: donationName,
                 value: donationValue,
                 donor: donationDonor || 'Anonym',
-                // Hvis databasen har et 'status'-felt for godkjenning, kan vi sette det her.
-                // Ellers ignoreres det hvis kolonnen ikke finnes (Supabase er streng på skjema, så pass på at kolonnen finnes eller fjern dette feltet).
-                // status: 'pending' 
             });
 
         if (error) throw error;
@@ -152,79 +149,78 @@ export const MyLottery: React.FC = () => {
     }
   };
 
-  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Laster... ☁️</div>;
+  if (loading) return <div style={{padding:'40px', textAlign:'center', background: '#faf8f4', color: '#1a2e1f'}}>Laster... ☁️</div>;
 
   if (!lottery) {
     return (
-        <div style={{ padding: '40px', textAlign: 'center' }}>
-            <h1>🎟️ Loddbok</h1>
-            <p>Ingen aktive lotterier akkurat nå.</p>
-            <div className="bottom-nav">
-                <button className="bottom-nav-item" onClick={() => window.location.href = '/family-dashboard'}><div className="bottom-nav-icon">🏠</div>Hjem</button>
-                <button className="bottom-nav-item active"><div className="bottom-nav-icon">🎟️</div>Lodd</button>
+        <div style={{ padding: '40px', textAlign: 'center', background: '#faf8f4', minHeight: '100vh', color: '#1a2e1f' }}>
+            <h1 style={{ color: '#1a2e1f' }}>🎟️ Loddbok</h1>
+            <p style={{ color: '#4a5e50' }}>Ingen aktive lotterier akkurat nå.</p>
+            <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#ffffff', borderTop: '0.5px solid #dedddd', zIndex: 100 }}>
+                <button onClick={() => window.location.href = '/family-dashboard'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🏠</div>Hjem</button>
+                <button style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🎟️</div>Lodd</button>
             </div>
         </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', paddingBottom: '80px' }}>
-      <div style={{ background: 'linear-gradient(135deg, #16a8b8 0%, #1298a6 100%)', padding: '24px', color: 'white' }}>
+    <div style={{ minHeight: '100vh', background: '#faf8f4', paddingBottom: '80px' }}>
+      <div style={{ background: '#1e3a2f', padding: '24px', color: 'white' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>Min Loddbok</h1>
-        <p style={{ opacity: 0.9 }}>{lottery.name}</p>
+        <p style={{ color: 'rgba(255,255,255,0.6)', margin: '4px 0 0 0' }}>{lottery.name}</p>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: 'white', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', borderBottom: '0.5px solid #dedddd', background: '#ffffff', justifyContent: 'center' }}>
         <div style={{ display: 'flex', width: '100%', maxWidth: '600px' }}>
-            <button onClick={() => setActiveTab('sell')} style={{ flex: 1, padding: '16px', border: 'none', background: 'none', fontSize: '14px', fontWeight: activeTab === 'sell' ? '600' : '400', color: activeTab === 'sell' ? 'var(--primary-color)' : 'var(--text-secondary)', borderBottom: activeTab === 'sell' ? '2px solid var(--primary-color)' : '2px solid transparent', cursor: 'pointer' }}>
+            <button onClick={() => setActiveTab('sell')} style={{ flex: 1, padding: '16px', border: 'none', background: 'none', fontSize: '14px', fontWeight: activeTab === 'sell' ? '600' : '400', color: activeTab === 'sell' ? '#1a2e1f' : '#6b7f70', borderBottom: activeTab === 'sell' ? '2px solid #2d6a4f' : '2px solid transparent', cursor: 'pointer' }}>
                 🎟️ Selg lodd
             </button>
-            <button onClick={() => setActiveTab('donate')} style={{ flex: 1, padding: '16px', border: 'none', background: 'none', fontSize: '14px', fontWeight: activeTab === 'donate' ? '600' : '400', color: activeTab === 'donate' ? 'var(--primary-color)' : 'var(--text-secondary)', borderBottom: activeTab === 'donate' ? '2px solid var(--primary-color)' : '2px solid transparent', cursor: 'pointer' }}>
+            <button onClick={() => setActiveTab('donate')} style={{ flex: 1, padding: '16px', border: 'none', background: 'none', fontSize: '14px', fontWeight: activeTab === 'donate' ? '600' : '400', color: activeTab === 'donate' ? '#1a2e1f' : '#6b7f70', borderBottom: activeTab === 'donate' ? '2px solid #2d6a4f' : '2px solid transparent', cursor: 'pointer' }}>
                 🎁 Doner premie
             </button>
         </div>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-        
+
         {activeTab === 'sell' && (
             <>
                 {/* Statuskort */}
-                <div className="card" style={{ padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px' }}>DITT SALG</div>
-                    <div style={{ fontSize: '48px', fontWeight: '800', color: 'var(--primary-color)' }}>{mySales * lottery.ticketPrice} kr</div>
-                    <div style={{ fontSize: '16px', color: 'var(--text-primary)', fontWeight: '600' }}>{mySales} lodd solgt</div>
+                <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '14px', color: '#4a5e50', marginBottom: '8px' }}>DITT SALG</div>
+                    <div style={{ fontSize: '48px', fontWeight: '800', color: '#2d6a4f' }}>{mySales * lottery.ticketPrice} kr</div>
+                    <div style={{ fontSize: '16px', color: '#1a2e1f', fontWeight: '600' }}>{mySales} lodd solgt</div>
                 </div>
 
                 {/* Delingsseksjon */}
-                <div className="card" style={{ padding: '24px', marginBottom: '24px', border: '2px solid #16a8b8', background: '#f0fdf4' }}>
-                    <h3 style={{ marginTop: 0, color: '#16a8b8' }}>📢 Selg lodd</h3>
-                    <p style={{ fontSize: '14px', marginBottom: '16px' }}>
+                <div style={{ background: '#e8f5ef', border: '2px solid #2d6a4f', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
+                    <h3 style={{ marginTop: 0, color: '#2d6a4f' }}>📢 Selg lodd</h3>
+                    <p style={{ fontSize: '14px', marginBottom: '16px', color: '#4a5e50' }}>
                         Send denne lenken til bestemor, onkel og naboen. De betaler enkelt med Vipps.
                     </p>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <input 
-                            readOnly 
-                            value={`${window.location.origin}/lottery-shop?seller=${currentFamilyId}`} 
-                            className="input" 
-                            style={{ fontSize: '12px', background: 'white' }}
+                        <input
+                            readOnly
+                            value={`${window.location.origin}/lottery-shop?seller=${currentFamilyId}`}
+                            style={{ flex: 1, fontSize: '12px', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px 12px', color: '#1a2e1f' }}
                         />
-                        <button onClick={copyLink} className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>Kopier</button>
+                        <button onClick={copyLink} style={{ whiteSpace: 'nowrap', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px', fontWeight: '600', cursor: 'pointer' }}>Kopier</button>
                     </div>
-                    <button onClick={openShop} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#16a8b8', textDecoration: 'underline', cursor: 'pointer', fontSize: '13px' }}>
+                    <button onClick={openShop} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#2d6a4f', textDecoration: 'underline', cursor: 'pointer', fontSize: '13px' }}>
                         Vis min salgsside (Slik den ser ut for kjøper)
                     </button>
                 </div>
 
                 {/* Premier */}
-                <div className="card" style={{ padding: '24px' }}>
-                    <h3 style={{ marginTop: 0 }}>🏆 Premier</h3>
-                    <ul style={{ paddingLeft: '20px', color: '#4b5563', fontSize: '14px' }}>
+                <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '24px' }}>
+                    <h3 style={{ marginTop: 0, color: '#1a2e1f' }}>🏆 Premier</h3>
+                    <ul style={{ paddingLeft: '20px', color: '#4a5e50', fontSize: '14px' }}>
                         {prizes.map((p: any) => (
                             <li key={p.id} style={{ marginBottom: '4px' }}>
                                 <strong>{p.name}</strong> {p.value && `(${p.value} kr)`} <br/>
-                                <span style={{fontSize:'12px', color: '#16a8b8'}}>Sponset av: {p.donor}</span>
+                                <span style={{fontSize:'12px', color: '#2d6a4f'}}>Sponset av: {p.donor}</span>
                             </li>
                         ))}
                     </ul>
@@ -233,45 +229,45 @@ export const MyLottery: React.FC = () => {
         )}
 
         {activeTab === 'donate' && (
-            <div className="card" style={{ padding: '24px' }}>
-                <h3 style={{ marginTop: 0, color: '#16a8b8' }}>🎁 Har du en premie å bidra med?</h3>
-                <p style={{ fontSize: '14px', color: '#4b5563', marginBottom: '24px' }}>
-                    Alt fra sjokolade og hjemmestrikk til gavekort fra jobben er supert! 
+            <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '24px' }}>
+                <h3 style={{ marginTop: 0, color: '#2d6a4f' }}>🎁 Har du en premie å bidra med?</h3>
+                <p style={{ fontSize: '14px', color: '#4a5e50', marginBottom: '24px' }}>
+                    Alt fra sjokolade og hjemmestrikk til gavekort fra jobben er supert!
                     Vi trenger navn på premien og ca. verdi.
                 </p>
 
                 <div style={{ marginBottom: '16px' }}>
-                    <label className="input-label">Hva er premien?</label>
-                    <input 
-                        className="input" 
-                        placeholder="F.eks. Gavekort på Kino" 
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px' }}>Hva er premien?</label>
+                    <input
+                        placeholder="F.eks. Gavekort på Kino"
                         value={donationName}
                         onChange={e => setDonationName(e.target.value)}
+                        style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }}
                     />
                 </div>
 
                 <div style={{ marginBottom: '16px' }}>
-                    <label className="input-label">Hvem er giver? (Bedrift/Person)</label>
-                    <input 
-                        className="input" 
-                        placeholder="F.eks. Kiwi Kongsvinger eller Familien Hansen" 
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px' }}>Hvem er giver? (Bedrift/Person)</label>
+                    <input
+                        placeholder="F.eks. Kiwi Kongsvinger eller et familienavn"
                         value={donationDonor}
                         onChange={e => setDonationDonor(e.target.value)}
-                    />
-                </div>
-                
-                <div style={{ marginBottom: '24px' }}>
-                    <label className="input-label">Anslått verdi (kr)</label>
-                    <input 
-                        type="number" 
-                        className="input" 
-                        placeholder="F.eks. 200" 
-                        value={donationValue}
-                        onChange={e => setDonationValue(e.target.value)}
+                        style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }}
                     />
                 </div>
 
-                <button onClick={handleDonate} className="btn btn-primary" style={{ width: '100%' }}>
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px' }}>Anslått verdi (kr)</label>
+                    <input
+                        type="number"
+                        placeholder="F.eks. 200"
+                        value={donationValue}
+                        onChange={e => setDonationValue(e.target.value)}
+                        style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }}
+                    />
+                </div>
+
+                <button onClick={handleDonate} style={{ width: '100%', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', padding: '14px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}>
                     ✅ Registrer premie
                 </button>
             </div>
@@ -279,10 +275,10 @@ export const MyLottery: React.FC = () => {
 
       </div>
 
-      <div className="bottom-nav">
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/family-dashboard'}><div className="bottom-nav-icon">🏠</div>Hjem</button>
-        <button className="bottom-nav-item active"><div className="bottom-nav-icon">🎟️</div>Lodd</button>
-        <button className="bottom-nav-item" onClick={() => window.location.href = '/my-shifts'}><div className="bottom-nav-icon">📅</div>Vakter</button>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#ffffff', borderTop: '0.5px solid #dedddd', zIndex: 100 }}>
+        <button onClick={() => window.location.href = '/family-dashboard'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🏠</div>Hjem</button>
+        <button style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🎟️</div>Lodd</button>
+        <button onClick={() => window.location.href = '/my-shifts'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>📅</div>Vakter</button>
       </div>
     </div>
   );

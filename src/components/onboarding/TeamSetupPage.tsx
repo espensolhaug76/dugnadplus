@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase } from '../../services/supabaseClient';
 
 export const TeamSetupPage: React.FC = () => {
   // Bruker en funksjon i useState for å hente standardverdi kun én gang
@@ -31,7 +32,7 @@ export const TeamSetupPage: React.FC = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     let teamName = '';
@@ -70,14 +71,28 @@ export const TeamSetupPage: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    // Lagre til localStorage (mock database for setup-fasen)
+    // Sjekk om laget allerede finnes
     const existingTeams = localStorage.getItem('dugnad_teams');
     const teams = existingTeams ? JSON.parse(existingTeams) : [];
+
+    const duplicate = teams.find((t: any) =>
+      t.sport === team.sport && t.name === team.name
+    );
+    if (duplicate) {
+      alert(`Laget "${team.name}" (${formData.sport}) finnes allerede.`);
+      return;
+    }
+
     teams.push(team);
     localStorage.setItem('dugnad_teams', JSON.stringify(teams));
 
     // VIKTIG: Sett dette som aktivt lag slik at dashboardet viser det
     localStorage.setItem('dugnad_current_team', JSON.stringify(team));
+
+    // Synk klubb+lag til Supabase user_metadata (overlever innlogging fra ny enhet)
+    try {
+        await supabase.auth.updateUser({ data: { club, teams, role: 'coordinator' } });
+    } catch {}
 
     window.location.href = '/coordinator-dashboard';
   };
@@ -88,30 +103,50 @@ export const TeamSetupPage: React.FC = () => {
   // Sjekk om valgt sport er Dans (brukes for å endre skjemaet)
   const isCustomNaming = formData.sport === 'dance';
 
+  const existingTeams = (() => {
+    try { return JSON.parse(localStorage.getItem('dugnad_teams') || '[]'); } catch { return []; }
+  })();
+
+  const SPORT_ICONS: Record<string, string> = { football: '⚽', handball: '🤾', dance: '💃', ishockey: '🏒', volleyball: '🏐', basketball: '🏀', other: '🏅' };
+  const SPORT_LABELS: Record<string, string> = { football: 'Fotball', handball: 'Håndball', dance: 'Dans', ishockey: 'Ishockey', volleyball: 'Volleyball', basketball: 'Basketball', other: 'Annet' };
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
-      <div style={{ maxWidth: '600px', margin: '0 auto', paddingTop: '60px' }}>
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '12px' }}>
-            Opprett ditt første lag
-          </h1>
-          <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>
-            Du kan legge til flere lag senere
-          </p>
-        </div>
+      <div style={{ maxWidth: '600px', margin: '0 auto', paddingTop: '40px' }}>
 
-        {/* Form Card */}
+        <button onClick={() => window.location.href = '/coordinator-dashboard'} className="btn btn-secondary" style={{ marginBottom: '16px' }}>← Tilbake til dashboard</button>
+
+        <h1 style={{ fontSize: '28px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+          {existingTeams.length > 0 ? 'Opprett nytt lag' : 'Opprett ditt første lag'}
+        </h1>
+        <p style={{ fontSize: '15px', color: 'var(--text-secondary)', marginBottom: '32px' }}>
+          Velg idrett, kjønn og årskull. Du kan opprette flere lag.
+        </p>
+
+        {/* Eksisterende lag */}
+        {existingTeams.length > 0 && (
+          <div style={{ marginBottom: '24px', padding: '16px', background: 'var(--card-bg, white)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '10px' }}>Dine lag ({existingTeams.length})</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {existingTeams.map((t: any) => (
+                <span key={t.id} style={{ padding: '6px 14px', borderRadius: '20px', fontSize: '13px', background: '#f0fdfa', border: '1px solid #99f6e4', color: 'var(--color-primary)', fontWeight: '600' }}>
+                  {SPORT_ICONS[t.sport] || '🏅'} {SPORT_LABELS[t.sport] || t.sport} · {t.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Form */}
         <div className="card" style={{ padding: '32px' }}>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            
-            {/* IDRETT VELGER */}
+
             <div>
-              <label className="input-label">Idrett</label>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Idrett</label>
               <select name="sport" value={formData.sport} onChange={handleChange} className="input">
                 <option value="football">⚽ Fotball</option>
                 <option value="handball">🤾 Håndball</option>
-                <option value="dance">💃 Dans</option> {/* <-- SJEKK AT DENNE ER HER */}
+                <option value="dance">💃 Dans</option>
                 <option value="ishockey">🏒 Ishockey</option>
                 <option value="volleyball">🏐 Volleyball</option>
                 <option value="basketball">🏀 Basketball</option>
@@ -119,70 +154,43 @@ export const TeamSetupPage: React.FC = () => {
               </select>
             </div>
 
-            {/* DYNAMISK INNHOLD */}
             {isCustomNaming ? (
-                /* SKJEMA FOR DANS (Fritekst) */
                 <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                    <label className="input-label">Navn på parti / gruppe</label>
-                    <input 
-                        type="text" 
-                        name="customTeamName"
-                        value={formData.customTeamName} 
-                        onChange={handleChange}
-                        className="input" 
-                        placeholder="F.eks. Hip Hop 10-12 år, Ballett Nivå 2..." 
-                        autoFocus
-                    />
-                    <p style={{fontSize:'13px', color:'#0369a1', marginTop:'6px'}}>
-                        ℹ️ For dans bruker vi egendefinerte navn i stedet for årskull.
-                    </p>
+                    <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Navn på parti / gruppe</label>
+                    <input type="text" name="customTeamName" value={formData.customTeamName} onChange={handleChange} className="input" placeholder="F.eks. Hip Hop 10-12 år" autoFocus />
                 </div>
             ) : (
-                /* SKJEMA FOR LAGIDRETT (Kjønn + År) */
-                <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div>
-                    <label className="input-label">Kjønn</label>
-                    <select name="gender" value={formData.gender} onChange={handleChange} className="input">
-                        <option value="gutter">Gutter</option>
-                        <option value="jenter">Jenter</option>
-                        <option value="mixed">Mixed</option>
-                    </select>
+                      <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Kjønn</label>
+                      <select name="gender" value={formData.gender} onChange={handleChange} className="input">
+                          <option value="gutter">Gutter</option>
+                          <option value="jenter">Jenter</option>
+                          <option value="mixed">Mixed</option>
+                      </select>
                     </div>
-
                     <div>
-                    <label className="input-label">Fødselsår</label>
-                    <select name="birthYear" value={formData.birthYear} onChange={handleChange} className="input">
-                        {years.map((year) => (
-                        <option key={year} value={year}>
-                            {year}
-                        </option>
-                        ))}
-                    </select>
+                      <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Fødselsår</label>
+                      <select name="birthYear" value={formData.birthYear} onChange={handleChange} className="input">
+                          {years.map((year) => <option key={year} value={year}>{year}</option>)}
+                      </select>
                     </div>
-                </>
+                </div>
             )}
 
             {/* Preview */}
-            <div
-              style={{
-                padding: '16px',
-                background: 'var(--background)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px' }}>Lagnavn:</p>
-              <p style={{ fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                {isCustomNaming 
-                    ? (formData.customTeamName || '...') 
+            <div style={{ padding: '16px', background: '#f0fdfa', borderRadius: '12px', border: '2px solid #99f6e4', textAlign: 'center' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Nytt lag:</p>
+              <p style={{ fontSize: '22px', fontWeight: '700', color: 'var(--color-primary)', margin: 0 }}>
+                {SPORT_ICONS[formData.sport] || '🏅'} {SPORT_LABELS[formData.sport] || ''} · {isCustomNaming
+                    ? (formData.customTeamName || '...')
                     : `${formData.gender === 'gutter' ? 'Gutter' : formData.gender === 'jenter' ? 'Jenter' : 'Mixed'} ${formData.birthYear}`
                 }
               </p>
             </div>
 
-            {/* Submit Button */}
-            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }}>
-              Fullfør og gå til dashboard
+            <button type="submit" className="btn btn-primary btn-large">
+              Opprett lag
             </button>
           </form>
         </div>
