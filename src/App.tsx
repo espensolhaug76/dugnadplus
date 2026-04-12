@@ -154,8 +154,10 @@ function AppContent() {
           <Route path="/substitute-profile" element={<SubstituteProfilePage />} />
         </Routes>
 
-        {/* Utviklerverktøy */}
-        <DevTools />
+        {/* Utviklerverktøy — kun i dev. Vite erstatter import.meta.env.DEV
+            med `false` ved prod-build, så uttrykket blir dead code og
+            DevTools-komponenten tree-shakes ut av produksjons-bundlen. */}
+        {import.meta.env.DEV && <DevTools />}
       </div>
   );
 }

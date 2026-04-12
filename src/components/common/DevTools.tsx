@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 export const DevTools: React.FC = () => {
+  // Hard kill-switch: utviklerverktøyet skal ALDRI rendres i produksjon.
+  // Vite erstatter import.meta.env.DEV med en bokstavelig `false` ved
+  // prod-build, så hele komponent-kroppen blir død kode. Selv hvis
+  // tree-shakingen i App.tsx skulle feile og importen havner i bundlen,
+  // stopper denne sjekken all logikk (inkludert fetchFamilies-queryen
+  // mot families/family_members som i seg selv er en datalekkasje).
+  if (!import.meta.env.DEV) return null;
+
   const [isOpen, setIsOpen] = useState(false);
   const [families, setFamilies] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);

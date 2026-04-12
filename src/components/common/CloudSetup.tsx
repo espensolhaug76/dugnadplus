@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 export const CloudSetup: React.FC = () => {
+  // Dev-only. Komponenten er ikke importert noe sted i dag, men har
+  // samme antipattern som DevTools (seed av families/events/shifts uten
+  // auth). Guarden her beskytter mot at en fremtidig import ved uhell
+  // eksponerer testdata-knappen i produksjon.
+  if (!import.meta.env.DEV) return null;
+
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
 
