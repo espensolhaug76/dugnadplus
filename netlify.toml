@@ -6,3 +6,38 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Sikkerhets-headers.
+#
+# CSP-en er foreløpig i Report-Only-modus. Det betyr at brudd kun blir
+# logget til browser-konsollen (ingen report-uri satt opp ennå) — appen
+# blir ikke knekt av en feilkonfigurert policy. Etter 24-48 timer med
+# observasjon mot produksjon skal vi bytte header-navnet fra
+# Content-Security-Policy-Report-Only til Content-Security-Policy for å
+# aktivere enforcement. Se docs/SECURITY_BACKLOG.md.
+#
+# Kjente avveininger i denne policyen:
+# - style-src tillater 'unsafe-inline' fordi hele appen bruker React
+#   inline style-objekter. Å stramme dette inn krever å flytte alle
+#   styles til CSS-filer eller bruke nonces/hashes — egen runde.
+# - script-src har IKKE 'unsafe-inline' eller 'unsafe-eval'. Inline
+#   event-handlers (onclick="...") ville blitt blokkert. Vi fjernet
+#   den siste gjenværende i KioskAdmin.printQR i forrige commit.
+# - img-src tillater data: for base64-bilder i marketplace (midlertidig
+#   til post-pilot Storage-migreringen) og https: for eksterne bilder
+#   som api.qrserver.com QR-koden og sponsor-logoer.
+# - connect-src tillater wss://*.supabase.co for Supabase Realtime
+#   (websockets) i tillegg til https-API-endpointet.
+# - frame-ancestors 'none' og X-Frame-Options: DENY gir dobbel
+#   clickjacking-beskyttelse (X-Frame-Options for eldre browsere,
+#   CSP for moderne).
+# - object-src 'none' blokkerer <object>, <embed>, <applet> — ingen
+#   plugins, ingen Flash, ingen PDF-viewer-eskalering.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
