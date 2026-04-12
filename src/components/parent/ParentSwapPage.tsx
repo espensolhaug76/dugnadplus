@@ -28,11 +28,14 @@ interface SwapRequest {
   shift_date: string;
 }
 
+type AuthState = 'checking' | 'unauthenticated' | 'not_found' | 'ready';
+
 export const ParentSwapPage: React.FC = () => {
   const [assignment, setAssignment] = useState<AssignmentDetails | null>(null);
   const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentFamily, setCurrentFamily] = useState<any>(null);
+  const [authState, setAuthState] = useState<AuthState>('checking');
 
   useEffect(() => {
     loadData();
@@ -41,38 +44,79 @@ export const ParentSwapPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const userJson = localStorage.getItem('dugnad_user');
-      const localUser = userJson ? JSON.parse(userJson) : null;
-
-      let userId = localUser?.id;
-      if (!userId) {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        userId = authUser?.id;
+      // 1. Autoritativ auth-sjekk mot Supabase. Stoler IKKE på localStorage alene —
+      //    et ugyldig/utløpt token må gi unauthenticated her, ikke slippe gjennom.
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        setAuthState('unauthenticated');
+        setLoading(false);
+        return;
       }
-      if (!userId) { setLoading(false); return; }
+      const userId = authUser.id;
 
-      // Hent familie
-      const { data: family } = await supabase
+      // 2. Finn familien brukeren tilhører. Støtter både det kanoniske
+      //    (family_members.auth_user_id) og det gamle (families.id = auth.uid())
+      //    mønsteret — dette er overgangsperioden før RLS-migreringen.
+      let familyId: string | null = null;
+
+      const { data: memberRow } = await supabase
+        .from('family_members')
+        .select('family_id')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (memberRow?.family_id) {
+        familyId = memberRow.family_id;
+      } else {
+        const { data: legacyFamily } = await supabase
+          .from('families')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle();
+        if (legacyFamily?.id) familyId = legacyFamily.id;
+      }
+
+      if (!familyId) {
+        setAuthState('not_found');
+        setLoading(false);
+        return;
+      }
+
+      const { data: familyRow } = await supabase
         .from('families')
         .select('*')
-        .eq('user_id', userId)
-        .single();
+        .eq('id', familyId)
+        .maybeSingle();
+      if (familyRow) setCurrentFamily(familyRow);
 
-      if (family) setCurrentFamily(family);
-
-      // Hent assignment_id fra URL
+      // 3. Hent assignment_id fra URL
       const params = new URLSearchParams(window.location.search);
       const assignmentId = params.get('assignment');
-      if (!assignmentId) { setLoading(false); return; }
+      if (!assignmentId) {
+        setAuthState('not_found');
+        setLoading(false);
+        return;
+      }
 
-      // Hent assignment med shift og event
+      // 4. Hent assignment — FILTRER PÅ family_id SAMTIDIG. Hvis assignmenten
+      //    ikke finnes ELLER ikke tilhører denne familien, får vi null.
+      //    Vi viser "ikke funnet" i begge tilfeller (404-semantikk) slik at
+      //    vi ikke avslører at UUID-en eksisterer.
       const { data: assignmentData } = await supabase
         .from('assignments')
         .select('*, shifts(*, events(*))')
         .eq('id', assignmentId)
-        .single();
+        .eq('family_id', familyId)
+        .maybeSingle();
 
-      if (assignmentData) {
+      if (!assignmentData) {
+        setAuthState('not_found');
+        setLoading(false);
+        return;
+      }
+
+      setAuthState('ready');
+      const family = familyRow;
+      {
         // Map joined table names to match interface
         const mapped = {
           ...assignmentData,
@@ -149,10 +193,51 @@ export const ParentSwapPage: React.FC = () => {
     ? `${assignment.shift?.start_time || ''} – ${assignment.shift?.end_time || ''}`
     : '';
 
-  if (loading) {
+  if (loading || authState === 'checking') {
     return (
       <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ fontSize: '14px', color: '#6b7f70' }}>Laster...</div>
+      </div>
+    );
+  }
+
+  if (authState === 'unauthenticated') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ textAlign: 'center', maxWidth: '320px' }}>
+          <div style={{ fontSize: '18px', fontWeight: '500', color: '#1a2e1f', marginBottom: '8px' }}>Logg inn for å fortsette</div>
+          <div style={{ fontSize: '13px', color: '#6b7f70', marginBottom: '16px' }}>
+            Du må være innlogget for å bytte vakt.
+          </div>
+          <button
+            onClick={() => window.location.href = '/login'}
+            style={{ background: '#2d6a4f', color: '#fff', fontSize: '13px', padding: '10px 20px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+          >
+            Gå til innlogging
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // not_found: vist både når assignmentId mangler, og når assignmentet
+  // ikke tilhører den innloggede familien. Ingen informasjonslekkasje
+  // mellom "finnes ikke" og "ikke din" — brukeren ser samme side.
+  if (authState === 'not_found') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ textAlign: 'center', maxWidth: '320px' }}>
+          <div style={{ fontSize: '18px', fontWeight: '500', color: '#1a2e1f', marginBottom: '8px' }}>Vakt ikke funnet</div>
+          <div style={{ fontSize: '13px', color: '#6b7f70', marginBottom: '16px' }}>
+            Vi fant ingen vakt å bytte her. Kanskje lenken er feil eller utdatert.
+          </div>
+          <button
+            onClick={() => window.location.href = '/family-dashboard'}
+            style={{ background: '#2d6a4f', color: '#fff', fontSize: '13px', padding: '10px 20px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+          >
+            Tilbake til dashbord
+          </button>
+        </div>
       </div>
     );
   }
