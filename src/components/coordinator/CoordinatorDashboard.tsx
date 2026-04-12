@@ -1,62 +1,8 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { CloudSetup } from '../common/CloudSetup';
 import './CoordinatorLayout.css';
 
 // --- HJELPEKOMPONENTER ---
-
-const StatCard = ({ icon, label, value, color }: { icon: string; label: string; value: number; color: string }) => (
-  <div className="stat-card" style={{ borderLeft: '4px solid ' + color }}>
-    <div style={{ fontSize: '32px', marginBottom: '8px', color: color }}>{icon}</div>
-    <div className="stat-card-value">{value}</div>
-    <div className="stat-card-label">{label}</div>
-  </div>
-);
-
-const ProgressCard = ({ title, date, assigned, total, type }: any) => {
-  const percentage = total > 0 ? Math.round((assigned / total) * 100) : 0;
-  const isCrisis = percentage < 50;
-  const isWarning = percentage < 80;
-  const color = isCrisis ? '#ef4444' : isWarning ? '#f59e0b' : '#10b981';
-
-  return (
-    <div className="card" style={{ padding: '20px', borderLeft: `4px solid ${color}`, marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-        <div>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>{title}</h3>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>📅 {new Date(date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' })} • {type}</p>
-        </div>
-        <span style={{ fontSize: '12px', fontWeight: '600', background: isCrisis ? '#fee2e2' : '#dcfce7', color: isCrisis ? '#991b1b' : '#166534', padding: '4px 10px', borderRadius: '12px' }}>
-          {assigned}/{total} fylt
-        </span>
-      </div>
-      <div style={{ height: '8px', width: '100%', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${percentage}%`, background: color, transition: 'width 0.5s ease' }}></div>
-      </div>
-      <p style={{ fontSize: '12px', color: color, marginTop: '8px', fontWeight: '600', textAlign: 'right' }}>
-        {percentage}% ferdigstilt
-      </p>
-    </div>
-  );
-};
-
-// OPPDATERT: Fjernet 'status' fra props her siden den ikke brukes
-const ActionItem = ({ name, task, time }: any) => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderBottom: '1px solid #f3f4f6' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>
-        {name.charAt(0)}
-      </div>
-      <div>
-        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{name}</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{task} • {time}</div>
-      </div>
-    </div>
-    <button className="btn" style={{ padding: '4px 10px', fontSize: '11px', background: '#fff7ed', color: '#c2410c', border: '1px solid #ffedd5' }}>
-        Send påminnelse
-    </button>
-  </div>
-);
 
 // --- HOVEDKOMPONENT ---
 
@@ -70,7 +16,7 @@ export const CoordinatorDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [dbEmpty, setDbEmpty] = useState(false);
   const [userName, setUserName] = useState('Koordinator');
-  const [userRole, setUserRole] = useState('');
+  const [, setUserRole] = useState('');
 
   // Familie-administrasjon state
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
@@ -78,7 +24,7 @@ export const CoordinatorDashboard: React.FC = () => {
   const [addingFamily, setAddingFamily] = useState(false);
   const [newFamilyName, setNewFamilyName] = useState('');
   const [familySearch, setFamilySearch] = useState('');
-  const [familySort, setFamilySort] = useState<'name' | 'points'>('name');
+  useState<'name' | 'points'>('name');
   const [familyView, setFamilyView] = useState<'cards' | 'ranking'>('cards');
   const [openVaktEvent, setOpenVaktEvent] = useState<string | null>(null);
 

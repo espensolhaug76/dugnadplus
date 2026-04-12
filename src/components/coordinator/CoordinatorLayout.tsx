@@ -22,10 +22,6 @@ const SPORT_ICONS: Record<string, string> = {
     football: '⚽', handball: '🤾', dance: '💃', ishockey: '🏒', volleyball: '🏐', basketball: '🏀', other: '🏅'
 };
 
-const SPORT_LABELS: Record<string, string> = {
-    football: 'FOTBALL', handball: 'HÅNDBALL', dance: 'DANS', ishockey: 'ISHOCKEY', volleyball: 'VOLLEYBALL', basketball: 'BASKETBALL', other: 'ANDRE LAG'
-};
-
 const SPORT_LABELS_DISPLAY: Record<string, string> = {
     football: 'Fotball', handball: 'Håndball', dance: 'Dans', ishockey: 'Ishockey', volleyball: 'Volleyball', basketball: 'Basketball', other: 'Annet'
 };
@@ -96,30 +92,6 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
       }
   };
 
-  const toggleTeamSeason = (teamId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      try {
-          const stored = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
-          const updated = stored.map((t: any) => t.id === teamId ? { ...t, isActive: !(t.isActive !== false) } : t);
-          localStorage.setItem('dugnad_teams', JSON.stringify(updated));
-          loadTeams();
-      } catch {}
-  };
-
-  const deleteTeam = (teamId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const team = Object.values(groupedTeams).flat().find(t => t.id === teamId);
-      if (!confirm(`Slette laget "${team?.name || ''}"? Laget fjernes fra sidebar.`)) return;
-      try {
-          const stored = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
-          const updated = stored.filter((t: any) => t.id !== teamId);
-          localStorage.setItem('dugnad_teams', JSON.stringify(updated));
-          if (selectedTeam === teamId) localStorage.removeItem('dugnad_active_team_filter');
-          loadTeams();
-          if (selectedTeam === teamId) window.location.reload();
-      } catch {}
-  };
-
   const navigateTo = (path: string) => { setMobileMenuOpen(false); window.location.href = path; };
   const switchToFamilyView = () => { window.location.href = '/family-dashboard'; };
   const sportOrder = ['dance', 'football', 'handball', 'ishockey', 'volleyball', 'basketball', 'other'];
@@ -152,7 +124,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
       return activeId ? teams.find((t: any) => t.id === activeId) : teams[0];
     } catch { return null; }
   };
-  const activeTeamInfo = getActiveTeamInfo();
+  getActiveTeamInfo();
   const currentPath = window.location.pathname;
 
   const navItems = [

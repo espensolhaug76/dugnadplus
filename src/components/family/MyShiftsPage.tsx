@@ -344,7 +344,6 @@ export const MyShiftsPage: React.FC = () => {
     return eventsCopy.reduce((acc: any, event: Event) => {
       const relevantShifts = event.shifts.filter(shift => {
         const isTakenByMe = shift.assignedFamilies?.includes(currentFamilyId);
-        const spotsLeft = shift.peopleNeeded - (shift.assignedFamilies?.length || 0);
         const swapReq = shift.swapRequest;
         const isMySwap = swapReq?.familyId === currentFamilyId;
         const isDirectToMe = swapReq?.type === 'direct' && swapReq?.targetFamilyId === currentFamilyId;
@@ -372,7 +371,6 @@ export const MyShiftsPage: React.FC = () => {
     let count = 0;
     events.forEach(e => e.shifts.forEach(s => {
         const isTakenByMe = s.assignedFamilies?.includes(currentFamilyId);
-        const spotsLeft = s.peopleNeeded - (s.assignedFamilies?.length || 0);
         const swapReq = s.swapRequest;
         const isDirectToMe = swapReq?.type === 'direct' && swapReq?.targetFamilyId === currentFamilyId;
 

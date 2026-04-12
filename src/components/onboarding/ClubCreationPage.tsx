@@ -33,7 +33,7 @@ export const ClubCreationPage: React.FC = () => {
   const [county, setCounty] = useState('');
   const [municipality, setMunicipality] = useState('');
   const [sport, setSport] = useState('football');
-  const [logoUrl, setLogoUrl] = useState('');
+  const [logoUrl] = useState('');
 
   const [suggestions, setSuggestions] = useState<ClubSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);

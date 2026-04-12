@@ -16,7 +16,7 @@ interface VikarChatProps {
   onClose: () => void;
 }
 
-export const VikarChat: React.FC<VikarChatProps> = ({ requestId, currentUserId, currentUserName, otherName, onClose }) => {
+export const VikarChat: React.FC<VikarChatProps> = ({ requestId, currentUserId, currentUserName: _currentUserName, otherName, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);

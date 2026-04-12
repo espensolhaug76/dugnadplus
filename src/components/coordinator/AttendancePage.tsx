@@ -92,16 +92,7 @@ export const AttendancePage: React.FC = () => {
     setLoading(false);
   };
 
-  // Referanseoversikt over poeng per aktivitet (for visning)
-  const ACTIVITY_POINTS: Record<string, number> = {
-    'Kioskvakt': 100,
-    'Billettsalg': 100,
-    'Rydding/rigging': 100,
-    'Fair play/kampvert': 100,
-    'Sekretæriat': 100,
-    'Garderobe': 100,
-    'Baking/saft': 50,
-  };
+  // Referanseoversikt over poeng per aktivitet (for visning) — reserved for future use
 
   // Poeng per time basert på vakttype
   const RATE_PER_HOUR: Record<string, number> = {

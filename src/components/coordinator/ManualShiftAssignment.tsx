@@ -164,15 +164,6 @@ export const ManualShiftAssignment: React.FC = () => {
     );
   };
 
-  const canAssignFamily = (familyId: string, shiftId: string): boolean => {
-    const shift = workingShifts.find(s => s.id === shiftId);
-    if (!shift) return false;
-    // Sjekk at familien ikke allerede er på denne vakten
-    if (shift.assignedFamilies?.includes(familyId)) return false;
-    // Tillat alltid drop — koordinator bestemmer (overlap/full vises som advarsel)
-    return true;
-  };
-
   const sortedFamilies = [...families]
     .map(f => {
       const childCount = f.players?.length || 1;

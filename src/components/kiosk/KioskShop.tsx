@@ -85,8 +85,6 @@ export const KioskShop: React.FC = () => {
 
   const handleConfirmSale = async () => {
     setSaving(true);
-    const params = new URLSearchParams(window.location.search);
-
     const saleItems = cartEntries.map(e => ({ name: e.item.name, emoji: e.item.emoji, price: e.item.price, qty: e.qty }));
 
     await supabase.from('kiosk_sales').insert({

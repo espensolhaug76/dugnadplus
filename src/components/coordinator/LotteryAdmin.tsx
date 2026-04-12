@@ -69,7 +69,7 @@ export const LotteryAdmin: React.FC = () => {
 
   // Historikk
   const [archivedLotteries, setArchivedLotteries] = useState<any[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  useState(false); // showHistory reserved for future use
 
   // Opprett-modal og navigasjon
   const [showCreateModal, setShowCreateModal] = useState(false);

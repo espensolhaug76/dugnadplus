@@ -75,7 +75,7 @@ export const CampaignOverviewPage: React.FC = () => {
           const revenue = sales.reduce((s: number, r: any) => s + (r.amount || 0), 0);
           const totalSold = sales.reduce((s: number, r: any) => s + (r.tickets || 0), 0);
           const winnersDrawn = (l.prizes || []).filter((p: any) => p.winner_name).length;
-          const prizeCount = (l.prizes || []).length;
+          (l.prizes || []).length; // prizeCount reserved for future use
 
           // Monthly
           sales.forEach((s: any) => {
@@ -171,8 +171,9 @@ export const CampaignOverviewPage: React.FC = () => {
 
         // Find date range
         const dates = kioskSales.map((s: any) => s.created_at).filter(Boolean).sort();
-        const startMonth = dates[0]?.slice(0, 7) || '';
-        const endMonth = dates[dates.length - 1]?.slice(0, 7) || '';
+        // startMonth/endMonth reserved for future date range display
+        dates[0]?.slice(0, 7) || '';
+        dates[dates.length - 1]?.slice(0, 7) || '';
 
         items.push({
           id: '__kiosk__',

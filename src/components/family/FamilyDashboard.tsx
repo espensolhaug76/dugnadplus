@@ -221,7 +221,7 @@ export const FamilyDashboard: React.FC = () => {
       const { data: sponsorSetting } = await supabase.from('settings').select('value').eq('key', 'sponsors_visible').maybeSingle();
       if (sponsorSetting?.value === 'true') {
         const { data: activeSponsors } = await supabase.from('sponsors').select('id').eq('is_active', true).limit(1);
-        setSponsorsVisible(activeSponsors && activeSponsors.length > 0);
+        setSponsorsVisible(!!(activeSponsors && activeSponsors.length > 0));
       }
 
     } catch (error) {
@@ -458,7 +458,7 @@ export const FamilyDashboard: React.FC = () => {
               if (!currentFamily) return;
               const types = ['Kioskvakt', 'Billettsalg', 'Fair play', 'Rydding', 'Rigging', 'Baking', 'Alle typer'];
               const current = (() => { try { return JSON.parse(currentFamily.willing_shift_types || '[]'); } catch { return []; } })();
-              const chosen = prompt('Hvilke vakttyper ønsker du?\n\n' + types.map((t, i) => `${current.includes(t) ? '✅' : '☐'} ${t}`).join('\n') + '\n\nSkriv inn nummer (kommaseparert) eller "alle":', current.length > 0 ? current.join(', ') : '');
+              const chosen = prompt('Hvilke vakttyper ønsker du?\n\n' + types.map((t) => `${current.includes(t) ? '✅' : '☐'} ${t}`).join('\n') + '\n\nSkriv inn nummer (kommaseparert) eller "alle":', current.length > 0 ? current.join(', ') : '');
               if (chosen === null) return;
               const selected = chosen.toLowerCase() === 'alle' ? ['Alle typer'] : chosen.split(',').map(s => s.trim()).filter(Boolean);
               await supabase.from('families').update({ willing_shift_types: JSON.stringify(selected) }).eq('id', currentFamily.id);

@@ -29,7 +29,7 @@ const DEFAULT_ITEMS = [
 export const KioskAdmin: React.FC = () => {
   const [items, setItems] = useState<KioskItem[]>([]);
   const [salesByEvent, setSalesByEvent] = useState<SalesSummary[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [vippsNumber, setVippsNumber] = useState('');
   const [teamId, setTeamId] = useState('');

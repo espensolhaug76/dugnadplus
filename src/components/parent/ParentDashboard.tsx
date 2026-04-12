@@ -24,7 +24,7 @@ function formatTime(timeStr: string | null): string {
 
 export const ParentDashboard: React.FC = () => {
   const [user, setUser] = useState<any>(null);
-  const [family, setFamily] = useState<any>(null);
+  const [, setFamily] = useState<any>(null);
   const [childName, setChildName] = useState('');
   const [assignments, setAssignments] = useState<any[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);

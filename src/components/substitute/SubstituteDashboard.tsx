@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { VikarChat } from './VikarChat';
+// VikarChat import reserved for future chat integration
 
 export const SubstituteDashboard: React.FC = () => {
   const [stats, setStats] = useState({ completed: 0, upcoming: 0, potentialEarnings: 0 });
@@ -9,7 +9,7 @@ export const SubstituteDashboard: React.FC = () => {
   const [myJobs, setMyJobs] = useState<any[]>([]); 
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
+  // chatOpen state reserved for future chat integration
 
   useEffect(() => {
     loadData();

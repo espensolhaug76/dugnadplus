@@ -37,7 +37,11 @@
       "Bash(npx --yes svg2png-cli public/icon-192.svg public/icon-192.png)",
       "Bash(npx sharp-cli:*)",
       "Bash(git status:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(ls -la .env*)",
+      "Bash(npm run:*)"
     ]
   }
 }

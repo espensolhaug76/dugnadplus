@@ -89,8 +89,7 @@ const getShieldConfigKey = (family: Family): 'none' | 'reduced' | 'full' => {
   return 'full';
 };
 
-const WEEKDAYS = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'];
-const TIME_SLOTS = ['Morgen', 'Ettermiddag', 'Kveld', 'Helg'];
+// WEEKDAYS and TIME_SLOTS reserved for future scheduling UI
 
 const parseJsonArray = (json?: string): string[] => {
   if (!json) return [];
@@ -283,7 +282,7 @@ export const ManageFamilies: React.FC = () => {
   };
 
   const generateInviteText = (): string => {
-    const club = (() => { try { return JSON.parse(localStorage.getItem('dugnad_club') || '{}'); } catch { return {}; } })();
+    (() => { try { return JSON.parse(localStorage.getItem('dugnad_club') || '{}'); } catch { return {}; } })();
     const teams = (() => { try { return JSON.parse(localStorage.getItem('dugnad_teams') || '[]'); } catch { return []; } })();
     const teamName = teams[0]?.name || 'laget';
     const joinUrl = `${window.location.origin}/join`;
@@ -568,7 +567,7 @@ export const ManageFamilies: React.FC = () => {
   };
 
   // Trener-toggle per forelder
-  const toggleParentTrainer = async (familyId: string, parentName: string) => {
+  const toggleParentTrainer = async (familyId: string, _parentName: string) => {
     const family = families.find(f => f.id === familyId);
     if (!family) return;
     const current = parseVerv(family.verv);

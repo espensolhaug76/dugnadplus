@@ -75,7 +75,7 @@ export const SmsSettingsPage: React.FC = () => {
     }
   };
 
-  const handleBuyPackage = (pkg: typeof SMS_PACKAGES[0]) => {
+  const handleBuyPackage = (_pkg: typeof SMS_PACKAGES[0]) => {
     alert('Betaling kommer snart — kontakt oss for å aktivere.');
   };
 
