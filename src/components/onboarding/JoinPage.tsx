@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '../../services/supabaseClient';
 import { normalizeJoinCode } from '../../utils/joinCode';
 
