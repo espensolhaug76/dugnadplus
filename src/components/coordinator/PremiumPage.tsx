@@ -20,7 +20,7 @@ export const PremiumPage: React.FC = () => {
         </div>
 
         {/* SEKSJON 1 — HERO */}
-        <div style={{ background: '#1e3a2f', borderRadius: '16px', padding: '48px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '12px' }}>
+        <div className="mkt-hero-grid" style={{ background: '#1e3a2f', borderRadius: '16px', padding: '48px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '12px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '12px', fontWeight: '600' }}>★ Fra 99 kr/mnd — tre planer for alle lag</div>
             <h1 style={{ fontSize: '32px', fontWeight: '600', color: '#ffffff', margin: '0 0 16px', lineHeight: '1.2' }}>Tjen penger til <span style={{ color: '#a8e6c3' }}>lagkassen</span></h1>
@@ -72,7 +72,7 @@ export const PremiumPage: React.FC = () => {
           <h2 style={{ fontSize: '20px', fontWeight: '500', margin: '0 0 6px', color: '#1a2e1f' }}>Fire måter å fylle lagkassen</h2>
           <p style={{ fontSize: '13px', color: '#4a5e50', margin: 0 }}>Bruk én eller alle — du velger selv hva som passer laget</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '40px' }}>
+        <div className="mkt-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '40px' }}>
           {[
             { icon: '🎟️', iconBg: '#e6f0e8', iconColor: '#2d6a4f', badge: 'Ditt eget lotteri', title: 'Digital loddbok', text: 'Du setter opp premiene, du bestemmer prisen, og du beholder alt. Fungerer like bra for et lite klassisk loddsalg som for et stort sesongavslutningslotteri med storpremie. Foreldre betaler med Vipps og deler videre — ingen papirlodd, ingen kontanter.', earn: 'Snitt 12 500 kr per salg', earnBg: '#e6f0e8', earnColor: '#2d6a4f' },
             { icon: '🛒', iconBg: '#faeeda', iconColor: '#854f0b', badge: '', title: 'Kiosk', text: 'Selg mat og drikke på hjemmekamper med Vipps-betaling. Sett opp menyen på 2 minutter.', earn: '300–800 kr per kamp', earnBg: '#faeeda', earnColor: '#854f0b' },
@@ -96,7 +96,7 @@ export const PremiumPage: React.FC = () => {
           <div style={{ fontSize: '11px', color: '#2d6a4f', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: '600', marginBottom: '12px' }}>Aktiv-plan</div>
           <h2 style={{ fontSize: '22px', fontWeight: '500', color: '#1a2e1f', margin: '0 0 8px' }}>Foreldre som ikke svarer — løst med én knapp</h2>
           <p style={{ fontSize: '14px', color: '#4a5e50', margin: '0 0 20px', maxWidth: '600px' }}>Automatisk påminnelse sendes X dager før vakten. De som fortsatt ikke har bekreftet får en manuell purring. Alt på SMS, direkte til telefonen.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="mkt-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px' }}>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏰</div>
               <div style={{ fontSize: '15px', fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Automatisk påminnelse</div>
@@ -113,10 +113,10 @@ export const PremiumPage: React.FC = () => {
         </div>
 
         {/* SEKSJON 4 — SLIK FUNGERER DET */}
-        <div style={{ background: '#faf8f4', borderRadius: '12px', padding: '28px 32px', marginBottom: '40px', border: '0.5px solid #dedddd' }}>
+        <div className="mkt-howto-box" style={{ background: '#faf8f4', borderRadius: '12px', padding: '28px 32px', marginBottom: '40px', border: '0.5px solid #dedddd' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '500', margin: '0 0 4px', color: '#1a2e1f' }}>Slik fungerer det</h3>
           <p style={{ fontSize: '12px', color: '#4a5e50', margin: '0 0 24px' }}>Fra null til loddsalg på under fem minutter</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
             {[
               { num: '1', title: 'Aktiver premium', text: 'Velg abonnement for laget. Ingen binding, avbryt når du vil.' },
               { num: '2', title: 'Sett opp en kampanje', text: 'Loddbok, kiosk eller sponsor — klar på under 3 minutter.' },
@@ -137,7 +137,7 @@ export const PremiumPage: React.FC = () => {
             <div style={{ fontSize: '11px', color: '#2d6a4f', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: '600', marginBottom: '12px' }}>Tre planer</div>
             <h2 style={{ fontSize: '22px', fontWeight: '500', color: '#1a2e1f', margin: '0 0 8px' }}>Gratis å starte — oppgrader når dere er klare</h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
             {/* Gratis */}
             <div style={{ border: '0.5px solid #dedddd', borderRadius: '14px', overflow: 'hidden' }}>
               <div style={{ background: '#faf8f4', padding: '18px' }}>
@@ -204,6 +204,21 @@ export const PremiumPage: React.FC = () => {
           <button onClick={activate} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '11px 28px', fontWeight: '500', fontSize: '14px', cursor: 'pointer' }}>Se hva dere kan tjene...</button>
         </div>
       </div>
+
+      {/* Mobil-responsivitet (<768px). Samme mønster som LandingPage:
+          @media + !important overstyrer inline styles uten å røre dem. */}
+      <style>{`
+        @media (max-width: 768px) {
+          .mkt-hero-grid {
+            grid-template-columns: 1fr !important;
+            padding: 32px 24px !important;
+            gap: 28px !important;
+          }
+          .mkt-grid-3 { grid-template-columns: 1fr !important; }
+          .mkt-grid-2 { grid-template-columns: 1fr !important; }
+          .mkt-howto-box { padding: 24px 20px !important; }
+        }
+      `}</style>
     </div>
   );
 };
