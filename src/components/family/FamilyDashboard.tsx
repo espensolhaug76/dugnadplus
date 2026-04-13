@@ -59,26 +59,56 @@ export const FamilyDashboard: React.FC = () => {
   const fetchCloudData = async () => {
     setLoading(true);
     try {
+      // Autoritativ auth-sjekk mot Supabase, ikke bare localStorage.
+      const { data: { user: authUser } } = await supabase.auth.getUser();
       const userJson = localStorage.getItem('dugnad_user');
       const localUser = userJson ? JSON.parse(userJson) : null;
-
-      // Bruk localStorage-ID først (for DevTools), deretter auth
-      let userId = localUser?.id;
-      if (!userId) {
-          const { data: { user: authUser } } = await supabase.auth.getUser();
-          userId = authUser?.id;
-      }
+      const userId = authUser?.id || localUser?.id;
 
       if (!userId) {
           setLoading(false);
           return;
       }
 
-      // Hent familie
+      // Kanonisk oppslag: bruk family_members.auth_user_id for å
+      // finne hvilken familie den innloggede brukeren er parent i.
+      // Dette er den nye flowen etter /claim-family-redesignet —
+      // foreldre har auth_user_id satt på sin parent-rad i en
+      // eksisterende familie, og families.id er IKKE lenger det
+      // samme som auth.uid().
+      let familyId: string | null = null;
+      const { data: memberRow } = await supabase
+        .from('family_members')
+        .select('family_id')
+        .eq('auth_user_id', userId)
+        .eq('role', 'parent')
+        .maybeSingle();
+      if (memberRow?.family_id) {
+        familyId = memberRow.family_id;
+      } else {
+        // Legacy fallback: families.id = auth.uid() (gammelt mønster
+        // fra før /claim-family-redesignet). Beholdes så eksisterende
+        // brukere fra før runden ikke låses ute.
+        const { data: legacy } = await supabase
+          .from('families')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle();
+        if (legacy?.id) familyId = legacy.id;
+      }
+
+      if (!familyId) {
+          setLoading(false);
+          return;
+      }
+
+      // Hent hele familien med alle medlemmer. Multi-child-familier
+      // (etter /claim-family?mode=add) får alle barn uavhengig av
+      // team_id — parent-perspektivet viser alle barn samlet.
       const { data: family } = await supabase
         .from('families')
         .select('*, family_members(*)')
-        .eq('id', userId)
+        .eq('id', familyId)
         .single();
 
       if (!family) {
@@ -317,6 +347,33 @@ export const FamilyDashboard: React.FC = () => {
       </div>
 
       <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+
+        {/* Legg til flere barn — multi-child-støtte.
+            Navigerer til /claim-family?mode=add hvor bruker kan
+            taste inn koden for et annet barn (f.eks. søsken på
+            et annet lag). ClaimFamilyPage flytter barnet fra
+            ghost-familien til denne familien og bevarer team_id. */}
+        <button
+          onClick={() => window.location.href = '/claim-family?mode=add'}
+          style={{
+            width: '100%',
+            marginBottom: '16px',
+            padding: '14px 18px',
+            background: '#fff',
+            border: '1px dashed #2d6a4f',
+            borderRadius: '10px',
+            color: '#2d6a4f',
+            fontSize: '14px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}
+        >
+          <span style={{ fontSize: '18px' }}>+</span> Legg til barn med kode
+        </button>
 
         {activeLottery && (
             <div style={{ padding: '24px', marginBottom: '24px', border: '2px solid #2d6a4f', background: '#e8f5ef', borderRadius: '8px' }}>
