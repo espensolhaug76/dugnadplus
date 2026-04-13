@@ -97,13 +97,13 @@ export const PremiumPage: React.FC = () => {
           <h2 style={{ fontSize: '22px', fontWeight: '500', color: '#1a2e1f', margin: '0 0 8px' }}>Foreldre som ikke svarer — løst med én knapp</h2>
           <p style={{ fontSize: '14px', color: '#4a5e50', margin: '0 0 20px', maxWidth: '600px' }}>Automatisk påminnelse sendes X dager før vakten. De som fortsatt ikke har bekreftet får en manuell purring. Alt på SMS, direkte til telefonen.</p>
           <div className="mkt-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px' }}>
+            <div className="mkt-sms-card" style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px' }}>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏰</div>
               <div style={{ fontSize: '15px', fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Automatisk påminnelse</div>
               <div style={{ fontSize: '12px', color: '#4a5e50', lineHeight: '1.55', marginBottom: '12px' }}>Velg 1, 2 eller 3 dager før vakten. Systemet sender SMS til alle ubekreftede automatisk.</div>
               <span style={{ background: '#e6f0e8', color: '#2d6a4f', fontSize: '11px', fontWeight: '500', padding: '3px 10px', borderRadius: '6px' }}>Spar 30 min per arrangement</span>
             </div>
-            <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px' }}>
+            <div className="mkt-sms-card" style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px' }}>
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>📱</div>
               <div style={{ fontSize: '15px', fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Manuell purring</div>
               <div style={{ fontSize: '12px', color: '#4a5e50', lineHeight: '1.55', marginBottom: '12px' }}>Se hvem som ikke har svart. Trykk én knapp — alle ubekreftede får SMS samtidig.</div>
@@ -140,7 +140,7 @@ export const PremiumPage: React.FC = () => {
           <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
             {/* Gratis */}
             <div style={{ border: '0.5px solid #dedddd', borderRadius: '14px', overflow: 'hidden' }}>
-              <div style={{ background: '#faf8f4', padding: '18px' }}>
+              <div className="mkt-price-header" style={{ background: '#faf8f4', padding: '18px' }}>
                 <div style={{ fontSize: '10px', color: '#6b7f70', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '6px' }}>Gratis</div>
                 <div style={{ fontSize: '32px', fontWeight: '500', color: '#1a2e1f' }}>0 kr</div>
                 <div style={{ fontSize: '11px', color: '#6b7f70' }}>Kom i gang uten risiko</div>
@@ -157,7 +157,7 @@ export const PremiumPage: React.FC = () => {
             </div>
             {/* Aktiv */}
             <div style={{ border: '2px solid #2d6a4f', borderRadius: '14px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ background: '#2d6a4f', padding: '18px', position: 'relative' }}>
+              <div className="mkt-price-header" style={{ background: '#2d6a4f', padding: '18px', position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '10px', right: '10px', background: '#7ec8a0', color: '#1e3a2f', fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '6px' }}>Mest valgt</span>
                 <div style={{ fontSize: '10px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '6px' }}>Aktiv</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
@@ -178,7 +178,7 @@ export const PremiumPage: React.FC = () => {
             </div>
             {/* Premium */}
             <div style={{ border: '0.5px solid #dedddd', borderRadius: '14px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ background: '#1e3a2f', padding: '18px', position: 'relative' }}>
+              <div className="mkt-price-header" style={{ background: '#1e3a2f', padding: '18px', position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '10px', right: '10px', background: '#7ec8a0', color: '#1e3a2f', fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '6px' }}>★ Mest verdi</span>
                 <div style={{ fontSize: '10px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '6px' }}>Premium</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
@@ -217,6 +217,14 @@ export const PremiumPage: React.FC = () => {
           .mkt-grid-3 { grid-template-columns: 1fr !important; }
           .mkt-grid-2 { grid-template-columns: 1fr !important; }
           .mkt-howto-box { padding: 24px 20px !important; }
+
+          /* Sentrér full-bredde kort på mobil — samme regler som LandingPage.
+             Pris-header har indre flex-rad ("490 kr / sesong") som må
+             justify-content: center. SMS-kortene har emoji + tittel + tekst
+             + pill og leser bedre sentrert når kortet er full-bredde. */
+          .mkt-price-header { text-align: center !important; }
+          .mkt-price-header > div { justify-content: center !important; }
+          .mkt-sms-card { text-align: center !important; }
         }
       `}</style>
     </div>
