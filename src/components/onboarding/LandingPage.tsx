@@ -89,9 +89,9 @@ export const LandingPage: React.FC = () => {
               { n: '2', badge: '1 min', icon: '📅', title: 'Legg inn arrangement', desc: 'Opprett kamp eller dugnad med dato, sted og vaktbehov. Kopier til neste dag med ett klikk.' },
               { n: '3', badge: 'automatisk', icon: '⚖️', title: 'Vakter fordeles rettferdig', desc: 'Systemet tildeler vakter til familiene med lavest poeng. Ingen diskusjoner — alle vet det er rettferdig.' },
             ].map((s, i) => (
-              <div key={i} style={{ background: '#fff', border: `0.5px solid ${border}`, borderRadius: '14px', padding: '22px', position: 'relative' }}>
+              <div key={i} className="mkt-step-card" style={{ background: '#fff', border: `0.5px solid ${border}`, borderRadius: '14px', padding: '22px', position: 'relative' }}>
                 <div style={{ position: 'absolute', top: '14px', right: '14px', background: gp, color: gm, fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px' }}>{s.badge}</div>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: gd, color: '#fff', fontFamily: serif, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>{s.n}</div>
+                <div className="mkt-step-number" style={{ width: '32px', height: '32px', borderRadius: '50%', background: gd, color: '#fff', fontFamily: serif, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>{s.n}</div>
                 <div style={{ fontSize: '24px', marginBottom: '8px' }}>{s.icon}</div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: text, marginBottom: '6px' }}>{s.title}</div>
                 <div style={{ fontSize: '13px', color: muted, lineHeight: 1.55 }}>{s.desc}</div>
@@ -259,7 +259,7 @@ export const LandingPage: React.FC = () => {
               { icon: '🛒', title: 'Kiosk på kampdag', desc: 'Skal dere selge kaker eller kaffe? Legg inn varer og priser, skriv ut QR-koden og heng den opp. Kjøperne skanner og betaler med Vipps. Kioskmenyen er klar på 2 minutter.', earn: '300–800 kr per kampdag' },
               { icon: '🛍️', title: 'Salgskampanjer', desc: 'Selg kalendere, juleris eller hva som helst. Hver spiller får sin egen salgslenke. Du ser hvem som har solgt hva i sanntid — og alle pengene går rett inn på lagets Vipps.', earn: 'Full oversikt — ingen jaging' },
             ].map((c, i) => (
-              <div key={i} style={{ background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '20px' }}>
+              <div key={i} className="mkt-income-card" style={{ background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '20px' }}>
                 <div style={{ fontSize: '28px', marginBottom: '10px' }}>{c.icon}</div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '6px' }}>{c.title}</div>
                 <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', lineHeight: 1.55, marginBottom: '12px' }}>{c.desc}</div>
@@ -308,7 +308,7 @@ export const LandingPage: React.FC = () => {
           <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', textAlign: 'left' }}>
             {/* Gratis */}
             <div style={{ border: `0.5px solid ${border}`, borderRadius: '14px', overflow: 'hidden' }}>
-              <div style={{ background: cream, padding: '20px' }}>
+              <div className="mkt-price-header" style={{ background: cream, padding: '20px' }}>
                 <div style={{ fontSize: '10px', color: muted, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '8px' }}>Gratis — alltid</div>
                 <div style={{ fontFamily: serif, fontSize: '38px', color: text }}>0 kr</div>
                 <div style={{ fontSize: '12px', color: muted }}>Kom i gang uten risiko</div>
@@ -330,7 +330,7 @@ export const LandingPage: React.FC = () => {
 
             {/* Aktiv */}
             <div style={{ border: `2px solid ${gm}`, borderRadius: '14px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ background: gm, padding: '20px', position: 'relative' }}>
+              <div className="mkt-price-header" style={{ background: gm, padding: '20px', position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '12px', right: '12px', background: gl, color: gd, fontSize: '10px', fontWeight: 600, padding: '3px 10px', borderRadius: '6px' }}>Mest valgt</span>
                 <div style={{ fontSize: '10px', color: gl, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '8px' }}>Aktiv</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
@@ -356,7 +356,7 @@ export const LandingPage: React.FC = () => {
 
             {/* Premium */}
             <div style={{ border: `0.5px solid ${border}`, borderRadius: '14px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ background: gd, padding: '20px', position: 'relative' }}>
+              <div className="mkt-price-header" style={{ background: gd, padding: '20px', position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '12px', right: '12px', background: gl, color: gd, fontSize: '10px', fontWeight: 600, padding: '3px 10px', borderRadius: '6px' }}>★ Mest verdi</span>
                 <div style={{ fontSize: '10px', color: gl, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '8px' }}>Premium</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
@@ -432,6 +432,33 @@ export const LandingPage: React.FC = () => {
 
           /* Footer: stack + sentrert */
           .mkt-footer { flex-direction: column !important; gap: 8px !important; text-align: center !important; padding: 20px !important; }
+
+          /* Full-bredde kort: sentrér innholdet så det ikke kliner mot venstre.
+             Gjelder de 3 step-kortene (Importer/Arrangement/Fordeles), de 3
+             income-kortene (Loddbok/Kiosk/Kampanjer) og pris-header-boksene
+             (Gratis/Aktiv/Premium). Feature-lister, løpende tekst og icon-left
+             kort holdes venstrejustert. */
+          .mkt-step-card,
+          .mkt-income-card {
+            text-align: center !important;
+          }
+          /* Den nummererte sirkelen på step-kortet er en blokk med fast
+             bredde (32x32) — text-align alene sentrerer den ikke. */
+          .mkt-step-number {
+            margin-left: auto !important;
+            margin-right: auto !important;
+          }
+          /* Pris-header: sentrér label, stor pris og subtekst.
+             Aktiv/Premium har en flex-rad inne i headeren ("490 kr / sesong")
+             — > div-selektoren treffer den og legger på justify-content
+             center; det er no-op på de ikke-flex divs. "Mest valgt"-badgen
+             er position: absolute og påvirkes ikke. */
+          .mkt-price-header {
+            text-align: center !important;
+          }
+          .mkt-price-header > div {
+            justify-content: center !important;
+          }
         }
       `}</style>
     </div>
