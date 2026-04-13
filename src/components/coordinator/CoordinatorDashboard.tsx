@@ -109,7 +109,10 @@ export const CoordinatorDashboard: React.FC = () => {
             }))
         }));
 
-        // Filtrer på valgt lag (match på både subgroup-navn OG sport)
+        // Filtrer på valgt lag via den kanoniske team_id-slug-en.
+        // Tidligere brukte vi (subgroup, sport)-matching her fordi events
+        // manglet team_id; etter 20260413-migreringen har events.team_id,
+        // så filteret er en ren streng-sammenligning.
         const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
         let activeTeam: any = null;
         if (activeTeamId) {
@@ -119,11 +122,8 @@ export const CoordinatorDashboard: React.FC = () => {
             } catch {}
         }
 
-        const filteredEvents = activeTeam
-            ? processedEvents.filter((e: any) => {
-                if (!e.subgroup) return false; // Arrangementer uten lag vises ikke når et lag er valgt
-                return e.subgroup === activeTeam.name && e.sport === activeTeam.sport;
-              })
+        const filteredEvents = activeTeamId
+            ? processedEvents.filter((e: any) => e.team_id === activeTeamId)
             : processedEvents;
 
         // Filtrer familier — vis kun de som er tildelt vakter i filtrerte events,

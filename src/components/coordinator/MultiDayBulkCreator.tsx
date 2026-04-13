@@ -231,13 +231,19 @@ export const MultiDayBulkCreator: React.FC = () => {
     setSaving(true);
 
     try {
-      // Hent aktivt lag for subgroup
+      // Hent aktivt lag for subgroup + team_id. team_id er den
+      // kanoniske slug-en som matcher families/lotteries/etc,
+      // subgroup beholdes som visuell merkelapp (display only).
       let subgroup = '';
+      let teamIdForInsert: string | null = null;
       try {
         const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
         const teams = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
         const activeTeam = activeTeamId ? teams.find((t: any) => t.id === activeTeamId) : teams[0];
-        if (activeTeam) subgroup = activeTeam.name;
+        if (activeTeam) {
+          subgroup = activeTeam.name;
+          teamIdForInsert = activeTeam.id || null;
+        }
       } catch {}
 
       let savedCount = 0;
@@ -257,6 +263,7 @@ export const MultiDayBulkCreator: React.FC = () => {
             location: e.location,
             sport: e.sport,
             subgroup,
+            team_id: teamIdForInsert,
             assignment_mode: assignmentMode,
             self_service_open_date: assignmentMode === 'self-service' ? `${selfServiceOpenDate}T${selfServiceOpenTime}` : null,
             self_service_status: assignmentMode === 'self-service' ? 'pending' : null

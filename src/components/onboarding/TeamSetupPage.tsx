@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { generateTeamSlug } from '../../utils/teamSlug';
 
 export const TeamSetupPage: React.FC = () => {
   // Bruker en funksjon i useState for å hente standardverdi kun én gang
@@ -61,8 +62,19 @@ export const TeamSetupPage: React.FC = () => {
       return;
     }
 
+    // Kanonisk team_id via slug — deterministisk, URL-safe, matcher
+    // families/events/lotteries/etc.team_id på tvers av hele DB-en.
+    // For Dans (customName) brukes fritekst-navnet som slug-komponent,
+    // ellers bygges slug-en av {sport}-{gender}-{birthYear}.
+    const teamSlug = generateTeamSlug(
+      formData.sport,
+      formData.sport === 'dance' ? undefined : formData.gender,
+      formData.sport === 'dance' ? undefined : yearToSave,
+      formData.sport === 'dance' ? formData.customTeamName : undefined
+    );
+
     const team = {
-      id: Date.now().toString(),
+      id: teamSlug,
       clubId: club.id,
       sport: formData.sport,
       gender: formData.sport === 'dance' ? 'mixed' : formData.gender,
@@ -71,13 +83,13 @@ export const TeamSetupPage: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    // Sjekk om laget allerede finnes
+    // Sjekk om laget allerede finnes. Siden slug-en er deterministisk
+    // er en id-match ekvivalent med "samme sport + samme gender/år (eller
+    // samme custom-navn)" — mer presist enn den gamle name+sport-sjekken.
     const existingTeams = localStorage.getItem('dugnad_teams');
     const teams = existingTeams ? JSON.parse(existingTeams) : [];
 
-    const duplicate = teams.find((t: any) =>
-      t.sport === team.sport && t.name === team.name
-    );
+    const duplicate = teams.find((t: any) => t.id === team.id);
     if (duplicate) {
       alert(`Laget "${team.name}" (${formData.sport}) finnes allerede.`);
       return;

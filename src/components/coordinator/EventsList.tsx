@@ -34,6 +34,7 @@ interface DugnadEvent {
   assignment_mode?: string;
   slotDuration?: number;
   subgroup?: string;
+  team_id?: string | null;
   shifts: DugnadShift[];
 }
 
@@ -89,6 +90,7 @@ export const EventsList: React.FC = () => {
             location: e.location,
             sport: e.sport,
             subgroup: e.subgroup,
+            team_id: e.team_id ?? null,
             assignment_mode: e.assignment_mode,
             slotDuration: 2,
             shifts: e.shifts.map((s: any) => ({
@@ -561,6 +563,7 @@ export const EventsList: React.FC = () => {
                               end_time: event.endTime,
                               sport: event.sport,
                               subgroup: event.subgroup,
+                              team_id: event.team_id ?? null,
                               assignment_mode: event.assignment_mode || 'auto'
                             }).select().single();
                             if (newEvent && event.shifts) {

@@ -267,6 +267,19 @@ export const CreateEvent: React.FC = () => {
 
     setSaving(true);
 
+    // Slå opp den kanoniske team_id (slug) fra localStorage basert på
+    // det valgte team-navnet og sporten. Dette kobler event-raden til
+    // samme team_id som families/lotteries/etc bruker, så Steg F-policies
+    // kan gjøre rene team_id-sjekker uten (sport, subgroup)-heuristikk.
+    let teamIdForInsert: string | null = null;
+    try {
+      const localTeams = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
+      const matchedTeam = localTeams.find(
+        (t: any) => t.name === selectedTeam && t.sport === sport
+      );
+      if (matchedTeam?.id) teamIdForInsert = matchedTeam.id;
+    } catch {}
+
     try {
         const { data: eventData, error: eventError } = await supabase
             .from('events')
@@ -278,6 +291,7 @@ export const CreateEvent: React.FC = () => {
                 location: location,
                 sport: sport,
                 subgroup: selectedTeam,
+                team_id: teamIdForInsert,
                 assignment_mode: assignmentMode,
                 self_service_open_date: assignmentMode === 'self-service' ? `${selfServiceOpenDate}T${selfServiceOpenTime}` : null,
                 self_service_status: assignmentMode === 'self-service' ? 'pending' : null
