@@ -112,3 +112,81 @@ export function generateTeamSlug(
 export function isLegacyTeamId(value: string): boolean {
   return /^\d{13}$/.test(value);
 }
+
+
+// ============================================================
+// DISPLAY HELPERS — for visning i bruker-vendte skjermer
+// ============================================================
+
+const SPORT_DISPLAY: Record<string, string> = {
+  football: 'Fotball',
+  fotball: 'Fotball',
+  handball: 'Håndball',
+  dans: 'Dans',
+  dance: 'Dans',
+  ishockey: 'Ishockey',
+  volleyball: 'Volleyball',
+  basketball: 'Basketball',
+  other: 'Annet',
+};
+
+const GENDER_DISPLAY: Record<string, string> = {
+  gutter: 'Gutter',
+  jenter: 'Jenter',
+  mixed: 'Mixed',
+};
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Konverter en team-slug til et menneskelig lesbart navn for
+ * bekreftelse-skjermer og lignende UI.
+ *
+ *   displayTeamName('handball-gutter-2016') -> 'Håndball Gutter 2016'
+ *   displayTeamName('fotball-jenter-2015')  -> 'Fotball Jenter 2015'
+ *   displayTeamName('dans-victory-dance')   -> 'Dans Victory Dance'
+ *   displayTeamName('dans-ae-oe-aa-test')   -> 'Dans Ae Oe Aa Test'
+ *     (reverse-transliterasjon av æøå er ikke entydig — slug er
+ *      tapsøs for visningsformål, men godt nok til bekreftelse)
+ *   displayTeamName(null)                    -> 'Ukjent lag'
+ *   displayTeamName('')                      -> 'Ukjent lag'
+ */
+export function displayTeamName(slug: string | null | undefined): string {
+  if (!slug) return 'Ukjent lag';
+  const parts = slug.split('-').filter(Boolean);
+  if (parts.length === 0) return 'Ukjent lag';
+
+  const sport = SPORT_DISPLAY[parts[0]] || capitalize(parts[0]);
+  const rest = parts.slice(1);
+
+  // Gjenkjenn lag-sports-formatet: gender + year
+  if (rest.length >= 1 && GENDER_DISPLAY[rest[0]]) {
+    const gender = GENDER_DISPLAY[rest[0]];
+    const year = rest[1] || '';
+    return `${sport} ${gender} ${year}`.trim();
+  }
+
+  // Custom-name format (dans etc): capitalize hver del
+  const customName = rest.map(capitalize).join(' ');
+  return customName ? `${sport} ${customName}` : sport;
+}
+
+/**
+ * Fornavn + etternavns-initial, for visning på bekreftelse-skjermer
+ * der vi ikke vil vise barnets fulle navn.
+ *
+ *   formatChildDisplayName('Adrian Hansen')       -> 'Adrian H.'
+ *   formatChildDisplayName('Adrian van der Berg') -> 'Adrian B.'
+ *   formatChildDisplayName('Adrian')              -> 'Adrian'
+ *   formatChildDisplayName('')                    -> ''
+ */
+export function formatChildDisplayName(fullName: string | null | undefined): string {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  const last = parts[parts.length - 1];
+  return `${parts[0]} ${last.charAt(0).toUpperCase()}.`;
+}

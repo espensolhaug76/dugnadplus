@@ -51,77 +51,13 @@ export const RoleSelectionPage: React.FC = () => {
   };
 
   // Bruker har en kode fra koordinator -> send til /claim-family.
-  // Ingen families-rad opprettes her, ClaimFamilyPage merger inn
-  // i en eksisterende ghost-familie.
+  // ClaimFamilyPage oppretter family_members parent-raden inne i
+  // den eksisterende familien via join_code-flyten. Vi oppretter
+  // aldri families-rader fra denne komponenten lenger — det er
+  // koordinator sitt ansvar. Brukere uten kode må henvises til
+  // koordinator.
   const handleHasCode = () => {
     window.location.href = '/claim-family';
-  };
-
-  // Bruker har IKKE en kode -> opprett en ny, tom familie og gå
-  // til dashboardet. Dette er den gamle "family-default"-logikken
-  // som tidligere lå i handleContinue, men nå bare kjøres når
-  // brukeren eksplisitt har valgt "Nei, opprett ny familie".
-  const handleCreateNewFamily = async () => {
-    setIsSubmitting(true);
-    const storedUser = localStorage.getItem('dugnad_user');
-    if (!storedUser) {
-      alert('Du må være innlogget.');
-      setIsSubmitting(false);
-      return;
-    }
-    const user = JSON.parse(storedUser);
-    if (!user.id) {
-      alert('Bruker-ID mangler.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    try {
-      const lastName = user.fullName ? user.fullName.split(' ').pop() : 'Ukjent';
-      const familyName = `Fam. ${lastName}`;
-
-      const { error: famError } = await supabase
-        .from('families')
-        .insert({
-          id: user.id,
-          name: familyName,
-          contact_email: user.email,
-          contact_phone: user.phone || ''
-        });
-
-      if (famError && famError.code !== '23505') {
-        console.error('Feil ved opprettelse av familie:', famError);
-        alert('Noe gikk galt ved opprettelse av familieprofilen. ' + famError.message);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const { data: existingMember } = await supabase
-        .from('family_members')
-        .select('id')
-        .eq('family_id', user.id)
-        .eq('role', 'parent')
-        .eq('name', user.fullName)
-        .maybeSingle();
-
-      if (!existingMember) {
-        await supabase
-          .from('family_members')
-          .insert({
-            family_id: user.id,
-            name: user.fullName,
-            role: 'parent',
-            email: user.email,
-            phone: user.phone
-          });
-      }
-
-      window.location.href = '/family-dashboard';
-    } catch (error: any) {
-      console.error('Kritisk feil:', error);
-      alert('En feil oppstod. Prøv igjen.');
-      setIsSubmitting(false);
-    }
   };
 
   const roles = [
@@ -174,14 +110,27 @@ export const RoleSelectionPage: React.FC = () => {
             >
               ✓ Ja, jeg har en kode
             </button>
-            <button
-              onClick={handleCreateNewFamily}
-              className="btn btn-secondary btn-large"
-              style={{ width: '100%', padding: '18px', fontSize: '16px', fontWeight: 600 }}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Oppretter familie...' : '+ Nei, opprett ny familie'}
-            </button>
+          </div>
+
+          {/* Hjelpetekst for brukere uten kode. Vi oppretter ikke
+              families-rader fra denne komponenten lenger — alle
+              familier skal eksistere i DB fra koordinator-import
+              før foreldre kobler seg til. */}
+          <div style={{ padding: '20px', background: '#fff8e6', border: '1px solid #fac775', borderRadius: '12px', marginBottom: '20px' }}>
+            <p style={{ fontSize: '14px', color: '#854f0b', margin: '0 0 8px', fontWeight: 600 }}>
+              Har du ikke fått en kode?
+            </p>
+            <p style={{ fontSize: '13px', color: '#6b5017', margin: 0, lineHeight: 1.55 }}>
+              Spør koordinatoren i klubben din — de sender ut en kode per barn.{' '}
+              Hvis du skal koordinere et lag selv, kan du{' '}
+              <button
+                onClick={() => setPhase('role')}
+                style={{ background: 'none', border: 'none', padding: 0, color: '#854f0b', textDecoration: 'underline', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+              >
+                gå tilbake og velge «Jeg starter ny klubb/lag»
+              </button>
+              .
+            </p>
           </div>
 
           <div style={{ textAlign: 'center' }}>

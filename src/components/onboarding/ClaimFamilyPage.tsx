@@ -1,109 +1,296 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { normalizeJoinCode } from '../../utils/joinCode';
+import { displayTeamName, formatChildDisplayName } from '../../utils/teamSlug';
+
+// ClaimFamilyPage — koble innlogget forelder til eksisterende
+// koordinator-importert familie via en join_code.
+//
+// To modi:
+//   - 'initial' (default): Brukeren har akkurat registrert seg og
+//     har ingen family_members-rad ennå. Vi oppretter en parent-
+//     rad i familien som koden tilhører.
+//   - 'add' (?mode=add): Brukeren er allerede koblet til en familie
+//     og vil legge til et ekstra barn (f.eks. en søsken på et
+//     annet lag). Vi flytter barnet fra sin ghost-familie til
+//     brukerens eksisterende familie, bevarer barnets team-
+//     tilhørighet via family_members.team_id, og sletter ghost-
+//     familien hvis den blir foreldreløs.
+//
+// UI-faser:
+//   - 'code': input-felt + "Koble til"-knapp
+//   - 'confirm': "Du kobler til {barn}, {lag}. Stemmer dette?"
+//   - 'submitting': spinner
+//   - 'success': grønn bekreftelse, redirect til /family-dashboard
+
+interface MatchedChild {
+  id: string;
+  name: string;
+  family_id: string;
+  ghost_family_name: string;
+  ghost_family_team_id: string | null;
+}
+
+type Phase = 'code' | 'confirm' | 'submitting' | 'success';
+type Mode = 'initial' | 'add';
 
 export const ClaimFamilyPage: React.FC = () => {
   const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [phase, setPhase] = useState<Phase>('code');
+  const [matchedChild, setMatchedChild] = useState<MatchedChild | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [mode, setMode] = useState<Mode>('initial');
 
-  const handleClaim = async () => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'add') setMode('add');
+  }, []);
+
+  const handleLookup = async () => {
     const normalized = normalizeJoinCode(code);
     if (!normalized) return;
-    setLoading(true);
+
+    setMessage(null);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setMessage({ type: 'error', text: 'Du må være logget inn.' });
+      return;
+    }
+
+    // Slå opp barn via join_code. Vi henter også ghost-familiens
+    // team_id og navn for bruk i bekreftelse-skjermen og
+    // (i add-mode) for å bevare team-tilhørigheten ved flytting.
+    const { data: childRow, error: findError } = await supabase
+      .from('family_members')
+      .select('id, name, family_id, families(name, team_id)')
+      .eq('join_code', normalized)
+      .eq('role', 'child')
+      .maybeSingle();
+
+    if (findError || !childRow || !childRow.family_id) {
+      setMessage({ type: 'error', text: 'Ugyldig kode. Sjekk at du har skrevet den riktig.' });
+      return;
+    }
+
+    const familiesRel: any = (childRow as any).families;
+    setMatchedChild({
+      id: childRow.id,
+      name: childRow.name,
+      family_id: childRow.family_id,
+      ghost_family_name: familiesRel?.name || 'familien',
+      ghost_family_team_id: familiesRel?.team_id || null,
+    });
+    setPhase('confirm');
+  };
+
+  const handleConfirm = async () => {
+    if (!matchedChild) return;
+    setPhase('submitting');
     setMessage(null);
 
     try {
-      // 1. Identifiser brukeren som er logget inn (Deg)
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Du må være logget inn.');
 
-      // 2. Slå opp barnet via join_code. Tidligere versjon queryet
-      //    families.import_code, men det er et separat kode-system
-      //    som koordinatorer ikke faktisk deler ut — invitasjons-
-      //    tekstene fra ManageFamilies bruker family_members.join_code
-      //    per barn. Vi resolver familien via child -> family_id.
-      const { data: childRow, error: findError } = await supabase
-        .from('family_members')
-        .select('id, family_id, name, families(id, name)')
-        .eq('join_code', normalized)
-        .eq('role', 'child')
-        .maybeSingle();
+      if (mode === 'initial') {
+        // Sjekk for duplikat først: er brukeren allerede parent i
+        // samme familie?
+        const { data: existing } = await supabase
+          .from('family_members')
+          .select('id')
+          .eq('family_id', matchedChild.family_id)
+          .eq('auth_user_id', user.id)
+          .eq('role', 'parent')
+          .maybeSingle();
 
-      if (findError || !childRow || !childRow.family_id) {
-        throw new Error('Ugyldig kode. Sjekk at du har skrevet den riktig.');
+        if (existing) {
+          setMessage({ type: 'success', text: 'Du er allerede koblet til denne familien. Sender deg til dashbordet...' });
+          setPhase('success');
+          setTimeout(() => { window.location.href = '/family-dashboard'; }, 1500);
+          return;
+        }
+
+        // Hent navn/telefon fra auth-metadata som fallback til
+        // e-postens lokale del, så parent-raden får et meningsfylt
+        // navn uansett hvordan bruker registrerte seg.
+        const metaFullName = (user.user_metadata as any)?.full_name;
+        const metaPhone = (user.user_metadata as any)?.phone;
+        const proposedName = metaFullName
+          || (user.email ? user.email.split('@')[0] : null)
+          || 'Forelder';
+
+        const { error: insertError } = await supabase
+          .from('family_members')
+          .insert({
+            family_id: matchedChild.family_id,
+            name: proposedName,
+            role: 'parent',
+            email: user.email,
+            phone: metaPhone || null,
+            auth_user_id: user.id,
+            team_id: matchedChild.ghost_family_team_id,
+          });
+
+        if (insertError) throw insertError;
+
+        setMessage({ type: 'success', text: `Suksess! Du er nå koblet til ${matchedChild.ghost_family_name}.` });
+        setPhase('success');
+        setTimeout(() => { window.location.href = '/family-dashboard'; }, 1800);
+      } else {
+        // mode === 'add' — flytt barnet til brukerens eksisterende
+        // familie og slett ghost-familien hvis den blir tom.
+
+        // 1. Finn brukerens eksisterende family_id via parent-raden
+        const { data: myParentRow, error: myErr } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .eq('auth_user_id', user.id)
+          .eq('role', 'parent')
+          .maybeSingle();
+
+        if (myErr || !myParentRow?.family_id) {
+          throw new Error('Kunne ikke finne din eksisterende familie. Registrer deg først med en kode.');
+        }
+
+        const myFamilyId = myParentRow.family_id;
+
+        // 2. Ikke flytt hvis barnet allerede er i min familie
+        if (matchedChild.family_id === myFamilyId) {
+          setMessage({ type: 'success', text: `${formatChildDisplayName(matchedChild.name)} er allerede i familien din.` });
+          setPhase('success');
+          setTimeout(() => { window.location.href = '/family-dashboard'; }, 1500);
+          return;
+        }
+
+        const ghostFamilyIdBeforeMove = matchedChild.family_id;
+
+        // 3. Flytt barnet — oppdater family_id + bevar team_id
+        const { error: updateErr } = await supabase
+          .from('family_members')
+          .update({
+            family_id: myFamilyId,
+            team_id: matchedChild.ghost_family_team_id,
+          })
+          .eq('id', matchedChild.id);
+
+        if (updateErr) throw updateErr;
+
+        // 4. Slett ghost-familien hvis den nå er foreldreløs
+        const { count, error: countErr } = await supabase
+          .from('family_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('family_id', ghostFamilyIdBeforeMove);
+
+        if (!countErr && count === 0) {
+          await supabase.from('families').delete().eq('id', ghostFamilyIdBeforeMove);
+        }
+
+        setMessage({ type: 'success', text: `${formatChildDisplayName(matchedChild.name)} er lagt til i familien din.` });
+        setPhase('success');
+        setTimeout(() => { window.location.href = '/family-dashboard'; }, 1800);
       }
-
-      const familiesRel: any = (childRow as any).families;
-      const importedFamily = {
-        id: childRow.family_id,
-        name: familiesRel?.name || 'familien',
-      };
-
-      // Sjekk at vi ikke prøver å merge med oss selv
-      if (importedFamily.id === user.id) {
-          throw new Error('Du er allerede koblet til denne familien.');
-      }
-
-      // 3. START SAMMENSLÅING (MERGE)
-      // Vi flytter alt fra importedFamily -> user.id
-
-      // A. Flytt medlemmene (Barna og evt placeholder-foreldre)
-      const { error: memberError } = await supabase
-        .from('family_members')
-        .update({ family_id: user.id })
-        .eq('family_id', importedFamily.id);
-      
-      if (memberError) throw memberError;
-
-      // B. Flytt vakter (Assignments)
-      const { error: assignError } = await supabase
-        .from('assignments')
-        .update({ family_id: user.id })
-        .eq('family_id', importedFamily.id);
-
-      if (assignError) throw assignError;
-
-      // C. Flytt bytte-forespørsler (Requests - fra og til)
-      await supabase.from('requests').update({ from_family_id: user.id }).eq('from_family_id', importedFamily.id);
-      await supabase.from('requests').update({ to_family_id: user.id }).eq('to_family_id', importedFamily.id);
-      await supabase.from('requests').update({ target_family_id: user.id }).eq('target_family_id', importedFamily.id);
-
-      // D. Flytt lotteri-salg
-      await supabase.from('lottery_sales').update({ seller_family_id: user.id }).eq('seller_family_id', importedFamily.id);
-
-      // 4. Opprydding: Slett den nå tomme "spøkelses-familien"
-      await supabase.from('families').delete().eq('id', importedFamily.id);
-
-      setMessage({
-          type: 'success',
-          text: `Suksess! Du er nå koblet til ${importedFamily.name}. Barna og vaktene er lagt til i din profil.`
-      });
-      setCode('');
-
-      // Send brukeren til dashboard etter kort tid
-      setTimeout(() => {
-          window.location.href = '/family-dashboard';
-      }, 2000);
-
     } catch (error: any) {
-      console.error('Feil ved claiming:', error);
-      setMessage({ type: 'error', text: error.message });
-    } finally {
-      setLoading(false);
+      console.error('Feil ved kobling:', error);
+      setMessage({ type: 'error', text: error.message || 'Noe gikk galt. Prøv igjen.' });
+      setPhase('confirm');
     }
   };
 
+  const handleCancelConfirm = () => {
+    setMatchedChild(null);
+    setCode('');
+    setMessage(null);
+    setPhase('code');
+  };
+
+  const teamDisplay = matchedChild
+    ? displayTeamName(matchedChild.ghost_family_team_id)
+    : '';
+  const childDisplay = matchedChild
+    ? formatChildDisplayName(matchedChild.name)
+    : '';
+
+  // ===== PHASE: SUCCESS =====
+  if (phase === 'success') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
+        <div style={{ maxWidth: '500px', margin: '0 auto', paddingTop: '80px', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+            {mode === 'add' ? 'Barnet er lagt til!' : 'Koblet til!'}
+          </h1>
+          {message && (
+            <p style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>{message.text}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ===== PHASE: CONFIRM =====
+  if (phase === 'confirm' || phase === 'submitting') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
+        <div style={{ maxWidth: '500px', margin: '0 auto', paddingTop: '80px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+              Stemmer dette?
+            </h1>
+            <p style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>
+              {mode === 'add' ? 'Du legger til' : 'Du kobler til'}
+            </p>
+          </div>
+
+          <div className="card" style={{ padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '22px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+              {childDisplay}
+            </div>
+            <div style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>
+              {teamDisplay}
+            </div>
+          </div>
+
+          {message && message.type === 'error' && (
+            <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', background: '#fee2e2', color: '#991b1b', textAlign: 'center' }}>
+              {message.text}
+            </div>
+          )}
+
+          <button
+            onClick={handleConfirm}
+            className="btn btn-primary btn-large"
+            style={{ width: '100%', marginBottom: '12px' }}
+            disabled={phase === 'submitting'}
+          >
+            {phase === 'submitting' ? 'Kobler til...' : 'Ja, det stemmer'}
+          </button>
+          <button
+            onClick={handleCancelConfirm}
+            className="btn btn-secondary"
+            style={{ width: '100%' }}
+            disabled={phase === 'submitting'}
+          >
+            Nei, det er feil
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== PHASE: CODE INPUT =====
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
       <div style={{ maxWidth: '500px', margin: '0 auto', paddingTop: '60px' }}>
-        
+
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '12px' }}>
-            Koble til barn/lag
+            {mode === 'add' ? 'Legg til barn med kode' : 'Koble til barn/lag'}
           </h1>
           <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>
-            Har du fått en kode fra lagleder eller koordinator? Tast den inn her for å hente dine data.
+            {mode === 'add'
+              ? 'Har du flere barn i klubben? Tast inn koden for neste barn her.'
+              : 'Tast inn koden du har fått fra koordinator for å koble deg til barnet ditt.'}
           </p>
         </div>
 
@@ -114,56 +301,48 @@ export const ClaimFamilyPage: React.FC = () => {
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleLookup(); }}
               className="input"
               placeholder="F.eks. KIL8583"
               style={{
-                  textAlign: 'center',
-                  fontSize: '24px',
-                  letterSpacing: '4px',
-                  textTransform: 'uppercase',
-                  fontWeight: '700'
+                textAlign: 'center',
+                fontSize: '24px',
+                letterSpacing: '4px',
+                textTransform: 'uppercase',
+                fontWeight: '700'
               }}
             />
           </div>
 
-          {message && (
-              <div style={{ 
-                  padding: '12px', 
-                  borderRadius: '8px', 
-                  marginBottom: '16px',
-                  background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
-                  color: message.type === 'success' ? '#166534' : '#991b1b',
-                  textAlign: 'center'
-              }}>
-                  {message.text}
-              </div>
+          {message && message.type === 'error' && (
+            <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', background: '#fee2e2', color: '#991b1b', textAlign: 'center' }}>
+              {message.text}
+            </div>
           )}
 
           <button
-            onClick={handleClaim}
+            onClick={handleLookup}
             className="btn btn-primary btn-large"
             style={{ width: '100%' }}
-            disabled={!code || loading}
+            disabled={!code}
           >
-            {loading ? 'Kobler til...' : '🔗 Koble til'}
+            🔗 Koble til
           </button>
-          
+
           <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              {/* Tidligere "Hopp over / Gå til Dashboard"-knappen er
-                  fjernet — den ga brukere en lekkasje til en tom
-                  familie de egentlig ikke ville ha. Bruker som faktisk
-                  vil opprette ny familie går tilbake via denne lenken
-                  og velger "Nei, opprett ny familie" på rolle-siden. */}
-              <button onClick={() => window.location.href = '/role-selection'} className="btn" style={{color: 'var(--text-secondary)'}}>
-                  ← Tilbake
-              </button>
+            <button
+              onClick={() => window.location.href = mode === 'add' ? '/family-dashboard' : '/role-selection'}
+              className="btn"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              ← Tilbake
+            </button>
           </div>
         </div>
 
-        {/* Info boks */}
         <div style={{ marginTop: '32px', padding: '20px', background: '#eff6ff', borderRadius: '12px', color: '#1e40af', fontSize: '14px' }}>
-            <strong>ℹ️ Har du flere barn?</strong><br/>
-            Du kan bruke denne siden flere ganger. Hvis du har fått flere koder (f.eks. en for fotball og en for håndball), bare tast inn den neste koden etter at den første er registrert. Alt samles på din profil.
+          <strong>ℹ️ Ikke fått en kode?</strong><br/>
+          Spør koordinator i klubben din. Hver unge har sin egen kode som brukes for å koble forelderen til familien.
         </div>
 
       </div>
