@@ -509,15 +509,33 @@ Gjennomgående markeringer:
 
 Alt etter dette er **ikke gjort ennå**. Estimater er grove.
 
-#### Steg A — Schema: `team_members`, `platform_admins`*(valgfritt)*, snapshot-tabeller
-- **Hvem:** [Espen] kjører SQL i Supabase SQL Editor etter at [CC] har skrevet fila.
-- **Hva:**
-  - `team_members (id, team_id, club_id, auth_user_id, role, family_id, created_at)` med `unique(team_id, auth_user_id, role)`
-  - `migration_snapshot_family_members_pre (id, auth_user_id)` — for rollback
-  - `migration_created_family_members (id)` — for rollback
-- **Estimat:** CC skriver SQL: 1 time. Espen kjører + verifiserer: 15 min.
+#### Steg A — Schema: `team_members`, `platform_admins`*(valgfritt)*, snapshot-tabeller ✅ FERDIG
+- **Commit:** `b827733` (SQL) — `supabase/migrations/20260413_step_a_team_members_scaffold.sql`
+- **Dato kjørt:** 2026-04-13
+- **Hvem:** [Espen] kjørte SQL i Supabase SQL Editor etter at [CC] hadde skrevet fila.
+- **Hva som faktisk ble opprettet:**
+  - `public.team_members (id, team_id, club_id, auth_user_id, role, family_id, created_at)` med `UNIQUE (team_id, auth_user_id, role)` og CHECK-constraint `family_id XOR role='parent'`. Roller i enum: `coordinator / parent / club_admin` (substitute utelatt bevisst — håndteres via auth metadata i Steg E). FKs: `auth.users ON DELETE CASCADE`, `clubs ON DELETE SET NULL`, `families ON DELETE CASCADE`. Fire indekser: `auth_user_id`, `(team_id, role)`, `family_id` partiell, `club_id` partiell.
+  - `public.migration_snapshot_family_members_pre (snapshot_id, family_member_id, auth_user_id, captured_at)` — tom, populeres i Steg B.
+  - `public.migration_created_family_members (id, family_member_id UNIQUE, created_at)` — tom, populeres i Steg B.
+- **Verifikasjon grønn:** alle tre tabeller eksisterer, 7 riktige kolonner på `team_members`, 3 FKs bekreftet med riktig ON DELETE-oppførsel, row_count = 0 på alle tre.
+- **Estimat vs. faktisk:** Estimat: CC 1t + Espen 15 min. Faktisk omtrent på estimat — SQL-skriving tok ~45 min, kjøring + verifikasjon ~20 min.
 - **Avhengigheter:** Ingen. Kan starte når som helst.
 - **Stoppunkt:** ✅ Trygt. Tabellen er ny og ubrukt. Appen merker ingenting.
+
+> **Gotcha for fremtidige verifikasjoner — cross-schema-FK usynlig i `information_schema`:**
+> Under verifikasjonen av Steg A oppdaget vi at `information_schema.constraint_column_usage` **ikke rapporterte FK-en fra `public.team_members.auth_user_id` til `auth.users.id`** — den viste kun 2 av 3 FKs. Dette er et dokumentert Postgres-oppførsel: `information_schema`-vyene følger SQL-standardens privileges-modell og skjuler referanser til objekter i schemas brukeren ikke har full tilgang til. `auth`-skjemaet i Supabase eies av en egen rolle, så `postgres`-rollen i SQL Editor ser FK-ens *eksistens* (via `pg_constraint`) men ikke *referanse-sporet* (via `constraint_column_usage`).
+>
+> **For fremtidige RLS-verifikasjons-queries:** ikke stol på `information_schema.constraint_column_usage` eller `information_schema.referential_constraints` for FKs som krysser schema-grenser. Bruk i stedet `pg_constraint` direkte:
+>
+> ```sql
+> SELECT conname, pg_get_constraintdef(oid, true) AS definition
+> FROM pg_constraint
+> WHERE conrelid = 'public.team_members'::regclass
+>   AND contype = 'f'
+> ORDER BY conname;
+> ```
+>
+> `pg_get_constraintdef()` returnerer den rå CREATE-syntaksen inkludert `REFERENCES auth.users(id) ON DELETE CASCADE` — synlig uavhengig av schema-grenser. Dette må bakes inn i verifikasjons-skriptene for Steg B, E og F hvor vi også kommer til å ha cross-schema-FKs.
 
 #### Steg B — Backfill + verifiserings-queries V1–V4
 - **Hvem:** [Espen] kjører SQL. [Begge] verifiserer V1–V4 sammen.
