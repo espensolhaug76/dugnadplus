@@ -799,11 +799,27 @@ export const CoordinatorDashboard: React.FC = () => {
 
                           {/* Familie-handlinger */}
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #f3f4f6' }}>
-                            {fam.import_code && (
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginRight: 'auto', alignSelf: 'center' }}>
-                                Kode: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{fam.import_code}</span>
-                              </span>
-                            )}
+                            {(() => {
+                              // Vis join_codes per barn (family_members.join_code)
+                              // i stedet for families.import_code, siden det er
+                              // join_codes foreldre faktisk bruker i /join og
+                              // /claim-family-flowen.
+                              const childCodes = (fam.family_members || [])
+                                .filter((m: any) => m.role === 'child' && m.join_code)
+                                .map((m: any) => ({ name: m.name, code: m.join_code }));
+                              if (childCodes.length === 0) return null;
+                              return (
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginRight: 'auto', alignSelf: 'center' }}>
+                                  {childCodes.length === 1 ? 'Kode: ' : 'Koder: '}
+                                  {childCodes.map((c: any, idx: number) => (
+                                    <span key={c.code}>
+                                      <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{c.code}</span>
+                                      {idx < childCodes.length - 1 ? ' ' : ''}
+                                    </span>
+                                  ))}
+                                </span>
+                              );
+                            })()}
                             <button onClick={() => handleDeleteFamily(fam.id)} className="btn" style={{ fontSize: '12px', color: '#ef4444', border: '1px solid #fee2e2', background: '#fff5f5', padding: '6px 14px' }}>
                               Slett familie
                             </button>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { normalizeJoinCode } from '../../utils/joinCode';
 
 interface MatchedChild {
   id: string;
@@ -47,7 +48,7 @@ export const JoinPage: React.FC = () => {
   const [addMoreLooking, setAddMoreLooking] = useState(false);
 
   const lookupCode = async (code: string, opts?: { isAddMore?: boolean }) => {
-    const trimmed = code.trim().toUpperCase();
+    const trimmed = normalizeJoinCode(code);
     if (!trimmed || trimmed.length < 4) {
       const msg = 'Skriv inn en gyldig kode.';
       if (opts?.isAddMore) setAddMoreError(msg); else setLookupError(msg);
@@ -300,7 +301,7 @@ export const JoinPage: React.FC = () => {
             value={codeInput}
             onChange={e => { setCodeInput(e.target.value.toUpperCase()); setLookupError(''); }}
             onKeyDown={e => { if (e.key === 'Enter') handleStep1Continue(); }}
-            placeholder="KIL-XXXX"
+            placeholder="KIL8583"
             maxLength={10}
             autoFocus
             style={{
@@ -447,7 +448,7 @@ export const JoinPage: React.FC = () => {
                   value={addMoreCode}
                   onChange={e => { setAddMoreCode(e.target.value.toUpperCase()); setAddMoreError(''); }}
                   onKeyDown={e => { if (e.key === 'Enter') lookupCode(addMoreCode, { isAddMore: true }); }}
-                  placeholder="KIL-XXXX"
+                  placeholder="KIL8583"
                   maxLength={10}
                   autoFocus
                   style={{

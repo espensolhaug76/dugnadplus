@@ -1,6 +1,7 @@
 ﻿import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabaseClient';
+import { generateJoinCode } from '../../utils/joinCode';
 
 interface ParsedPlayer {
   name: string;
@@ -100,19 +101,10 @@ export const ImportFamilies: React.FC = () => {
     return code;
   };
 
-  const generateJoinCode = (): string => {
-    // Hent klubbforkortelse fra localStorage
-    let prefix = 'DUG';
-    try {
-      const club = JSON.parse(localStorage.getItem('dugnad_club') || '{}');
-      if (club.name) {
-        // Lag forkortelse: første 3 bokstaver i store bokstaver
-        prefix = club.name.replace(/[^a-zA-ZæøåÆØÅ]/g, '').substring(0, 3).toUpperCase();
-      }
-    } catch {}
-    const num = Math.floor(1000 + Math.random() * 9000); // 4 siffer
-    return `${prefix}-${num}`;
-  };
+  // generateJoinCode er flyttet til src/utils/joinCode.ts for deling
+  // mellom ImportFamilies og ManageFamilies. Formatet er nå
+  // "{PREFIX}{NNNN}" uten bindestrek — normaliseres tolerant ved
+  // input via normalizeJoinCode().
 
   const handleImport = async () => {
     if (parsedData.length === 0) return;

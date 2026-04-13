@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { normalizeJoinCode } from '../../utils/joinCode';
 
 export const ClaimFamilyPage: React.FC = () => {
   const [code, setCode] = useState('');
@@ -7,7 +8,8 @@ export const ClaimFamilyPage: React.FC = () => {
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const handleClaim = async () => {
-    if (!code.trim()) return;
+    const normalized = normalizeJoinCode(code);
+    if (!normalized) return;
     setLoading(true);
     setMessage(null);
 
@@ -16,18 +18,29 @@ export const ClaimFamilyPage: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Du må være logget inn.');
 
-      // 2. Finn familien som hører til koden ("Spøkelses-familien")
-      const { data: importedFamily, error: findError } = await supabase
-        .from('families')
-        .select('id, name')
-        .eq('import_code', code.trim())
-        .single();
+      // 2. Slå opp barnet via join_code. Tidligere versjon queryet
+      //    families.import_code, men det er et separat kode-system
+      //    som koordinatorer ikke faktisk deler ut — invitasjons-
+      //    tekstene fra ManageFamilies bruker family_members.join_code
+      //    per barn. Vi resolver familien via child -> family_id.
+      const { data: childRow, error: findError } = await supabase
+        .from('family_members')
+        .select('id, family_id, name, families(id, name)')
+        .eq('join_code', normalized)
+        .eq('role', 'child')
+        .maybeSingle();
 
-      if (findError || !importedFamily) {
+      if (findError || !childRow || !childRow.family_id) {
         throw new Error('Ugyldig kode. Sjekk at du har skrevet den riktig.');
       }
 
-      // Sjekk at vi ikke prøver å merge med oss selv (hvis man taster sin egen kode?)
+      const familiesRel: any = (childRow as any).families;
+      const importedFamily = {
+        id: childRow.family_id,
+        name: familiesRel?.name || 'familien',
+      };
+
+      // Sjekk at vi ikke prøver å merge med oss selv
       if (importedFamily.id === user.id) {
           throw new Error('Du er allerede koblet til denne familien.');
       }
@@ -100,15 +113,15 @@ export const ClaimFamilyPage: React.FC = () => {
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={(e) => setCode(e.target.value)}
               className="input"
-              placeholder="F.eks. X7Y2P"
-              style={{ 
-                  textAlign: 'center', 
-                  fontSize: '24px', 
-                  letterSpacing: '4px', 
+              placeholder="F.eks. KIL8583"
+              style={{
+                  textAlign: 'center',
+                  fontSize: '24px',
+                  letterSpacing: '4px',
                   textTransform: 'uppercase',
-                  fontWeight: '700' 
+                  fontWeight: '700'
               }}
             />
           </div>
@@ -136,8 +149,13 @@ export const ClaimFamilyPage: React.FC = () => {
           </button>
           
           <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <button onClick={() => window.location.href = '/family-dashboard'} className="btn" style={{color: 'var(--text-secondary)'}}>
-                  Hopp over / Gå til Dashboard
+              {/* Tidligere "Hopp over / Gå til Dashboard"-knappen er
+                  fjernet — den ga brukere en lekkasje til en tom
+                  familie de egentlig ikke ville ha. Bruker som faktisk
+                  vil opprette ny familie går tilbake via denne lenken
+                  og velger "Nei, opprett ny familie" på rolle-siden. */}
+              <button onClick={() => window.location.href = '/role-selection'} className="btn" style={{color: 'var(--text-secondary)'}}>
+                  ← Tilbake
               </button>
           </div>
         </div>

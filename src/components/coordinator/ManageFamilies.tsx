@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow } from '../../utils/csvSafe';
+import { generateJoinCode } from '../../utils/joinCode';
 
 interface Member {
   id: string;
@@ -308,11 +309,8 @@ export const ManageFamilies: React.FC = () => {
 
   // --- ACTIONS ---
 
-  const generateJoinCode = (): string => {
-      let prefix = 'DUG';
-      try { const club = JSON.parse(localStorage.getItem('dugnad_club') || '{}'); if (club.name) prefix = club.name.replace(/[^a-zA-ZæøåÆØÅ]/g, '').substring(0, 3).toUpperCase(); } catch {}
-      return `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
-  };
+  // generateJoinCode er flyttet til src/utils/joinCode.ts for deling
+  // med ImportFamilies. Formatet er nå uten bindestrek.
 
   const handleAddFamily = async () => {
       const validChildren = newChildren.filter(c => c.name.trim());
@@ -853,9 +851,26 @@ export const ManageFamilies: React.FC = () => {
                     {/* Handlingsrad */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            {family.import_code && (
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Kode: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>{family.import_code}</span></span>
-                            )}
+                            {(() => {
+                              // Vis join_codes per barn (family_members.join_code)
+                              // i stedet for families.import_code — se
+                              // CoordinatorDashboard for begrunnelse.
+                              const childCodes = (family.members || [])
+                                .filter((m: any) => m.role === 'child' && (m as any).join_code)
+                                .map((m: any) => (m as any).join_code);
+                              if (childCodes.length === 0) return null;
+                              return (
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {childCodes.length === 1 ? 'Kode: ' : 'Koder: '}
+                                  {childCodes.map((c: string, idx: number) => (
+                                    <span key={c}>
+                                      <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>{c}</span>
+                                      {idx < childCodes.length - 1 ? ' ' : ''}
+                                    </span>
+                                  ))}
+                                </span>
+                              );
+                            })()}
                             {vervPoints(family.verv) > 0 && (
                                 <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>({family.total_points} dugnad + {vervPoints(family.verv)} verv)</span>
                             )}

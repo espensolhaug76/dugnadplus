@@ -2,10 +2,26 @@ import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 type Role = 'coordinator' | 'family' | 'substitute' | null;
+type Phase = 'role' | 'family-code-choice';
 
 export const RoleSelectionPage: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<Role>(null);
+  const [phase, setPhase] = useState<Phase>('role');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Persist valgt rolle til localStorage + auth-metadata.
+  // Brukes av alle tre rolle-utfall og av begge family-valgene.
+  const persistRole = async (role: Exclude<Role, null>) => {
+    const storedUser = localStorage.getItem('dugnad_user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      user.role = role;
+      localStorage.setItem('dugnad_user', JSON.stringify(user));
+      try {
+        await supabase.auth.updateUser({ data: { role } });
+      } catch {}
+    }
+  };
 
   const handleContinue = async () => {
     if (!selectedRole) {
@@ -14,86 +30,97 @@ export const RoleSelectionPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    await persistRole(selectedRole);
 
-    // Oppdater rolle i både localStorage OG Supabase metadata
-    const storedUser = localStorage.getItem('dugnad_user');
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      user.role = selectedRole;
-      localStorage.setItem('dugnad_user', JSON.stringify(user));
-
-      // Synk til Supabase metadata
-      await supabase.auth.updateUser({ data: { role: selectedRole } });
-
-      // --- SUPABASE INTEGRASJON: OPPRETT NY FAMILIE ---
-      // Hvis brukeren velger "Familie" (og ikke har trykket på "Har kode"-knappen),
-      // oppretter vi en ny, tom familieprofil.
-      if (selectedRole === 'family' && user.id) {
-        try {
-          // 1. Generer familienavn fra etternavn
-          const lastName = user.fullName ? user.fullName.split(' ').pop() : 'Ukjent';
-          const familyName = `Fam. ${lastName}`;
-
-          // 2. Opprett rad i 'families' tabellen
-          const { error: famError } = await supabase
-            .from('families')
-            .insert({
-              id: user.id,
-              name: familyName,
-              contact_email: user.email,
-              contact_phone: user.phone || ''
-            });
-
-          if (famError) {
-             // Ignorer unique_violation (familien finnes allerede), ellers vis feil
-             if (famError.code !== '23505') { 
-                 console.error('Feil ved opprettelse av familie:', famError);
-                 alert('Noe gikk galt ved opprettelse av familieprofilen. ' + famError.message);
-                 setIsSubmitting(false);
-                 return;
-             }
-          }
-
-          // 3. Opprett første rad i 'family_members' (Forelderen selv)
-          const { data: existingMember } = await supabase
-            .from('family_members')
-            .select('id')
-            .eq('family_id', user.id)
-            .eq('role', 'parent')
-            .eq('name', user.fullName)
-            .maybeSingle();
-
-          if (!existingMember) {
-              await supabase
-                .from('family_members')
-                .insert({
-                  family_id: user.id,
-                  name: user.fullName,
-                  role: 'parent',
-                  email: user.email,
-                  phone: user.phone
-                });
-          }
-
-        } catch (error: any) {
-          console.error('Kritisk feil:', error);
-          alert('En feil oppstod. Prøv igjen.');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-      // --- SLUTT SUPABASE ---
-    }
-
-    setIsSubmitting(false);
-
-    // Route based on role
     if (selectedRole === 'coordinator') {
       window.location.href = '/create-club';
-    } else if (selectedRole === 'family') {
-      window.location.href = '/family-dashboard'; // Går direkte til dashbord nå som vi lagrer i DB
-    } else if (selectedRole === 'substitute') {
+      return;
+    }
+    if (selectedRole === 'substitute') {
       window.location.href = '/substitute-marketplace';
+      return;
+    }
+    if (selectedRole === 'family') {
+      // Gå til code-choice fase i samme komponent. Vi oppretter
+      // IKKE families-raden ennå — det skjer bare hvis brukeren
+      // eksplisitt velger "Nei, opprett ny familie" nedenfor.
+      setPhase('family-code-choice');
+      setIsSubmitting(false);
+      return;
+    }
+  };
+
+  // Bruker har en kode fra koordinator -> send til /claim-family.
+  // Ingen families-rad opprettes her, ClaimFamilyPage merger inn
+  // i en eksisterende ghost-familie.
+  const handleHasCode = () => {
+    window.location.href = '/claim-family';
+  };
+
+  // Bruker har IKKE en kode -> opprett en ny, tom familie og gå
+  // til dashboardet. Dette er den gamle "family-default"-logikken
+  // som tidligere lå i handleContinue, men nå bare kjøres når
+  // brukeren eksplisitt har valgt "Nei, opprett ny familie".
+  const handleCreateNewFamily = async () => {
+    setIsSubmitting(true);
+    const storedUser = localStorage.getItem('dugnad_user');
+    if (!storedUser) {
+      alert('Du må være innlogget.');
+      setIsSubmitting(false);
+      return;
+    }
+    const user = JSON.parse(storedUser);
+    if (!user.id) {
+      alert('Bruker-ID mangler.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const lastName = user.fullName ? user.fullName.split(' ').pop() : 'Ukjent';
+      const familyName = `Fam. ${lastName}`;
+
+      const { error: famError } = await supabase
+        .from('families')
+        .insert({
+          id: user.id,
+          name: familyName,
+          contact_email: user.email,
+          contact_phone: user.phone || ''
+        });
+
+      if (famError && famError.code !== '23505') {
+        console.error('Feil ved opprettelse av familie:', famError);
+        alert('Noe gikk galt ved opprettelse av familieprofilen. ' + famError.message);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const { data: existingMember } = await supabase
+        .from('family_members')
+        .select('id')
+        .eq('family_id', user.id)
+        .eq('role', 'parent')
+        .eq('name', user.fullName)
+        .maybeSingle();
+
+      if (!existingMember) {
+        await supabase
+          .from('family_members')
+          .insert({
+            family_id: user.id,
+            name: user.fullName,
+            role: 'parent',
+            email: user.email,
+            phone: user.phone
+          });
+      }
+
+      window.location.href = '/family-dashboard';
+    } catch (error: any) {
+      console.error('Kritisk feil:', error);
+      alert('En feil oppstod. Prøv igjen.');
+      setIsSubmitting(false);
     }
   };
 
@@ -121,6 +148,58 @@ export const RoleSelectionPage: React.FC = () => {
     },
   ];
 
+  // Fase 2 — code-choice etter "Jeg er forelder". Rendres i samme
+  // komponent, ikke som egen rute, slik at brukeren ikke mister
+  // kontekst. "Ja, jeg har en kode" går til /claim-family, "Nei"
+  // oppretter en ny familie og går til /family-dashboard.
+  if (phase === 'family-code-choice') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
+        <div style={{ maxWidth: '560px', margin: '0 auto', paddingTop: '80px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '12px' }}>
+              Har du fått en kode fra koordinator?
+            </h1>
+            <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>
+              Hvis koordinator allerede har importert familien din, har du fått en kode (f.eks. KIL8583) via Spond, SMS eller e-post.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+            <button
+              onClick={handleHasCode}
+              className="btn btn-primary btn-large"
+              style={{ width: '100%', padding: '18px', fontSize: '16px', fontWeight: 600 }}
+              disabled={isSubmitting}
+            >
+              ✓ Ja, jeg har en kode
+            </button>
+            <button
+              onClick={handleCreateNewFamily}
+              className="btn btn-secondary btn-large"
+              style={{ width: '100%', padding: '18px', fontSize: '16px', fontWeight: 600 }}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Oppretter familie...' : '+ Nei, opprett ny familie'}
+            </button>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <button
+              onClick={() => { setPhase('role'); }}
+              className="btn"
+              style={{ color: 'var(--text-secondary)', background: 'none', border: 'none' }}
+              disabled={isSubmitting}
+            >
+              ← Tilbake
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fase 1 — rolle-valg (default).
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
       <div style={{ maxWidth: '800px', margin: '0 auto', paddingTop: '60px' }}>
@@ -210,23 +289,10 @@ export const RoleSelectionPage: React.FC = () => {
           {isSubmitting ? 'Lagrer...' : 'Fortsett'}
         </button>
 
-        {/* --- NY SEKSJON: CLAIM FAMILY --- */}
-        <div style={{ marginTop: '40px', paddingTop: '32px', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>
-                Har du fått en Dugnads-kode?
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                Hvis du har fått en kode av koordinator (f.eks. på Spond), kan du koble deg til barnet ditt her.
-            </p>
-            <button 
-                onClick={() => window.location.href = '/claim-family'}
-                className="btn btn-secondary"
-                style={{ background: 'var(--card-bg, white)', border: '2px solid #e2e8f0' }}
-            >
-                🔗 Jeg har en kode
-            </button>
-        </div>
-
+        {/* Den gamle "Har du fått en Dugnads-kode?"-seksjonen er
+            fjernet. Funksjonen er flyttet inn i "Jeg er forelder"-
+            flowen som en inline code-choice-fase (se phase ===
+            'family-code-choice' over). */}
       </div>
     </div>
   );
