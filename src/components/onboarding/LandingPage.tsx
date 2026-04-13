@@ -24,18 +24,18 @@ export const LandingPage: React.FC = () => {
     <div data-theme="light" style={{ fontFamily: sans, color: text, background: cream }}>
 
       {/* ========== NAV ========== */}
-      <nav style={{ height: '58px', background: gd, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 48px', position: 'sticky', top: 0, zIndex: 50 }}>
+      <nav className="mkt-nav" style={{ height: '58px', background: gd, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 48px', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ fontFamily: serif, fontSize: '22px', color: '#fff', cursor: 'pointer' }} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Dugnad<span style={{ color: gl }}>+</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '28px' }}>
           {['Slik fungerer det', 'Premium', 'Priser'].map(l => (
-            <a key={l} href={`#${l.toLowerCase().replace(/ /g, '-')}`} style={{ color: 'rgba(255,255,255,0.55)', fontSize: '13px', textDecoration: 'none', fontWeight: 400 }}>{l}</a>
+            <a key={l} className="mkt-nav-link" href={`#${l.toLowerCase().replace(/ /g, '-')}`} style={{ color: 'rgba(255,255,255,0.55)', fontSize: '13px', textDecoration: 'none', fontWeight: 400 }}>{l}</a>
           ))}
           <button onClick={() => go('/register')} style={{ background: gl, color: gd, border: 'none', borderRadius: '8px', padding: '8px 20px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: sans }}>Kom i gang gratis</button>
         </div>
       </nav>
 
       {/* ========== HERO ========== */}
-      <section style={{ background: gd, padding: '72px 48px 64px', textAlign: 'center' }}>
+      <section className="mkt-hero-section" style={{ background: gd, padding: '72px 48px 64px', textAlign: 'center' }}>
         <div style={{ maxWidth: '780px', margin: '0 auto' }}>
           {/* Pill */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(126,200,160,0.12)', border: '1px solid rgba(126,200,160,0.25)', borderRadius: '20px', padding: '5px 14px', marginBottom: '28px' }}>
@@ -43,7 +43,7 @@ export const LandingPage: React.FC = () => {
             <span style={{ fontSize: '11px', color: gl, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 500 }}>For norske idrettslag</span>
           </div>
 
-          <h1 style={{ fontFamily: serif, fontSize: '50px', color: '#fff', lineHeight: 1.08, margin: '0 0 20px' }}>
+          <h1 className="mkt-hero-h1" style={{ fontFamily: serif, fontSize: '50px', color: '#fff', lineHeight: 1.08, margin: '0 0 20px' }}>
             Dugnad uten <em style={{ color: gl, fontStyle: 'italic' }}>kaos</em> — klar på 3 minutter
           </h1>
           <p style={{ fontSize: '16px', color: 'rgba(255,255,255,0.5)', maxWidth: '500px', margin: '0 auto 32px', lineHeight: 1.6 }}>
@@ -51,7 +51,7 @@ export const LandingPage: React.FC = () => {
           </p>
 
           {/* Buttons */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '16px' }}>
+          <div className="mkt-hero-buttons" style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '16px' }}>
             <button onClick={() => go('/register')} style={{ background: gl, color: gd, border: 'none', borderRadius: '10px', padding: '14px 30px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', fontFamily: sans }}>Prøv gratis — ingen kredittkort</button>
             <button onClick={() => { const el = document.getElementById('slik-fungerer-det'); el?.scrollIntoView({ behavior: 'smooth' }); }} style={{ background: 'rgba(255,255,255,0.07)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', padding: '14px 24px', fontSize: '15px', fontWeight: 400, cursor: 'pointer', fontFamily: sans }}>Se hvordan det fungerer</button>
           </div>
@@ -74,16 +74,16 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* ========== AKT 1: GRATIS ========== */}
-      <section id="slik-fungerer-det" style={{ background: '#fff', padding: '64px 48px' }}>
+      <section id="slik-fungerer-det" className="mkt-section" style={{ background: '#fff', padding: '64px 48px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <div style={{ fontSize: '11px', color: gm, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: '12px' }}>Gratis — alltid</div>
-            <h2 style={{ fontFamily: serif, fontSize: '34px', color: text, margin: '0 0 12px' }}>Tre steg fra kaos til <em style={{ color: gm, fontStyle: 'italic' }}>full kontroll</em></h2>
+            <h2 className="mkt-h2" style={{ fontFamily: serif, fontSize: '34px', color: text, margin: '0 0 12px' }}>Tre steg fra kaos til <em style={{ color: gm, fontStyle: 'italic' }}>full kontroll</em></h2>
             <p style={{ fontSize: '15px', color: muted, maxWidth: '540px', margin: '0 auto' }}>Sett opp laget, legg inn arrangement, og la systemet fordele vakter rettferdig. Ingen opplæring trengs.</p>
           </div>
 
           {/* Three steps */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '40px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '40px' }}>
             {[
               { n: '1', badge: '2 min', icon: '📥', title: 'Importer laget', desc: 'Last opp spillerlisten fra Spond eller Excel. Systemet kobler familier til riktige barn automatisk.' },
               { n: '2', badge: '1 min', icon: '📅', title: 'Legg inn arrangement', desc: 'Opprett kamp eller dugnad med dato, sted og vaktbehov. Kopier til neste dag med ett klikk.' },
@@ -134,11 +134,11 @@ export const LandingPage: React.FC = () => {
 
           {/* Assignment methods */}
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <h3 style={{ fontFamily: serif, fontSize: '26px', color: text, margin: '0 0 8px' }}>Tre måter å fordele vakter — du velger hva som passer</h3>
+            <h3 className="mkt-h3" style={{ fontFamily: serif, fontSize: '26px', color: text, margin: '0 0 8px' }}>Tre måter å fordele vakter — du velger hva som passer</h3>
             <p style={{ fontSize: '14px', color: muted, maxWidth: '560px', margin: '0 auto' }}>Noen lag vil ha full kontroll, andre vil at systemet gjør alt. Dugnad+ støtter alle tre — og du kan kombinere dem fritt.</p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
             {/* Auto */}
             <div style={{ border: `0.5px solid ${border}`, borderRadius: '14px', overflow: 'hidden' }}>
               <div style={{ background: gd, padding: '16px', position: 'relative' }}>
@@ -214,7 +214,7 @@ export const LandingPage: React.FC = () => {
           </div>
 
           {/* Feature grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
             {[
               { icon: '⚖️', iconBg: gp, title: 'Automatisk og rettferdig fordeling', desc: 'Lavest-poeng-algoritmen sørger for at de som alltid stiller opp ikke overbelastes.', tag: 'Ingen diskusjoner' },
               { icon: '🔄', iconBg: '#e6f1fb', title: 'Vikarbørs — familiene løser det selv', desc: 'Kan ikke stille? Legg vakten ut på vikarbørs. Du trenger ikke involvere deg.', tag: 'Du kobles helt ut' },
@@ -237,7 +237,7 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* ========== AKT 2: PREMIUM ========== */}
-      <section id="premium" style={{ background: gd, padding: '64px 48px' }}>
+      <section id="premium" className="mkt-section" style={{ background: gd, padding: '64px 48px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
           {/* Divider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '40px' }}>
@@ -248,12 +248,12 @@ export const LandingPage: React.FC = () => {
 
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <div style={{ fontSize: '11px', color: gl, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: '12px' }}>Premium — 199 kr/mnd eller 990 kr/sesong</div>
-            <h2 style={{ fontFamily: serif, fontSize: '34px', color: '#fff', margin: '0 0 12px' }}>Tjen penger til lagkassen — <em style={{ color: gl, fontStyle: 'italic' }}>uten ekstraarbeid</em></h2>
+            <h2 className="mkt-h2" style={{ fontFamily: serif, fontSize: '34px', color: '#fff', margin: '0 0 12px' }}>Tjen penger til lagkassen — <em style={{ color: gl, fontStyle: 'italic' }}>uten ekstraarbeid</em></h2>
             <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.5)', maxWidth: '540px', margin: '0 auto' }}>Alt du trenger for å samle inn penger digitalt. Loddsalg, kiosk, salgskampanjer og sponsorer — på ett sted.</p>
           </div>
 
           {/* Income grid — 3 kort */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
             {[
               { icon: '🎟️', title: 'Digital loddbok', desc: 'Ditt eget lotteri med egne premier. Hver spiller får en salgslenke å dele. Alt går rett til klubbens Vipps. Premiene trekkes automatisk. Settes opp på 2 minutter.', earn: 'Snitt 12 500 kr per salg' },
               { icon: '🛒', title: 'Kiosk på kampdag', desc: 'Skal dere selge kaker eller kaffe? Legg inn varer og priser, skriv ut QR-koden og heng den opp. Kjøperne skanner og betaler med Vipps. Kioskmenyen er klar på 2 minutter.', earn: '300–800 kr per kampdag' },
@@ -272,7 +272,7 @@ export const LandingPage: React.FC = () => {
           <div style={{ background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(126,200,160,0.2)', borderRadius: '14px', padding: '24px' }}>
             <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '20px', textAlign: 'center' }}>Hva kan ditt lag tjene?</div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+            <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
               {[
                 { label: 'Antall spillere', val: players, set: setPlayers, min: 5, max: 60, step: 1, suffix: ' spillere' },
                 { label: 'Lodd per spiller', val: ticketsPerPlayer, set: setTicketsPerPlayer, min: 5, max: 50, step: 5, suffix: ' lodd' },
@@ -288,24 +288,24 @@ export const LandingPage: React.FC = () => {
               ))}
             </div>
 
-            <div style={{ background: gl, borderRadius: '10px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="mkt-calc-result" style={{ background: gl, borderRadius: '10px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 500, color: gd }}>Estimert per loddsalg</div>
                 <div style={{ fontSize: '11px', color: 'rgba(26,48,40,0.6)' }}>100% til lagets Vipps</div>
               </div>
-              <div style={{ fontFamily: serif, fontSize: '28px', color: gd }}>{estimated.toLocaleString('nb-NO')} kr</div>
+              <div className="mkt-calc-result-value" style={{ fontFamily: serif, fontSize: '28px', color: gd }}>{estimated.toLocaleString('nb-NO')} kr</div>
             </div>
           </div>
         </div>
       </section>
 
       {/* ========== PRISER ========== */}
-      <section id="priser" style={{ background: '#fff', padding: '64px 48px' }}>
+      <section id="priser" className="mkt-section" style={{ background: '#fff', padding: '64px 48px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{ fontFamily: serif, fontSize: '34px', color: text, margin: '0 0 12px' }}>Gratis å starte — <em style={{ color: gm, fontStyle: 'italic' }}>tre planer for alle lag</em></h2>
+          <h2 className="mkt-h2" style={{ fontFamily: serif, fontSize: '34px', color: text, margin: '0 0 12px' }}>Gratis å starte — <em style={{ color: gm, fontStyle: 'italic' }}>tre planer for alle lag</em></h2>
           <p style={{ fontSize: '15px', color: muted, margin: '0 0 40px' }}>Sett opp alt gratis. Legg til SMS-varsler med Aktiv, eller lås opp loddsalg og kiosk med Premium.</p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', textAlign: 'left' }}>
+          <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', textAlign: 'left' }}>
             {/* Gratis */}
             <div style={{ border: `0.5px solid ${border}`, borderRadius: '14px', overflow: 'hidden' }}>
               <div style={{ background: cream, padding: '20px' }}>
@@ -384,8 +384,8 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* ========== CTA BANNER ========== */}
-      <section style={{ background: gm, padding: '56px 48px', textAlign: 'center' }}>
-        <h2 style={{ fontFamily: serif, fontSize: '32px', color: '#fff', margin: '0 0 12px' }}>Klar til å ta tilbake søndagene dine?</h2>
+      <section className="mkt-cta-section" style={{ background: gm, padding: '56px 48px', textAlign: 'center' }}>
+        <h2 className="mkt-h3" style={{ fontFamily: serif, fontSize: '32px', color: '#fff', margin: '0 0 12px' }}>Klar til å ta tilbake søndagene dine?</h2>
         <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.6)', margin: '0 0 28px', maxWidth: '480px', marginLeft: 'auto', marginRight: 'auto' }}>Kom i gang gratis i dag. Ingen kredittkort, ingen binding. Bare et verktøy som faktisk hjelper.</p>
         <button onClick={() => go('/register')} style={{ background: '#fff', color: gm, border: 'none', borderRadius: '10px', padding: '14px 34px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', fontFamily: sans, marginBottom: '16px' }}>Start gratis i dag</button>
         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
@@ -394,13 +394,46 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* ========== FOOTER ========== */}
-      <footer style={{ background: gd, padding: '22px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <footer className="mkt-footer" style={{ background: gd, padding: '22px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontFamily: serif, fontSize: '17px', color: '#fff' }}>Dugnad<span style={{ color: gl }}>+</span></div>
         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)' }}>© 2026 Dugnad+ · Laget for norske idrettslag</div>
       </footer>
 
-      {/* Pulse animation */}
-      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+      {/* Pulse animation + mobil-responsivitet.
+          Strategi: !important inne i @media-blokken overstyrer inline styles
+          (som har høyere specificity ellers). Desktop er uberørt — CSS'en
+          slår kun inn under 768px. Eneste breakpoint for denne runden. */}
+      <style>{`
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        @media (max-width: 768px) {
+          /* Nav: skjul tekst-lenkene, behold CTA */
+          .mkt-nav { padding: 0 16px !important; }
+          .mkt-nav-link { display: none !important; }
+
+          /* Hero */
+          .mkt-hero-section { padding: 48px 20px 40px !important; }
+          .mkt-hero-h1 { font-size: 32px !important; }
+          .mkt-hero-buttons { flex-direction: column !important; align-items: stretch !important; }
+          .mkt-hero-buttons > button { width: 100% !important; }
+
+          /* Generiske seksjoner og typografi */
+          .mkt-section { padding: 48px 20px !important; }
+          .mkt-cta-section { padding: 40px 20px !important; }
+          .mkt-h2 { font-size: 26px !important; }
+          .mkt-h3 { font-size: 22px !important; }
+
+          /* Grids som skal stackes */
+          .mkt-grid-3 { grid-template-columns: 1fr !important; }
+
+          /* Kalkulator-resultat: stack vertikalt, mindre font for tallet */
+          .mkt-calc-result { flex-direction: column !important; gap: 10px !important; text-align: center !important; }
+          .mkt-calc-result-value { font-size: 22px !important; }
+
+          /* Footer: stack + sentrert */
+          .mkt-footer { flex-direction: column !important; gap: 8px !important; text-align: center !important; padding: 20px !important; }
+        }
+      `}</style>
     </div>
   );
 };
