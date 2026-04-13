@@ -64,6 +64,28 @@ sponsor-logo). Skal minst:
 URL i tillegg til upload), event-lokasjon hvis den noen gang blir
 hyperlinket. Krever egen grep-runde før vi vet omfanget.
 
+### Cloudflare Turnstile server-side verification
+**Kilde:** `docs/PARENT_FLOW_ROADMAP.md` (2026-04-13 Runde 3)
+
+Turnstile-widget er innført på `/register` og `/join` step 1, men
+token verifiseres kun ved at client-side-sjekken krever at state
+er satt. Widget-en kan trivielt omgås av en bot som submit'er
+direkte mot `/register` uten å laste JS.
+
+**Plan:**
+1. Opprett en Supabase Edge Function `verify-turnstile` som tar
+   token + caller `https://challenges.cloudflare.com/turnstile/v0/siteverify`
+   med `TURNSTILE_SECRET_KEY` fra env
+2. `/register` og `/join` kaller edge-funksjonen før de submit'er
+   til Supabase Auth / `pending_parents`
+3. Sett `TURNSTILE_SECRET_KEY` som secret i Supabase-prosjektet
+4. Sett `VITE_TURNSTILE_SITE_KEY` i Netlify (gjøres av Espen)
+
+**Status:** Client-side-gating implementert 2026-04-13. Server-side
+er TODO. Ikke pilot-blokkerende så lenge pilot kjøres mot klarert
+KIL-koordinator + utvalgte familier, men MÅ inn før åpen
+registrering går live. Se `PARENT_FLOW_ROADMAP.md` for full plan.
+
 ### CSP: enforce etter Report-Only-observasjon
 **Kilde:** `docs/UPLOAD_SECURITY_AUDIT.md` — funn C1
 

@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '../../services/supabaseClient';
 import { normalizeJoinCode } from '../../utils/joinCode';
+
+const TURNSTILE_SITE_KEY =
+  (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)
+  || '1x00000000000000000000AA';
+
+const NORWEGIAN_PHONE_REGEX = /^(\+47)?[ ]?[2-9]\d{7}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface MatchedChild {
   id: string;
@@ -32,12 +40,14 @@ export const JoinPage: React.FC = () => {
   const [matchedChildren, setMatchedChildren] = useState<MatchedChild[]>([]);
   const [lookupError, setLookupError] = useState('');
   const [looking, setLooking] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
 
   const [parentName, setParentName] = useState('');
-  const [loginMethod, setLoginMethod] = useState<'phone' | 'email'>('phone');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -92,6 +102,10 @@ export const JoinPage: React.FC = () => {
   };
 
   const handleStep1Continue = async () => {
+    if (!turnstileToken) {
+      setLookupError('Vennligst bekreft at du ikke er en bot.');
+      return;
+    }
     const success = await lookupCode(codeInput);
     if (success) setStep(2);
   };
@@ -102,9 +116,26 @@ export const JoinPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    setSubmitError('');
     if (matchedChildren.length === 0) return;
-    if (loginMethod === 'phone' && !phone.trim()) return;
-    if (loginMethod === 'email' && (!email.trim() || !password.trim())) return;
+
+    // Obligatoriske felt — alle fire kreves for nye foreldre
+    if (!parentName.trim()) {
+      setSubmitError('Fullt navn er påkrevd.');
+      return;
+    }
+    if (!EMAIL_REGEX.test(email.trim())) {
+      setSubmitError('Ugyldig e-postadresse.');
+      return;
+    }
+    if (!NORWEGIAN_PHONE_REGEX.test(phone.trim())) {
+      setSubmitError('Ugyldig telefonnummer. Bruk 8 siffer, evt. med +47.');
+      return;
+    }
+    if (password.length < 8) {
+      setSubmitError('Passord må være minst 8 tegn.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -115,15 +146,15 @@ export const JoinPage: React.FC = () => {
           family_id: familyId,
           child_member_id: childrenInFamily[0].id,
           name: parentName.trim(),
-          email: loginMethod === 'email' ? email.trim() : null,
-          phone: loginMethod === 'phone' ? phone.trim() : null,
+          email: email.trim(),
+          phone: phone.trim(),
           status: 'pending',
-          login_method: loginMethod === 'phone' ? 'phone' : 'password',
+          login_method: 'password',
         });
       }
       setDone(true);
     } catch (err: any) {
-      alert('Noe gikk galt: ' + err.message);
+      setSubmitError('Noe gikk galt: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -318,6 +349,17 @@ export const JoinPage: React.FC = () => {
             Har du barn på flere lag? Du kan legge inn flere koder etterpå
           </p>
 
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onSuccess={(token: string) => setTurnstileToken(token)}
+              onExpire={() => setTurnstileToken(null)}
+              onError={() => setTurnstileToken(null)}
+              options={{ theme: 'light' }}
+            />
+          </div>
+
           {lookupError && (
             <p style={{ color: COLORS.warning, fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
               {lookupError}
@@ -326,8 +368,8 @@ export const JoinPage: React.FC = () => {
 
           <button
             onClick={handleStep1Continue}
-            disabled={looking}
-            style={{ ...primaryBtnStyle, opacity: looking ? 0.7 : 1 }}
+            disabled={looking || !turnstileToken}
+            style={{ ...primaryBtnStyle, opacity: (looking || !turnstileToken) ? 0.7 : 1 }}
           >
             {looking ? 'Sjekker...' : 'Fortsett'}
           </button>
@@ -523,86 +565,59 @@ export const JoinPage: React.FC = () => {
     );
   }
 
-  // --- Step 3: Choose Login ---
+  // --- Step 3: Registreringsfelt ---
+  // Alle fire felt er obligatoriske. Fjernet tidligere "phone vs
+  // email"-toggle — vi lagrer alltid begge på pending_parents slik
+  // at koordinator-approval-flowen kan opprette en fullverdig
+  // auth.users-rad med e-post + passord.
   return (
     <div style={pageStyle}>
       <div style={containerStyle}>
         {renderLogo()}
         {renderDots()}
-        <h1 style={titleStyle}>Siste steg — velg innlogging</h1>
+        <h1 style={titleStyle}>Siste steg — opprett konto</h1>
         <p style={subStyle}>
-          Hvordan vil du logge inn neste gang?
+          Fyll inn kontakt- og innloggings-info. Alle felt er påkrevd.
         </p>
 
-        {/* Choice cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-          <div
-            onClick={() => setLoginMethod('phone')}
-            style={{
-              border: loginMethod === 'phone' ? `2px solid ${COLORS.mediumGreen}` : `0.5px solid ${COLORS.border}`,
-              borderRadius: 12, padding: 14, cursor: 'pointer', background: '#fff',
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text, marginBottom: 2 }}>
-              📱 Engangskode på SMS
-            </div>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              Vi sender en kode til telefonen — ingen passord å huske
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>E-postadresse *</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="ola@example.com"
+              style={inputStyle}
+            />
           </div>
-          <div
-            onClick={() => setLoginMethod('email')}
-            style={{
-              border: loginMethod === 'email' ? `2px solid ${COLORS.mediumGreen}` : `0.5px solid ${COLORS.border}`,
-              borderRadius: 12, padding: 14, cursor: 'pointer', background: '#fff',
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text, marginBottom: 2 }}>
-              📧 E-post og passord
-            </div>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              Tradisjonell innlogging — du velger passordet selv
-            </div>
-          </div>
-        </div>
-
-        {/* Conditional inputs */}
-        {loginMethod === 'phone' && (
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Telefonnummer</label>
+          <div>
+            <label style={labelStyle}>Telefonnummer *</label>
             <input
               type="tel"
               value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="99 88 77 66"
+              placeholder="+47 99 88 77 66"
               style={inputStyle}
             />
           </div>
-        )}
-
-        {loginMethod === 'email' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-            <div>
-              <label style={labelStyle}>E-postadresse</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="ola@example.com"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Passord</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Velg et passord"
-                style={inputStyle}
-              />
-            </div>
+          <div>
+            <label style={labelStyle}>Passord *</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Minimum 8 tegn"
+              minLength={8}
+              style={inputStyle}
+            />
           </div>
+        </div>
+
+        {submitError && (
+          <p style={{ color: COLORS.warning, fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
+            {submitError}
+          </p>
         )}
 
         <button

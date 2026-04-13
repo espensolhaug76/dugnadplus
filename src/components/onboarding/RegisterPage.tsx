@@ -1,5 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '../../services/supabaseClient';
+
+// Cloudflare Turnstile — bot-beskyttelse på registrering.
+// Produksjons-site-key settes via VITE_TURNSTILE_SITE_KEY i
+// Netlify env vars. Fallback er Cloudflares offisielle "always-
+// passes"-test-key slik at lokal dev og preview-builds fungerer
+// uten konfigurasjon. Se docs/SECURITY_BACKLOG.md — server-side
+// verifikasjon er ikke implementert ennå.
+const TURNSTILE_SITE_KEY =
+  (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)
+  || '1x00000000000000000000AA';
+
+// Valider norsk telefonnummer: 8 sifre som starter med 2-9,
+// valgfri +47-prefix og valgfritt mellomrom.
+const NORWEGIAN_PHONE_REGEX = /^(\+47)?[ ]?[2-9]\d{7}$/;
 
 export const RegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -11,6 +26,8 @@ export const RegisterPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -21,8 +38,27 @@ export const RegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+
+    // Validering før vi kaller Supabase
+    if (!formData.fullName.trim()) {
+      setError('Fullt navn er påkrevd.');
+      return;
+    }
+    if (!NORWEGIAN_PHONE_REGEX.test(formData.phone.trim())) {
+      setError('Ugyldig telefonnummer. Bruk 8 siffer, evt. med +47.');
+      return;
+    }
+    if (formData.password.length < 8) {
+      setError('Passord må være minst 8 tegn.');
+      return;
+    }
+    if (!turnstileToken) {
+      setError('Vennligst bekreft at du ikke er en bot.');
+      return;
+    }
+
+    setLoading(true);
 
     // 1. Opprett bruker i Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -103,7 +139,7 @@ export const RegisterPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="input-label">Telefon</label>
+              <label className="input-label">Telefon *</label>
               <input
                 type="tel"
                 name="phone"
@@ -111,6 +147,7 @@ export const RegisterPage: React.FC = () => {
                 onChange={handleChange}
                 className="input"
                 placeholder="+47 123 45 678"
+                required
               />
             </div>
 
@@ -123,8 +160,8 @@ export const RegisterPage: React.FC = () => {
                 value={formData.password}
                 onChange={handleChange}
                 className="input"
-                placeholder="Minimum 6 tegn"
-                minLength={6}
+                placeholder="Minimum 8 tegn"
+                minLength={8}
                 style={{ paddingRight: '44px' }}
                 required
               />
@@ -132,6 +169,17 @@ export const RegisterPage: React.FC = () => {
                 {showPassword ? '🙈' : '👁️'}
               </button>
               </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <Turnstile
+                ref={turnstileRef}
+                siteKey={TURNSTILE_SITE_KEY}
+                onSuccess={(token: string) => setTurnstileToken(token)}
+                onExpire={() => setTurnstileToken(null)}
+                onError={() => setTurnstileToken(null)}
+                options={{ theme: 'light' }}
+              />
             </div>
 
             <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading}>
