@@ -25,6 +25,8 @@ const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string; 
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 
+type RoleGate = 'checking' | 'allowed' | 'denied';
+
 export const CampaignOverviewPage: React.FC = () => {
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [monthlyRevenue, setMonthlyRevenue] = useState<number[]>([]);
@@ -32,13 +34,52 @@ export const CampaignOverviewPage: React.FC = () => {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [completedFilter, setCompletedFilter] = useState('Alle');
   const [teamName, setTeamName] = useState('');
+  const [roleGate, setRoleGate] = useState<RoleGate>('checking');
 
   const teamId = localStorage.getItem('dugnad_active_team_filter') || '';
 
+  // Role-gate: kun coordinator og club_admin får se kampanje-oversikten.
+  // Rollen leses fra team_members-tabellen (kanonisk kilde etter Steg A),
+  // IKKE fra localStorage.dugnad_user.role eller auth.users.raw_user_meta_data
+  // som var gamle mønstre vi fjernet i Steg C. Ved avvist tilgang:
+  // stille redirect til /family-dashboard, ingen egen feilskjerm — samme
+  // UX-prinsipp som auth-gate på /claim-family (commit 99bfd51).
   useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setRoleGate('denied');
+        window.location.href = '/login';
+        return;
+      }
+
+      const { data: memberships } = await supabase
+        .from('team_members')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .in('role', ['coordinator', 'club_admin'])
+        .limit(1);
+
+      if (!memberships || memberships.length === 0) {
+        setRoleGate('denied');
+        window.location.href = '/family-dashboard';
+        return;
+      }
+
+      setRoleGate('allowed');
+    })();
+  }, []);
+
+  useEffect(() => {
+    // Vent med data-henting til role-gate har verifisert tilgangen.
+    // Uten denne guarden ville fetchAll kjøre for en bruker som er
+    // på vei til å bli redirected — ikke farlig (ingen secret data
+    // før RLS er på i Steg F), men unødvendig kall.
+    if (roleGate !== 'allowed') return;
     loadTeamInfo();
     fetchAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleGate]);
 
   const loadTeamInfo = () => {
     try {
@@ -263,6 +304,16 @@ export const CampaignOverviewPage: React.FC = () => {
   };
 
   const formatKr = (n: number) => n.toLocaleString('nb-NO');
+
+  // Role-gate har prioritet: hvis sjekken ikke er ferdig eller er
+  // avvist, render ingenting utover en minimal loading-skjerm.
+  // Avvist tilstand rendres kort før window.location.href tar over.
+  if (roleGate === 'checking') {
+    return <div style={{ padding: '40px', textAlign: 'center', color: '#4a5e50' }}>Laster...</div>;
+  }
+  if (roleGate === 'denied') {
+    return <div style={{ padding: '40px', textAlign: 'center', color: '#4a5e50' }}>Omdirigerer...</div>;
+  }
 
   if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#4a5e50' }}>Laster kampanjer...</div>;
 
