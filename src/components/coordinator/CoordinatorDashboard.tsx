@@ -59,8 +59,22 @@ export const CoordinatorDashboard: React.FC = () => {
   const fetchSupabaseData = async () => {
     try {
         setLoading(true);
-        
-        // 1. Hent events med shifts og assignments
+
+        // Server-side team-filter: bruk .eq('team_id', activeTeamId)
+        // direkte i queryen i stedet for å dra hele tabellen og
+        // kaste bort rader client-side. Hvis activeTeamId ikke er
+        // satt (fresh install, ingen lag valgt ennå), returnerer
+        // vi tom state — CoordinatorLayout viser "ingen lag"-
+        // skjermen.
+        const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
+        if (!activeTeamId) {
+          setAllEvents([]);
+          setFamilies([]);
+          setLoading(false);
+          return;
+        }
+
+        // 1. Hent events for aktivt lag
         const { data: eventsData, error: eventError } = await supabase
             .from('events')
             .select(`
@@ -73,18 +87,20 @@ export const CoordinatorDashboard: React.FC = () => {
                     )
                 )
             `)
+            .eq('team_id', activeTeamId)
             .order('date', { ascending: true });
 
         if (eventError) throw eventError;
 
-        // 2. Hent familier med medlemmer
+        // 2. Hent familier for aktivt lag
         const { data: familiesData, error: famError } = await supabase
             .from('families')
             .select(`
                 *,
                 family_members (*)
-            `);
-            
+            `)
+            .eq('team_id', activeTeamId);
+
         if (famError) throw famError;
 
         // Lagre familier uansett (selv om events er tomme)
@@ -109,42 +125,11 @@ export const CoordinatorDashboard: React.FC = () => {
             }))
         }));
 
-        // Filtrer på valgt lag via den kanoniske team_id-slug-en.
-        // Tidligere brukte vi (subgroup, sport)-matching her fordi events
-        // manglet team_id; etter 20260413-migreringen har events.team_id,
-        // så filteret er en ren streng-sammenligning.
-        const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
-        let activeTeam: any = null;
-        if (activeTeamId) {
-            try {
-                const teams = JSON.parse(localStorage.getItem('dugnad_teams') || '[]');
-                activeTeam = teams.find((t: any) => t.id === activeTeamId) || null;
-            } catch {}
-        }
-
-        const filteredEvents = activeTeamId
-            ? processedEvents.filter((e: any) => e.team_id === activeTeamId)
-            : processedEvents;
-
-        // Filtrer familier — vis kun de som er tildelt vakter i filtrerte events,
-        // eller har barn i matchende subgroup
-        const assignedFamilyIds = new Set<string>();
-        filteredEvents.forEach((e: any) => {
-            e.shifts?.forEach((s: any) => {
-                s.assignments?.forEach((a: any) => {
-                    if (a.family_id) assignedFamilyIds.add(a.family_id);
-                });
-            });
-        });
-
-        // Filtrer familier på aktivt lag via team_id
-        const activeTeamIdForFamilies = activeTeam?.id || null;
-        const filteredFamiliesData = activeTeamIdForFamilies
-            ? (familiesData || []).filter((f: any) => f.team_id === activeTeamIdForFamilies || !f.team_id)
-            : (familiesData || []);
-
-        setAllEvents(filteredEvents);
-        setFamilies(filteredFamiliesData);
+        // Server-filteret over returnerer allerede kun events og
+        // families for aktivt lag. Ingen ekstra klient-side-filtrering
+        // nødvendig.
+        setAllEvents(processedEvents);
+        setFamilies(familiesData || []);
         setDbEmpty(filteredEvents.length === 0 && filteredFamiliesData.length === 0);
 
         // Statistikk (basert på filtrerte events)

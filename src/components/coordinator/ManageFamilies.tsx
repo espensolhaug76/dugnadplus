@@ -190,9 +190,20 @@ export const ManageFamilies: React.FC = () => {
 
   const fetchFamilies = async () => {
     setLoading(true);
+
+    // Server-side team-filter. Hvis ingen lag er aktivt, returner
+    // tom liste — CoordinatorLayout viser "ingen lag"-state.
+    const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
+    if (!activeTeamId) {
+      setFamilies([]);
+      setLoading(false);
+      return;
+    }
+
     const { data: familiesData, error: famError } = await supabase
       .from('families')
       .select('*, family_members(*)')
+      .eq('team_id', activeTeamId)
       .order('name');
 
     if (famError) {
@@ -201,14 +212,7 @@ export const ManageFamilies: React.FC = () => {
         return;
     }
 
-    // Filtrer på aktivt lag via team_id
-    const activeTeam = getActiveTeam();
-    const activeTeamId = activeTeam?.id || null;
-    const filtered = activeTeamId
-      ? familiesData.filter((f: any) => f.team_id === activeTeamId || !f.team_id)
-      : familiesData;
-
-    const formatted: Family[] = filtered.map((f: any) => ({
+    const formatted: Family[] = (familiesData || []).map((f: any) => ({
         id: f.id,
         name: f.name,
         total_points: f.total_points,
