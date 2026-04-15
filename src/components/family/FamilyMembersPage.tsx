@@ -111,7 +111,7 @@ export const FamilyMembersPage: React.FC = () => {
 
       const { error } = await supabase.from('family_members').delete().eq('id', id);
       if (error) alert('Feil ved sletting: ' + error.message);
-      else fetchFamilyMembers();
+      else if (currentFamilyId) fetchFamilyMembers(currentFamilyId);
   };
 
   const handleSave = async () => {
@@ -146,7 +146,7 @@ export const FamilyMembersPage: React.FC = () => {
           }
 
           setIsModalOpen(false);
-          fetchFamilyMembers();
+          if (currentFamilyId) fetchFamilyMembers(currentFamilyId);
 
       } catch (error: any) {
           alert('Feil ved lagring: ' + error.message);

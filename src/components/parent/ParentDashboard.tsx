@@ -44,7 +44,7 @@ export const ParentDashboard: React.FC = () => {
 
   const loadData = async (currentUser: any) => {
     try {
-      const familyId = familyId;
+      const familyId: string | undefined = currentUser?.family_id;
       if (!familyId) { setLoading(false); return; }
 
       // Fetch family with members

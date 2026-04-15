@@ -127,15 +127,16 @@ export const CoordinatorDashboard: React.FC = () => {
 
         // Server-filteret over returnerer allerede kun events og
         // families for aktivt lag. Ingen ekstra klient-side-filtrering
-        // nødvendig.
+        // nødvendig — processedEvents og familiesData er "filtered"
+        // per definisjon.
         setAllEvents(processedEvents);
         setFamilies(familiesData || []);
-        setDbEmpty(filteredEvents.length === 0 && filteredFamiliesData.length === 0);
+        setDbEmpty(processedEvents.length === 0 && (familiesData?.length || 0) === 0);
 
         // Statistikk (basert på filtrerte events)
         let total = 0;
         let assigned = 0;
-        filteredEvents.forEach((e: any) => {
+        processedEvents.forEach((e: any) => {
             e.shifts.forEach((s: any) => {
                 total += s.people_needed || 0;
                 assigned += s.assignedFamilies.length;
@@ -150,7 +151,7 @@ export const CoordinatorDashboard: React.FC = () => {
 
         // Kommende events (filtrert)
         const now = new Date();
-        const upcoming = filteredEvents.filter((e: any) => new Date(e.date) >= new Date(now.setHours(0,0,0,0)));
+        const upcoming = processedEvents.filter((e: any) => new Date(e.date) >= new Date(now.setHours(0,0,0,0)));
         setUpcomingEvents(upcoming);
 
         // Attention Items (Logikk: Vakter med færre tildelinger enn behov)

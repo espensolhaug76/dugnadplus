@@ -154,7 +154,7 @@ export const MyShiftsPage: React.FC = () => {
                 selfServiceOpenDate: e.self_service_open_date,
                 shifts: e.shifts.map((s: any) => {
                     const assignedIds = s.assignments?.map((a: any) => a.family_id) || [];
-                    const myAssignment = s.assignments?.find((a: any) => a.family_id === myFamilyId);
+                    const myAssignment = s.assignments?.find((a: any) => a.family_id === currentFamilyId);
                     const activeRequests = s.requests?.filter((r: any) => r.is_active) || [];
                     const swapReq = activeRequests.find((r: any) => r.type === 'swap');
                     const subReq = activeRequests.find((r: any) => r.type === 'substitute');
