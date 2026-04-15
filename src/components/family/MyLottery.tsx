@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 
 interface Prize {
   id: string;
@@ -22,42 +23,26 @@ export const MyLottery: React.FC = () => {
   const [donationValue, setDonationValue] = useState('');
   const [donationDonor, setDonationDonor] = useState('');
 
+  const fam = useCurrentFamily();
+
   useEffect(() => {
+    if (fam.loading) return;
+    if (fam.unauthenticated) { window.location.href = '/login'; return; }
+    if (fam.noFamily) { window.location.href = '/claim-family'; return; }
+    if (fam.familyId) setCurrentFamilyId(fam.familyId);
+  }, [fam.loading, fam.unauthenticated, fam.noFamily, fam.familyId]);
+
+  useEffect(() => {
+    if (!currentFamilyId) return;
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFamilyId]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-        // 1. Identifiser bruker og familie
-        const userJson = localStorage.getItem('dugnad_user');
-        const user = userJson ? JSON.parse(userJson) : null;
-
-        let familyId = '';
-
-        if (user) {
-            // Prøv å finne familie via ID først (hvis Auth ID = Family ID)
-            const { data: familyById } = await supabase
-                .from('families')
-                .select('id, name')
-                .eq('id', user.id)
-                .single();
-
-            if (familyById) {
-                familyId = familyById.id;
-            } else {
-                // Fallback: Søk på e-post
-                const { data: familyByEmail } = await supabase
-                    .from('families')
-                    .select('id, name')
-                    .eq('contact_email', user.email)
-                    .single();
-
-                if (familyByEmail) familyId = familyByEmail.id;
-            }
-        }
-
-        if (familyId) setCurrentFamilyId(familyId);
+        const familyId = currentFamilyId;
+        if (!familyId) { setLoading(false); return; }
 
         // 2. Hent aktivt lotteri
         const { data: lotteryData } = await supabase

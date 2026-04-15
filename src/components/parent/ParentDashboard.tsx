@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { InstallPrompt } from '../common/InstallPrompt';
 import { Toast } from '../common/Toast';
+import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 
 const MONTHS_NB = ['jan', 'feb', 'mar', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'des'];
 
@@ -43,11 +44,14 @@ export const ParentDashboard: React.FC = () => {
 
   const loadData = async (currentUser: any) => {
     try {
+      const familyId = familyId;
+      if (!familyId) { setLoading(false); return; }
+
       // Fetch family with members
       const { data: familyData } = await supabase
         .from('families')
         .select('*, family_members(*)')
-        .eq('id', currentUser.family_id)
+        .eq('id', familyId)
         .single();
 
       if (familyData) {
@@ -61,7 +65,7 @@ export const ParentDashboard: React.FC = () => {
         const { data: prefsData } = await supabase
           .from('family_preferences')
           .select('*')
-          .eq('family_id', currentUser.family_id)
+          .eq('family_id', familyId)
           .single();
         if (prefsData) {
           setPrefs({
@@ -85,7 +89,7 @@ export const ParentDashboard: React.FC = () => {
       const { data: assignmentData } = await supabase
         .from('assignments')
         .select('*, shifts(*, events(*))')
-        .eq('family_id', currentUser.family_id);
+        .eq('family_id', familyId);
 
       if (assignmentData) {
         const sorted = assignmentData.sort((a: any, b: any) => {
@@ -129,16 +133,24 @@ export const ParentDashboard: React.FC = () => {
     }
   };
 
+  const fam = useCurrentFamily();
+
   useEffect(() => {
-    const stored = localStorage.getItem('dugnad_user');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      setUser(parsed);
-      loadData(parsed);
-    } else {
-      setLoading(false);
+    if (fam.loading) return;
+    if (fam.unauthenticated) { window.location.href = '/login'; return; }
+    if (fam.noFamily) { window.location.href = '/claim-family'; return; }
+    if (fam.familyId) {
+      // Bevar eksisterende user-state via localStorage for backward
+      // kompatibilitet med resten av komponenten, men patch inn
+      // family_id fra den kanoniske hook-lookup'en.
+      const stored = localStorage.getItem('dugnad_user');
+      const baseUser = stored ? JSON.parse(stored) : {};
+      const currentUser = { ...baseUser, family_id: fam.familyId, name: fam.parentName };
+      setUser(currentUser);
+      loadData(currentUser);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fam.loading, fam.unauthenticated, fam.noFamily, fam.familyId, fam.parentName]);
 
   const handleConfirm = async (assignmentId: string, shiftInfo?: { date: string; time: string; location: string }) => {
     await supabase

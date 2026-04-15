@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { VikarChat } from '../substitute/VikarChat';
+import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 
 interface SwapProposal {
   id: string;
@@ -52,59 +53,29 @@ export const FamilyDashboard: React.FC = () => {
   const [sponsorsVisible, setSponsorsVisible] = useState(false);
   const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
 
+  const fam = useCurrentFamily();
+
   useEffect(() => {
-    fetchCloudData();
-  }, []);
+    if (fam.loading) return;
+    if (fam.unauthenticated) { window.location.href = '/login'; return; }
+    if (fam.noFamily) { window.location.href = '/claim-family'; return; }
+    if (fam.familyId) fetchCloudData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fam.loading, fam.unauthenticated, fam.noFamily, fam.familyId, fam.parentName]);
 
   const fetchCloudData = async () => {
+    // Hent familyId fra useCurrentFamily-hook'en som kjører over.
+    // Hvis den ikke er klar, er dette en no-op — useEffect over
+    // kaller fetchCloudData på nytt når familyId blir satt.
+    const familyId = fam.familyId;
+    const parentName = fam.parentName;
+    if (!familyId) return;
+
     setLoading(true);
     try {
-      // Autoritativ auth-sjekk mot Supabase, ikke bare localStorage.
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      const userJson = localStorage.getItem('dugnad_user');
-      const localUser = userJson ? JSON.parse(userJson) : null;
-      const userId = authUser?.id || localUser?.id;
-
-      if (!userId) {
-          setLoading(false);
-          return;
-      }
-
-      // Kanonisk oppslag: bruk family_members.auth_user_id for å
-      // finne hvilken familie den innloggede brukeren er parent i.
-      // Dette er den nye flowen etter /claim-family-redesignet —
-      // foreldre har auth_user_id satt på sin parent-rad i en
-      // eksisterende familie, og families.id er IKKE lenger det
-      // samme som auth.uid().
-      let familyId: string | null = null;
-      const { data: memberRow } = await supabase
-        .from('family_members')
-        .select('family_id')
-        .eq('auth_user_id', userId)
-        .eq('role', 'parent')
-        .maybeSingle();
-      if (memberRow?.family_id) {
-        familyId = memberRow.family_id;
-      } else {
-        // Legacy fallback: families.id = auth.uid() (gammelt mønster
-        // fra før /claim-family-redesignet). Beholdes så eksisterende
-        // brukere fra før runden ikke låses ute.
-        const { data: legacy } = await supabase
-          .from('families')
-          .select('id')
-          .eq('id', userId)
-          .maybeSingle();
-        if (legacy?.id) familyId = legacy.id;
-      }
-
-      if (!familyId) {
-          setLoading(false);
-          return;
-      }
-
       // Hent hele familien med alle medlemmer. Multi-child-familier
-      // (etter /claim-family?mode=add) får alle barn uavhengig av
-      // team_id — parent-perspektivet viser alle barn samlet.
+      // får alle barn uavhengig av team_id — parent-perspektivet
+      // viser alle barn samlet.
       const { data: family } = await supabase
         .from('families')
         .select('*, family_members(*)')
@@ -119,12 +90,11 @@ export const FamilyDashboard: React.FC = () => {
       setCurrentFamily(family);
       setPoints(family.total_points || 0);
 
-      const children = family.family_members?.filter((m: any) => m.role === 'child');
-      if (children && children.length > 0) {
-          setDisplayName(children.map((c: any) => c.name).join(' & '));
-      } else {
-          setDisplayName(family.name);
-      }
+      // BUG 3 fix: hilsen skal vise forelderens eget navn, ikke
+      // barnas. Konsistent med hvordan koordinator ser foreldre
+      // i ManageFamilies. Hvis parentName mangler (kan skje for
+      // legacy-brukere), fall tilbake til familienavnet.
+      setDisplayName(parentName || family.name || 'Familie');
 
       // Poeng nivåer
       const p = family.total_points || 0;

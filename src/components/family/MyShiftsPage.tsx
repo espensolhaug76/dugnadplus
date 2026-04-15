@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 
 interface SwapRequest {
   id?: string;
@@ -64,40 +65,43 @@ export const MyShiftsPage: React.FC = () => {
   const [swapComment, setSwapComment] = useState('');
   const [swapTargetFamily, setSwapTargetFamily] = useState('');
 
+  const fam = useCurrentFamily();
+
+  // Effect 1 — propager familyId fra hook'en til komponent-state.
   useEffect(() => {
-      fetchSupabaseData();
-  }, []);
+    if (fam.loading) return;
+    if (fam.unauthenticated) { window.location.href = '/login'; return; }
+    if (fam.noFamily) { window.location.href = '/claim-family'; return; }
+    if (fam.familyId) setCurrentFamilyId(fam.familyId);
+  }, [fam.loading, fam.unauthenticated, fam.noFamily, fam.familyId]);
+
+  // Effect 2 — fetch når currentFamilyId er satt. Kjører også på
+  // nytt hvis brukeren refresher via button handlers som kaller
+  // fetchSupabaseData() direkte.
+  useEffect(() => {
+    if (!currentFamilyId) return;
+    fetchSupabaseData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFamilyId]);
 
   const fetchSupabaseData = async () => {
     setLoading(true);
     try {
-        // 1. Hent bruker og team info
-        const userJson = localStorage.getItem('dugnad_user');
-        const user = userJson ? JSON.parse(userJson) : null;
-        if (user) setCurrentUserEmail(user.email);
+        // 1. Hent bruker-epost + aktivt team til header-visning.
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser?.email) setCurrentUserEmail(authUser.email);
 
         const storedTeam = localStorage.getItem('dugnad_current_team');
         if (storedTeam) {
             try { const team = JSON.parse(storedTeam); if (team.name) setActiveTeamName(team.name); } catch (e) { console.error(e); }
         }
 
-        // 2. Finn MIN familie (via Auth eller LocalStorage)
-        let myFamilyId = user?.id;
-
-        // Hvis vi mangler ID, prøv å finne via e-post i databasen
-        if (!myFamilyId && user?.email) {
-             const { data: familyByEmail } = await supabase
-                .from('families')
-                .select('id')
-                .eq('contact_email', user.email)
-                .single();
-             if (familyByEmail) myFamilyId = familyByEmail.id;
-        }
-
-        if (myFamilyId) {
-            setCurrentFamilyId(myFamilyId);
-        } else {
-            console.warn("Ingen familie funnet for innlogget bruker.");
+        // 2. Familien er satt i state av Effect 1 over. Hvis den
+        //    mangler her, har brukeren ingen familie koblet — la
+        //    Effect 1 håndtere redirect.
+        if (!currentFamilyId) {
+            setLoading(false);
+            return;
         }
 
         // 3. Hent liste over ALLE familier (kun navn og ID) for bytte-funksjonalitet

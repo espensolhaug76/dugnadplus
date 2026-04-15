@@ -38,18 +38,36 @@ export const SponsorPage: React.FC = () => {
     const { data } = await supabase.from('sponsors').select('*').eq('is_active', true).order('name');
     if (data) setSponsors(data);
 
-    // Hent brukerens poeng
+    // Hent brukerens poeng via den kanoniske family_members.auth_user_id-
+    // lookup. Tidligere brukte vi families.id = user.id som ikke lenger
+    // stemmer etter /claim-family-redesignet.
     try {
-      const user = JSON.parse(localStorage.getItem('dugnad_user') || '{}');
-      setIsCoordinator(user.role === 'coordinator');
+      const localUser = JSON.parse(localStorage.getItem('dugnad_user') || '{}');
+      setIsCoordinator(localUser.role === 'coordinator');
 
-      if (user.id && user.role === 'family') {
-        const { data: family } = await supabase.from('families').select('total_points').eq('id', user.id).maybeSingle();
-        if (family) {
-          const p = family.total_points || 0;
-          setPoints(p);
-          const idx = p >= 500 ? 3 : p >= 300 ? 2 : p >= 100 ? 1 : 0;
-          setTierIndex(idx);
+      if (localUser.role === 'family') {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { data: parentRow } = await supabase
+            .from('family_members')
+            .select('family_id')
+            .eq('auth_user_id', authUser.id)
+            .eq('role', 'parent')
+            .maybeSingle();
+
+          if (parentRow?.family_id) {
+            const { data: family } = await supabase
+              .from('families')
+              .select('total_points')
+              .eq('id', parentRow.family_id)
+              .maybeSingle();
+            if (family) {
+              const p = family.total_points || 0;
+              setPoints(p);
+              const idx = p >= 500 ? 3 : p >= 300 ? 2 : p >= 100 ? 1 : 0;
+              setTierIndex(idx);
+            }
+          }
         }
       }
     } catch {}

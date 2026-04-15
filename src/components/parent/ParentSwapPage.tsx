@@ -54,26 +54,19 @@ export const ParentSwapPage: React.FC = () => {
       }
       const userId = authUser.id;
 
-      // 2. Finn familien brukeren tilhører. Støtter både det kanoniske
-      //    (family_members.auth_user_id) og det gamle (families.id = auth.uid())
-      //    mønsteret — dette er overgangsperioden før RLS-migreringen.
-      let familyId: string | null = null;
-
+      // 2. Finn familien brukeren tilhører via den kanoniske
+      //    family_members.auth_user_id-lookup. Legacy-fallbacken
+      //    (families.id = auth.uid()) er fjernet etter at data ble
+      //    wipet i team_id-normaliseringsrunden — ingen rader har
+      //    det mønsteret lenger.
       const { data: memberRow } = await supabase
         .from('family_members')
         .select('family_id')
         .eq('auth_user_id', userId)
+        .eq('role', 'parent')
         .maybeSingle();
-      if (memberRow?.family_id) {
-        familyId = memberRow.family_id;
-      } else {
-        const { data: legacyFamily } = await supabase
-          .from('families')
-          .select('id')
-          .eq('id', userId)
-          .maybeSingle();
-        if (legacyFamily?.id) familyId = legacyFamily.id;
-      }
+
+      const familyId = memberRow?.family_id;
 
       if (!familyId) {
         setAuthState('not_found');

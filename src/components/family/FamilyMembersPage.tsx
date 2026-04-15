@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 
 interface FamilyMember {
   id: string;
@@ -43,26 +44,18 @@ export const FamilyMembersPage: React.FC = () => {
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
+  const fam = useCurrentFamily();
+
   useEffect(() => {
-    fetchFamilyMembers();
-  }, []);
+    if (fam.loading) return;
+    if (fam.unauthenticated) { window.location.href = '/login'; return; }
+    if (fam.noFamily) { window.location.href = '/claim-family'; return; }
+    if (fam.familyId) fetchFamilyMembers(fam.familyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fam.loading, fam.unauthenticated, fam.noFamily, fam.familyId]);
 
-  const fetchFamilyMembers = async () => {
+  const fetchFamilyMembers = async (familyId: string) => {
     try {
-      const userJson = localStorage.getItem('dugnad_user');
-      const user = userJson ? JSON.parse(userJson) : null;
-      let familyId = user?.id;
-
-      if (!familyId) {
-          const { data: { user: authUser } } = await supabase.auth.getUser();
-          familyId = authUser?.id;
-      }
-
-      if (!familyId) {
-          setLoading(false);
-          return;
-      }
-
       setCurrentFamilyId(familyId);
 
       // Henter nå også 'subgroup'
