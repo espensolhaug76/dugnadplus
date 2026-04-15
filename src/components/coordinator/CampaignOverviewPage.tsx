@@ -155,8 +155,14 @@ export const CampaignOverviewPage: React.FC = () => {
     } catch (e) { console.error('Kampanje-feil:', e); }
 
     // --- KIOSK ---
+    // kiosk_sales.team_id ble lagt til i 20260413_add_events_team_id.sql —
+    // filteret her gjør aggregatene team-avgrensede så koordinator for
+    // team A ikke ser kioskomsetning fra andre team. Konsistent med
+    // lotteries- og sales_campaigns-queryene over.
     try {
-      const { data: kioskSales } = await supabase.from('kiosk_sales').select('total_amount, created_at, event_id');
+      let ksQuery = supabase.from('kiosk_sales').select('total_amount, created_at, event_id');
+      if (teamId) ksQuery = ksQuery.eq('team_id', teamId);
+      const { data: kioskSales } = await ksQuery;
       if (kioskSales && kioskSales.length > 0) {
         const revenue = kioskSales.reduce((s: number, r: any) => s + (r.total_amount || 0), 0);
         const eventIds = new Set(kioskSales.map((s: any) => s.event_id).filter(Boolean));
