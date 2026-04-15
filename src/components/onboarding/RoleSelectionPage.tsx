@@ -72,7 +72,7 @@ export const RoleSelectionPage: React.FC = () => {
       id: 'family' as Role,
       icon: '👨‍👩‍👧‍👦',
       title: 'Jeg er forelder',
-      description: 'Jeg skal registrere meg for å ta vakter',
+      description: '',
       badge: 'Familie',
     },
     {
@@ -209,7 +209,9 @@ export const RoleSelectionPage: React.FC = () => {
                   <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-primary)' }}>
                     {role.title}
                   </h3>
-                  <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>{role.description}</p>
+                  {role.description && (
+                    <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>{role.description}</p>
+                  )}
                 </div>
 
                 <div

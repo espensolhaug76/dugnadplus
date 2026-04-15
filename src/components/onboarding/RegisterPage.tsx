@@ -105,7 +105,7 @@ export const RegisterPage: React.FC = () => {
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: 'var(--primary-color)', marginBottom: '8px' }}>
             Dugnad+
           </h1>
-          <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>Opprett en ny konto (Supabase)</p>
+          <p style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>Opprett en ny konto</p>
         </div>
 
         <div className="card" style={{ padding: '32px' }}>
