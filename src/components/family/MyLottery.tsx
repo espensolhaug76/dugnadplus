@@ -44,12 +44,32 @@ export const MyLottery: React.FC = () => {
         const familyId = currentFamilyId;
         if (!familyId) { setLoading(false); return; }
 
-        // 2. Hent aktivt lotteri
+        // 2. Hent familiens team_id for å kunne filtrere lotteriet
+        //    til familiens eget lag. Uten dette ville en forelder i
+        //    klubb A sett klubb B sitt aktive lotteri så snart flere
+        //    klubber deler Dugnad+.
+        const { data: familyRow } = await supabase
+            .from('families')
+            .select('team_id')
+            .eq('id', familyId)
+            .maybeSingle();
+
+        const familyTeamId = familyRow?.team_id;
+        if (!familyTeamId) {
+            // Familie uten team_id kan ikke knyttes til et lotteri —
+            // stille early-return, samme mønster som "ingen aktivt
+            // lotteri"-tilstanden nedenfor.
+            setLoading(false);
+            return;
+        }
+
+        // 3. Hent aktivt lotteri for familiens team
         const { data: lotteryData } = await supabase
             .from('lotteries')
             .select('*')
             .eq('is_active', true)
-            .single();
+            .eq('team_id', familyTeamId)
+            .maybeSingle();
 
         if (lotteryData) {
             // Map snake_case til camelCase for UI
