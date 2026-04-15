@@ -64,37 +64,90 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     return null;
   };
 
-  const loadTeams = () => {
+  // Lag leses fra team_members-tabellen (DB) som er kanonisk etter
+  // RLS Steg A. localStorage brukes kun som CACHE for team-metadata
+  // (navn, sport, birthYear) — team-eierskap valideres alltid mot
+  // team_members først.
+  //
+  // Hvis en legacy timestamp-basert team_id ligger igjen i
+  // localStorage (fra før team_id-normaliseringsrunden), blir den
+  // filtrert bort her siden ingen team_members-rad matcher den.
+  const loadTeams = async () => {
     try {
+      // 1. Hent brukerens kanoniske team-medlemskap fra DB
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        setGroupedTeams({});
+        setLoading(false);
+        return;
+      }
+
+      const { data: memberships, error } = await supabase
+        .from('team_members')
+        .select('team_id, role')
+        .eq('auth_user_id', authUser.id)
+        .in('role', ['coordinator', 'club_admin']);
+
+      if (error) {
+        console.error('Feil ved henting av team_members:', error);
+        setGroupedTeams({});
+        setLoading(false);
+        return;
+      }
+
+      const myTeamIds = new Set((memberships || []).map(m => m.team_id));
+
+      // 2. Berik med team-metadata fra localStorage-cachen. Bruker
+      //    bare team-rader som faktisk matcher team_members — ingen
+      //    fantom-team.
       const storedTeams = localStorage.getItem('dugnad_teams');
-      const teams: StoredTeam[] = storedTeams ? JSON.parse(storedTeams) : [];
+      const cachedTeams: StoredTeam[] = storedTeams ? JSON.parse(storedTeams) : [];
+      const validTeams = cachedTeams.filter(t => myTeamIds.has(t.id));
+
+      // 3. Hvis cachen er ufullstendig (mangler team-metadata for
+      //    noen av medlemskapene våre), lag minimalistiske team-
+      //    oppføringer fra bare team_id-slug-en. De kan parses
+      //    for sport/kjønn/år via displayTeamName senere.
+      const cachedIds = new Set(validTeams.map(t => t.id));
+      myTeamIds.forEach(tid => {
+        if (!cachedIds.has(tid)) {
+          validTeams.push({
+            id: tid,
+            clubId: '',
+            sport: tid.split('-')[0] || 'other',
+            gender: '',
+            birthYear: 0,
+            name: tid,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      });
 
       const groups: Record<string, StoredTeam[]> = {};
-      teams.forEach(team => {
-          const sport = team.sport || 'other';
-          if (!groups[sport]) groups[sport] = [];
-          groups[sport].push(team);
+      validTeams.forEach(team => {
+        const sport = team.sport || 'other';
+        if (!groups[sport]) groups[sport] = [];
+        groups[sport].push(team);
       });
 
       setGroupedTeams(groups);
 
-      // 1. Sjekk bruker-spesifikk "sist brukte lag"
-      const userId = getUserId();
-      const userLastTeam = userId ? localStorage.getItem(`dugnad_last_team_${userId}`) : null;
+      // 4. Velg aktivt lag: cached preference hvis den fortsatt
+      //    finnes i team_members, ellers første lag, ellers ingen.
+      const userId = authUser.id;
+      const userLastTeam = localStorage.getItem(`dugnad_last_team_${userId}`);
 
-      if (userLastTeam && teams.some(t => t.id === userLastTeam)) {
-          setSelectedTeam(userLastTeam);
-          localStorage.setItem('dugnad_active_team_filter', userLastTeam);
+      if (userLastTeam && myTeamIds.has(userLastTeam)) {
+        setSelectedTeam(userLastTeam);
+        localStorage.setItem('dugnad_active_team_filter', userLastTeam);
+      } else if (validTeams.length > 0) {
+        setSelectedTeam(validTeams[0].id);
+        localStorage.setItem('dugnad_active_team_filter', validTeams[0].id);
       } else {
-          // 2. Fallback: dugnad_active_team_filter (bakoverkompatibelt)
-          const activeFilter = localStorage.getItem('dugnad_active_team_filter');
-          if (activeFilter && teams.some(t => t.id === activeFilter)) {
-              setSelectedTeam(activeFilter);
-          } else if (teams.length > 0) {
-              // 3. Siste fallback: velg første lag
-              setSelectedTeam(teams[0].id);
-              localStorage.setItem('dugnad_active_team_filter', teams[0].id);
-          }
+        // Ingen lag — rydd localStorage så legacy timestamps ikke
+        // henger igjen og forvirrer andre komponenter.
+        setSelectedTeam('');
+        localStorage.removeItem('dugnad_active_team_filter');
       }
     } catch (error) {
       console.error('Feil ved henting av lag:', error);
@@ -196,7 +249,10 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
           {loading ? (
             <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Laster...</div>
           ) : Object.keys(groupedTeams).length === 0 ? (
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Ingen lag. <a href="/setup-team" style={{ color: '#1a7a4a' }}>Opprett lag</a></div>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Ingen lag ennå.<br />
+              <a href="/setup-team" style={{ color: '#1a7a4a', fontWeight: 600 }}>+ Opprett første lag</a>
+            </div>
           ) : (
             sportOrder.map(sportKey => {
               const teamsInGroup = groupedTeams[sportKey];
