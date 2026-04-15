@@ -537,13 +537,22 @@ Alt etter dette er **ikke gjort ennå**. Estimater er grove.
 >
 > `pg_get_constraintdef()` returnerer den rå CREATE-syntaksen inkludert `REFERENCES auth.users(id) ON DELETE CASCADE` — synlig uavhengig av schema-grenser. Dette må bakes inn i verifikasjons-skriptene for Steg B, E og F hvor vi også kommer til å ha cross-schema-FKs.
 
-#### Steg B — Backfill + verifiserings-queries V1–V4
-- **Hvem:** [Espen] kjører SQL. [Begge] verifiserer V1–V4 sammen.
-- **Hva:** Idempotent migrering som populerer `family_members.auth_user_id` fra `families.id = auth.uid()`-mønsteret, og fyller `team_members` fra `family_members`/`auth.users`-metadata.
-- **Estimat:** CC skriver SQL: 1,5 time. Espen kjører: 5 min. Verifisering V1–V4: 15 min.
-- **Avhengigheter:** Steg A må være ferdig.
-- **Stoppunkt:** ✅ Trygt. Skriptet er additivt. Appen bruker fortsatt `families.id = auth.uid()`-mønsteret så all gammel logikk fungerer. V3 (0 brukere uten kobling) må være grønn før Steg C.
-- **Særlig viktig:** Hvis V3 ikke er 0, **ikke gå videre**. Finn årsaken først — typisk er det foreldre som aldri har blitt koblet via verken `families.id = auth.uid()` eller `pending_parents.auth_user_id`.
+#### Steg B — Backfill + verifiserings-queries V1–V4 ✅ LIGHT-VARIANT FERDIG
+- **Status:** **Light variant ferdig 2026-04-15.** Full backfill-migrering utsatt til `pending_parents` inneholder data (etter pilot).
+- **Commits:**
+  - `e1913f8` — `supabase/migrations/20260415_step_b_light_team_members_backfill.sql` (light variant)
+  - Full backfill-migrering: TBD, skrives post-pilot
+- **Dry-run-resultat 2026-04-15:**
+  - `parents_without_auth_user_id`: 35 (Spond-importerte foresatte, trenger organisk /claim-family)
+  - `approved_pending_parents`: 0 (ingen kilde å backfille FRA)
+  - `parents_missing_from_team_members`: 5 (test-claims fra 14-stegs retest)
+  - `families_without_team_id`: 0
+- **Hva light-varianten faktisk gjorde:** Én `INSERT INTO team_members ... SELECT FROM family_members JOIN families` for de 5 parents som allerede hadde `auth_user_id` satt men manglet en `team_members`-rad. Idempotent (`ON CONFLICT DO NOTHING` + `NOT EXISTS`-guard), verifisert med selvsjekk som RAISE EXCEPTION hvis antallet ikke matchet. Kjørt og committet i prod uten feil.
+- **Hvorfor ikke full migrering:** Etter team_id-normaliseringsrunden (data-wipe) er `pending_parents` tom, så det er ingenting å backfille `auth_user_id` fra. Den fulle Steg B-migreringen (med `UPDATE family_members SET auth_user_id = pp.auth_user_id FROM pending_parents pp ...`) vil først være meningsfull når brukere har begynt å registrere seg via `/join`-flowen i produksjon og den tabellen har data. Utsatt som post-pilot-oppgave.
+- **Full Steg B — når kjøres den?** Når `SELECT COUNT(*) FROM pending_parents WHERE status = 'approved' AND auth_user_id IS NOT NULL` returnerer > 0. Idempotent shape gjenbrukes — andre kjøring med 0 kandidater blir no-op.
+- **Avhengigheter:** Steg A må være ferdig (✅ `b827733`).
+- **Stoppunkt:** ✅ Trygt. Både light-varianten og den fremtidige fulle migreringen er additive og kan pauses.
+- **Estimat vs. faktisk:** Estimat: CC 1,5t + Espen 20 min. Faktisk: CC ~30 min (light-variant + dry-run), Espen ~5 min kjøring. Vesentlig raskere enn forventet fordi dry-run-en avslørte at full migrering ikke var nødvendig.
 
 #### Steg C — Frontend: bytt til `family_members.auth_user_id` som kanonisk oppslag
 - **Hvem:** [CC] skriver kode, deployer via push til main, [Espen] verifiserer manuelt i browser.
