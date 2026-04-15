@@ -33,6 +33,7 @@ interface MatchedChild {
 
 type Phase = 'code' | 'confirm' | 'submitting' | 'success';
 type Mode = 'initial' | 'add';
+type AuthState = 'checking' | 'unauth' | 'ok';
 
 export const ClaimFamilyPage: React.FC = () => {
   const [code, setCode] = useState('');
@@ -40,10 +41,28 @@ export const ClaimFamilyPage: React.FC = () => {
   const [matchedChild, setMatchedChild] = useState<MatchedChild | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mode, setMode] = useState<Mode>('initial');
+  const [authState, setAuthState] = useState<AuthState>('checking');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'add') setMode('add');
+
+    // Autoritativ auth-sjekk FØR vi rendrer skjemaet. Uten denne
+    // kan uinnloggede brukere taste inn vilkårlige koder og
+    // utføre queryer direkte mot Supabase (anonym nøkkel), og
+    // /claim-family blir en åpen kode-probing-endpoint. Samme
+    // mønster som ParentSwapPage-fiksen i commit 50b568a.
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setAuthState('unauth');
+        // Liten forsinkelse så brukeren ser "du må være innlogget"-
+        // skjermen før redirect — ellers er det bare en flash.
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+        return;
+      }
+      setAuthState('ok');
+    })();
   }, []);
 
   const handleLookup = async () => {
@@ -210,6 +229,40 @@ export const ClaimFamilyPage: React.FC = () => {
   const childDisplay = matchedChild
     ? formatChildDisplayName(matchedChild.name)
     : '';
+
+  // ===== AUTH GATE =====
+  // Ikke render skjemaet før vi har bekreftet at brukeren er
+  // innlogget. Uten dette blir /claim-family en åpen endpoint
+  // for kode-probing mot Supabase-anon-nøkkelen.
+  if (authState === 'checking') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Laster...</div>
+      </div>
+    );
+  }
+
+  if (authState === 'unauth') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', maxWidth: '400px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+          <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+            Du må være logget inn
+          </h1>
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+            Send deg videre til innloggingen...
+          </p>
+          <button
+            onClick={() => window.location.href = '/login'}
+            className="btn btn-primary"
+          >
+            Gå til innlogging nå
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ===== PHASE: SUCCESS =====
   if (phase === 'success') {
