@@ -40,11 +40,43 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [clubName, setClubName] = useState('Min Klubb');
+  const [authGate, setAuthGate] = useState<'checking' | 'allowed' | 'denied'>('checking');
 
   useEffect(() => {
+    // Auth-gate: verifiser at brukeren er coordinator/club_admin via
+    // team_members før noe innhold rendres. Forhindrer flash-of-
+    // unauthorized-content der koordinator-UI vises i et øyeblikk
+    // før redirect slår inn.
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setAuthGate('denied');
+        window.location.href = '/login';
+        return;
+      }
+
+      const { data: memberships } = await supabase
+        .from('team_members')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .in('role', ['coordinator', 'club_admin'])
+        .limit(1);
+
+      if (!memberships || memberships.length === 0) {
+        setAuthGate('denied');
+        window.location.href = '/family-dashboard';
+        return;
+      }
+
+      setAuthGate('allowed');
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (authGate !== 'allowed') return;
     loadTeams();
     loadClubInfo();
-  }, []);
+  }, [authGate]);
 
   const loadClubInfo = () => {
       const storedClub = localStorage.getItem('dugnad_club');
@@ -221,6 +253,15 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     { path: '/marketplace', label: 'Marked', icon: '🏷️', revenue: false },
     { path: '/sponsor-admin', label: 'Sponsorer', icon: '🏪', revenue: true },
   ];
+
+  // Auth-gate: vis nøytral loading mens sjekken kjører, render aldri
+  // koordinator-innhold før tilgang er verifisert.
+  if (authGate === 'checking') {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4a5e50' }}>Laster...</div>;
+  }
+  if (authGate === 'denied') {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4a5e50' }}>Omdirigerer...</div>;
+  }
 
   return (
     <div className="coordinator-layout">
