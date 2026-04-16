@@ -189,8 +189,10 @@ export const LotteryAdmin: React.FC = () => {
                 setBuyers(Object.values(buyerMap).sort((a, b) => b.totalTickets - a.totalTickets));
             }
 
-            // Hent familier for kontantsalg-dropdown
-            const { data: famData } = await supabase.from('families').select('id, name, family_members(name, role)');
+            // Hent familier for kontantsalg-dropdown — team-avgrenset
+            let famQuery = supabase.from('families').select('id, name, family_members(name, role)');
+            if (teamId) famQuery = famQuery.eq('team_id', teamId);
+            const { data: famData } = await famQuery;
             if (famData) {
                 setFamilies(famData.map((f: any) => {
                     const children = f.family_members?.filter((m: any) => m.role === 'child') || [];
