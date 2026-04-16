@@ -598,11 +598,23 @@ Alt etter dette er **ikke gjort ennå**. Estimater er grove.
 - **Avhengigheter:** Steg F må være committet.
 - **Stoppunkt:** 🛑 **HARD STOPP hvis noe feiler.** Hvis en kritisk path (anon lotteri, parent ser egen familie) er broken, må vi enten (a) fikse policy-bug umiddelbart med en ny migrering, eller (b) kjøre `ROLLBACK_TO_OPEN_POLICIES.sql`. Ikke la appen ligge i en halvdefekt tilstand.
 
-#### Steg H — Frontend antipattern-fix (13 filer)
+#### Steg H — Frontend antipattern-fix ✅ HØYRISIKO-FILER FERDIG
+- **Status:** Høyrisiko-filer ferdig 2026-04-16. 9 filer fikset. Gjenværende: SmsSettingsPage.tsx (medium-risiko, stale localStorage, ikke datalekk).
 - **Hvem:** [CC] skriver kode, [Espen] verifiserer i browser.
-- **Hva:** Fra antipattern-tabellen tidligere i dette dokumentet — legg eksplisitte `.eq('team_id', ...)`, `.eq('family_id', ...)` etc. på alle de 13 filene. Gjøres i flere commits (en per logisk område).
-- **Estimat:** 4–5 timer.
-- **Avhengigheter:** Steg F må være ferdig. Det går også hvis Steg F ikke er ferdig, men da er det ingen praktisk effekt — RLS filtrerer allerede, så frontend-fixene er kosmetisk frem til policyene er på.
+- **Hva:** Fra antipattern-tabellen tidligere i dette dokumentet — legg eksplisitte `.eq('team_id', ...)`, `.eq('family_id', ...)` etc. Gjøres i flere commits (en per logisk område).
+- **Commits (kronologisk):**
+  - `c0eb4a4` — CampaignOverviewPage: server-side team_id filter på kiosk_sales
+  - `4dc2698` — MyLottery: server-side filter
+  - `e15cc4a` — CampaignOverviewPage: role-gate (coordinator/club_admin only)
+  - `227138f` — LoginPage: login redirect bruker team_members rolle i stedet for stale localStorage
+  - `2852589` — CoordinatorLayout: auth-gate for å forhindre flash-of-unauthorized-content
+  - `f4d18fe` — AttendancePage: server-side team_id filter på events
+  - `b639e0e` — KioskAdmin: server-side team_id filter på events + kiosk_sales
+  - `f932e89` — LotteryAdmin: server-side team_id filter på families-query
+  - `2f2a8ed` — SalesCampaignPage: server-side team_id filter på families-query
+- **Gjenværende:** SmsSettingsPage.tsx bruker allerede `.eq('team_id', teamId)`, men verdien kommer fra localStorage — stale-data-risiko hvis bruker bytter lag i en annen fane. Ikke en datalekk, klassifisert som medium-risiko. Tas ved behov.
+- **Estimat vs. faktisk:** Estimat: 4–5 timer. Faktisk: ~3 timer kode + ~1,5 timer Espen-verifisering over 2 sesjoner.
+- **Avhengigheter:** Steg F må være ferdig for full effekt. Uten RLS filtrerer frontend-fixene i app-laget, men DB er fortsatt åpen.
 - **Stoppunkt:** ✅ Trygt mellom hver fil. Kan pauses etter hver commit.
 
 #### Steg I — CSP enforce-switch (SECURITY_BACKLOG C1)
