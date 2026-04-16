@@ -37,7 +37,17 @@ export const AttendancePage: React.FC = () => {
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
 
-    // 1. Hent ferdige arrangementer (dato < i dag, eller <= i dag hvis man vil godkjenne fortløpende)
+    // Server-side team-filter: begrens til aktivt lag slik at
+    // koordinator kun ser oppmøte for egne lag, ikke events fra
+    // andre teams. Samme mønster som CoordinatorDashboard.
+    const activeTeamId = localStorage.getItem('dugnad_active_team_filter');
+    if (!activeTeamId) {
+      setPastEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    // 1. Hent ferdige arrangementer for aktivt lag.
     // Vi bruker lte (less than or equal) så man kan godkjenne dagens vakter også.
     const { data: eventsData, error } = await supabase
       .from('events')
@@ -58,7 +68,8 @@ export const AttendancePage: React.FC = () => {
           )
         )
       `)
-      .lte('date', today) 
+      .eq('team_id', activeTeamId)
+      .lte('date', today)
       .order('date', { ascending: false });
 
     if (error) {
