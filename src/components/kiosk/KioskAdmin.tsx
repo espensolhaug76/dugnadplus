@@ -65,18 +65,22 @@ export const KioskAdmin: React.FC = () => {
     const { data: itemsData } = await itemQuery.order('name');
     if (itemsData) setItems(itemsData);
 
-    // Hent arrangementer for salgsstatistikk
-    const { data: eventsData } = await supabase
+    // Hent arrangementer for salgsstatistikk — team-avgrenset
+    let eventsQuery = supabase
       .from('events')
       .select('id, name, date')
       .order('date', { ascending: false })
       .limit(20);
+    if (currentTeamId) eventsQuery = eventsQuery.eq('team_id', currentTeamId);
+    const { data: eventsData } = await eventsQuery;
     if (eventsData) setEvents(eventsData);
 
-    // Hent salg
-    const { data: salesData } = await supabase
+    // Hent salg — team-avgrenset
+    let salesQuery = supabase
       .from('kiosk_sales')
       .select('event_id, items, total_amount');
+    if (currentTeamId) salesQuery = salesQuery.eq('team_id', currentTeamId);
+    const { data: salesData } = await salesQuery;
 
     if (salesData && eventsData) {
       const byEvent: Record<string, { totalAmount: number; count: number; itemCounts: Record<string, number> }> = {};
