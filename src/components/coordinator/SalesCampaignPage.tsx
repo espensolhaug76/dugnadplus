@@ -71,8 +71,10 @@ export const SalesCampaignPage: React.FC = () => {
       }
     }
 
-    // Hent familier
-    const { data: famData } = await supabase.from('families').select('id, name, family_members(name, role)');
+    // Hent familier — team-avgrenset
+    let famQuery = supabase.from('families').select('id, name, family_members(name, role)');
+    if (teamId) famQuery = famQuery.eq('team_id', teamId);
+    const { data: famData } = await famQuery;
     if (famData) setFamilies(famData.map((f: any) => {
       const children = f.family_members?.filter((m: any) => m.role === 'child') || [];
       return { id: f.id, name: children.length > 0 ? children[0].name : f.name };
