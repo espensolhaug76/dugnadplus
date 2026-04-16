@@ -35,35 +35,43 @@ export const LoginPage: React.FC = () => {
     }
 
     if (data.user) {
-      // 2. Hent mer info om brukeren (metadata lagret ved registrering)
       const userMeta = data.user.user_metadata;
-      
-      // 3. Bestem rolle — sjekk metadata, localStorage og klubb/lag
-      let role = userMeta.role || 'family';
 
-      // Hvis klubb/lag finnes i metadata → bruker er koordinator
-      if (userMeta.club || userMeta.teams) {
+      // 2. Bestem rolle fra team_members (kanonisk kilde).
+      //    Aldri bruk localStorage eller user_metadata som autoritativ
+      //    rolle-kilde — de kan inneholde stale data fra en tidligere
+      //    sesjon med en annen bruker i samme nettleser.
+      const { data: memberships } = await supabase
+        .from('team_members')
+        .select('role')
+        .eq('auth_user_id', data.user.id);
+
+      const roles = (memberships || []).map(m => m.role);
+      let role: string;
+      if (roles.includes('coordinator') || roles.includes('club_admin')) {
         role = 'coordinator';
+      } else if (roles.includes('parent')) {
+        role = 'parent';
+      } else {
+        // Ingen team_members-rad — bruker trenger onboarding
+        role = '';
       }
 
-      // Sjekk også localStorage (fra tidligere onboarding)
-      const existingClub = localStorage.getItem('dugnad_club');
-      const existingTeams = localStorage.getItem('dugnad_teams');
-      if (existingClub || existingTeams) {
-        role = 'coordinator';
-      }
-
+      // 3. Oppdater localStorage med ferske data fra DB-oppslaget,
+      //    slik at eventuelle stale verdier fra forrige sesjon overskrives.
       const localUser = {
         id: data.user.id,
         email: data.user.email,
         fullName: userMeta.full_name || data.user.email?.split('@')[0],
         name: userMeta.full_name || data.user.email?.split('@')[0],
-        role,
+        role: role || 'family',
         createdAt: data.user.created_at
       };
       localStorage.setItem('dugnad_user', JSON.stringify(localUser));
 
-      // 4. Gjenopprett klubb/lag fra metadata hvis tilgjengelig
+      // 4. Gjenopprett klubb/lag fra metadata hvis localStorage mangler
+      const existingClub = localStorage.getItem('dugnad_club');
+      const existingTeams = localStorage.getItem('dugnad_teams');
       if (userMeta.club && !existingClub) {
         localStorage.setItem('dugnad_club', JSON.stringify(userMeta.club));
       }
@@ -71,13 +79,13 @@ export const LoginPage: React.FC = () => {
         localStorage.setItem('dugnad_teams', JSON.stringify(userMeta.teams));
       }
 
-      // 5. Send til riktig side basert på rolle
+      // 5. Redirect basert på DB-verifisert rolle
       if (role === 'coordinator') {
         window.location.href = '/coordinator-dashboard';
-      } else if (role === 'substitute') {
-        window.location.href = '/substitute-marketplace';
-      } else {
+      } else if (role === 'parent') {
         window.location.href = '/family-dashboard';
+      } else {
+        window.location.href = '/role-selection';
       }
     }
   };
