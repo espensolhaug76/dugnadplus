@@ -1,6 +1,6 @@
 -- ============================================================
 -- Dugnad+ — Steg F: RLS-policy-innstramming
--- Dato: 2026-04-18
+-- Dato: 2026-04-18  |  Versjon: 3 (idempotent, sender_id fix, drop-all)
 -- Avhengigheter: Steg A (team_members), Steg B (backfill),
 --                Steg E (helper-funksjoner)
 -- ============================================================
