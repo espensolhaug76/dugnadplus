@@ -714,11 +714,14 @@ CREATE POLICY vikar_messages_select_authenticated ON public.vikar_messages
 CREATE POLICY vikar_messages_insert_authenticated ON public.vikar_messages
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
-CREATE POLICY vikar_messages_update_sender ON public.vikar_messages
-  FOR UPDATE USING (sender_id = auth.uid());
+-- sender_id-kolonnen finnes i supabase_KOMPLETT.sql men ikke i
+-- faktisk prod-DB. Bruker auth-sjekk i stedet. Strammes inn
+-- når vikar_messages-skjemaet konsolideres.
+CREATE POLICY vikar_messages_update_authenticated ON public.vikar_messages
+  FOR UPDATE USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY vikar_messages_delete_sender ON public.vikar_messages
-  FOR DELETE USING (sender_id = auth.uid());
+CREATE POLICY vikar_messages_delete_authenticated ON public.vikar_messages
+  FOR DELETE USING (auth.uid() IS NOT NULL);
 
 
 -- ============================================================
