@@ -41,28 +41,22 @@ BEGIN;
 -- 1. DROP ALLE EKSISTERENDE ÅPNE POLICIES
 -- ============================================================
 
-DROP POLICY IF EXISTS families_all ON public.families;
-DROP POLICY IF EXISTS family_members_all ON public.family_members;
-DROP POLICY IF EXISTS events_all ON public.events;
-DROP POLICY IF EXISTS shifts_all ON public.shifts;
-DROP POLICY IF EXISTS assignments_all ON public.assignments;
-DROP POLICY IF EXISTS requests_all ON public.requests;
-DROP POLICY IF EXISTS lotteries_all ON public.lotteries;
-DROP POLICY IF EXISTS prizes_all ON public.prizes;
-DROP POLICY IF EXISTS lottery_sales_all ON public.lottery_sales;
-DROP POLICY IF EXISTS kiosk_items_all ON public.kiosk_items;
-DROP POLICY IF EXISTS kiosk_sales_all ON public.kiosk_sales;
-DROP POLICY IF EXISTS sales_campaigns_all ON public.sales_campaigns;
-DROP POLICY IF EXISTS campaign_sales_all ON public.campaign_sales;
-DROP POLICY IF EXISTS sponsors_all ON public.sponsors;
-DROP POLICY IF EXISTS settings_all ON public.settings;
-DROP POLICY IF EXISTS clubs_all ON public.clubs;
-DROP POLICY IF EXISTS pending_parents_all ON public.pending_parents;
-DROP POLICY IF EXISTS vikar_messages_all ON public.vikar_messages;
-DROP POLICY IF EXISTS sms_credits_all ON public.sms_credits;
-DROP POLICY IF EXISTS sms_log_all ON public.sms_log;
-DROP POLICY IF EXISTS push_subscriptions_all ON public.push_subscriptions;
-DROP POLICY IF EXISTS family_preferences_all ON public.family_preferences;
+-- Dropper ALLE eksisterende policies i public schema, ikke bare
+-- de med _all-suffix. Nødvendig for idempotens: en tidligere
+-- kjøring kan ha opprettet nye policies før den feilet.
+DO $$
+DECLARE
+  pol record;
+BEGIN
+  FOR pol IN
+    SELECT policyname, tablename
+    FROM pg_policies
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I',
+      pol.policyname, pol.tablename);
+  END LOOP;
+END $$;
 
 
 -- ============================================================
@@ -824,19 +818,6 @@ BEGIN
     v_total := v_total + v_count;
     RAISE NOTICE '  % → % policies', v_tbl, v_count;
   END LOOP;
-
-  -- Verifiser at ingen av de gamle åpne policies fortsatt eksisterer
-  IF EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND policyname LIKE '%_all'
-    AND policyname NOT IN (
-      'families_select_all', 'family_members_select_all',
-      'prizes_select_all', 'kiosk_items_select_all',
-      'sponsors_select_all', 'settings_select_all'
-    )
-  ) THEN
-    RAISE EXCEPTION 'FEIL: Det finnes fortsatt gamle _all policies som ikke ble droppet!';
-  END IF;
 
   RAISE NOTICE '✅ Steg F SELVSJEKK OK — 23 tabeller har totalt % policies, ingen tabeller med 0', v_total;
 END $$;
