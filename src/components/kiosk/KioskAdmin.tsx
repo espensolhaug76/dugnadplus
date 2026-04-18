@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface KioskItem {
   id: string;
@@ -40,6 +41,7 @@ export const KioskAdmin: React.FC = () => {
   const [newPrice, setNewPrice] = useState(0);
   const [newEmoji, setNewEmoji] = useState('🛒');
   const [showSetup, setShowSetup] = useState(false);
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -322,13 +324,13 @@ export const KioskAdmin: React.FC = () => {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              onClick={printQR}
+              onClick={() => { if (hasPremium()) printQR(); else setShowPremiumGate(true); }}
               style={{ padding: '8px 18px', fontSize: '13px', fontWeight: '600', borderRadius: '6px', border: 'none', background: '#7ec8a0', color: '#1e3a2f', cursor: 'pointer' }}
             >
               Print QR-kode
             </button>
             <button
-              onClick={copyLink}
+              onClick={() => { if (hasPremium()) copyLink(); else setShowPremiumGate(true); }}
               style={{ padding: '8px 18px', fontSize: '13px', fontWeight: '600', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#ffffff', cursor: 'pointer' }}
             >
               Kopier lenke
@@ -514,6 +516,7 @@ export const KioskAdmin: React.FC = () => {
           </div>
         )}
       </div>
+      {showPremiumGate && <PremiumGateModal featureName="kiosken" onClose={() => setShowPremiumGate(false)} />}
     </div>
   );
 };

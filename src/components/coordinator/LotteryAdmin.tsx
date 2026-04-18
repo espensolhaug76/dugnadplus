@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
+import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface Prize {
   id: string;
@@ -71,6 +72,7 @@ export const LotteryAdmin: React.FC = () => {
   // Historikk
   const [archivedLotteries, setArchivedLotteries] = useState<any[]>([]);
   useState(false); // showHistory reserved for future use
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
 
   // Opprett-modal og navigasjon
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -103,14 +105,23 @@ export const LotteryAdmin: React.FC = () => {
   const fetchActiveLottery = async () => {
     setLoading(true);
     try {
-        // 1. Hent aktivt lotteri for dette laget
+        // 1. Hent aktivt lotteri for dette laget (eller utkast)
         const teamId = getActiveTeamId();
         let query = supabase.from('lotteries').select('*, prizes(*)').eq('is_active', true);
         if (teamId) query = query.eq('team_id', teamId);
-        const { data: lotteryData, error } = await query.maybeSingle();
+        let { data: lotteryData, error } = await query.maybeSingle();
 
         if (error && error.code !== 'PGRST116') {
             console.error('Feil ved henting av lotteri:', error);
+        }
+
+        // Ingen aktivt lotteri — sjekk om det finnes et utkast (opprettet
+        // i prøve-modus uten premium)
+        if (!lotteryData) {
+            let draftQuery = supabase.from('lotteries').select('*, prizes(*)').eq('is_active', false);
+            if (teamId) draftQuery = draftQuery.eq('team_id', teamId);
+            const { data: draftData } = await draftQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
+            if (draftData) lotteryData = draftData;
         }
 
         if (lotteryData) {
@@ -312,7 +323,7 @@ export const LotteryAdmin: React.FC = () => {
     try {
         const { data: newLottery, error } = await supabase
             .from('lotteries')
-            .insert({ name, description, ticket_price: ticketPrice, goal, vipps_number: vippsNumber, is_active: true, team_id: getActiveTeamId() || null })
+            .insert({ name, description, ticket_price: ticketPrice, goal, vipps_number: vippsNumber, is_active: hasPremium(), team_id: getActiveTeamId() || null })
             .select().single();
         
         if (error) throw error;
@@ -452,11 +463,17 @@ export const LotteryAdmin: React.FC = () => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>🎟️ {lottery.name}</span>
-              <span style={{ fontSize: '10px', background: 'rgba(126,200,160,0.2)', color: '#7ec8a0', padding: '2px 8px', borderRadius: '6px', fontWeight: '500' }}>Aktivt</span>
+              <span style={{ fontSize: '10px', background: lottery.isActive ? 'rgba(126,200,160,0.2)' : 'rgba(250,199,117,0.2)', color: lottery.isActive ? '#7ec8a0' : '#fac775', padding: '2px 8px', borderRadius: '6px', fontWeight: '500' }}>{lottery.isActive ? 'Aktivt' : 'Utkast'}</span>
             </div>
+            {!lottery.isActive && <div style={{ fontSize: '11px', color: '#fac775', marginTop: '2px' }}>Ikke synlig for kjøpere ennå</div>}
             {lottery.description && <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{lottery.description}</div>}
           </div>
-          <button onClick={() => setShowDetail(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>Administrer →</button>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {!lottery.isActive && (
+              <button onClick={() => { if (hasPremium()) { updateLotteryField('is_active', true); } else { setShowPremiumGate(true); } }} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Publiser →</button>
+            )}
+            <button onClick={() => setShowDetail(true)} style={{ background: lottery.isActive ? '#7ec8a0' : 'rgba(255,255,255,0.15)', color: lottery.isActive ? '#1e3a2f' : '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>Administrer →</button>
+          </div>
         </div>
 
         {/* Stat Cards */}
@@ -555,6 +572,7 @@ export const LotteryAdmin: React.FC = () => {
             </div>
           </>
         )}
+        {showPremiumGate && <PremiumGateModal featureName="loddsalget" onClose={() => setShowPremiumGate(false)} />}
       </div>
     );
   }

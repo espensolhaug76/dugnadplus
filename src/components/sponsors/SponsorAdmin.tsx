@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface Sponsor {
   id: string;
@@ -46,6 +47,7 @@ export const SponsorAdmin: React.FC = () => {
   const [showAdd, setShowAdd] = useState(false);
   const [sponsorsVisible, setSponsorsVisible] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
 
   // Form
   const [form, setForm] = useState({ name: '', logo_url: '', description: '', website: '', phone: '', discount_level1: 10, discount_level2: 15, discount_level3: 20, discount_level4: 25 });
@@ -84,7 +86,7 @@ export const SponsorAdmin: React.FC = () => {
     if (editingId) {
       await supabase.from('sponsors').update(form).eq('id', editingId);
     } else {
-      await supabase.from('sponsors').insert({ ...form, is_active: true });
+      await supabase.from('sponsors').insert({ ...form, is_active: hasPremium() });
     }
     resetForm();
     fetchData();
@@ -97,6 +99,8 @@ export const SponsorAdmin: React.FC = () => {
   };
 
   const handleToggle = async (id: string, active: boolean) => {
+    // Aktivering krever premium — deaktivering er alltid tillatt
+    if (!active && !hasPremium()) { setShowPremiumGate(true); return; }
     await supabase.from('sponsors').update({ is_active: !active }).eq('id', id);
     fetchData();
   };
@@ -348,6 +352,7 @@ export const SponsorAdmin: React.FC = () => {
           ))}
         </div>
       )}
+      {showPremiumGate && <PremiumGateModal featureName="sponsorene" onClose={() => setShowPremiumGate(false)} />}
     </div>
   );
 };

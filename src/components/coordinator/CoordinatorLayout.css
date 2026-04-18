@@ -20,7 +20,7 @@
   background-color: var(--card-bg, white) !important;
   border-radius: 12px !important;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
-  z-index: 100 !important;
+  z-index: 10 !important;
   padding: 0 !important;
   border: 1px solid var(--border-color, #e2e8f0) !important;
   flex-shrink: 0 !important;

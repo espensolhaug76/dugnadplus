@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
+import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface Campaign { id: string; title: string; description: string; product_name: string; unit_price: number; target_per_family: number; start_date: string; end_date: string; status: string; vipps_number: string; }
 interface Sale { id: string; seller_family_id: string; buyer_name: string; quantity: number; amount: number; paid: boolean; delivered: boolean; sellerName: string; }
@@ -36,6 +37,7 @@ export const SalesCampaignPage: React.FC = () => {
   const [form, setForm] = useState({ title: '', product_name: '', unit_price: 100, target_per_family: 10, start_date: '', end_date: '', description: '', vipps_number: '' });
 
   const teamId = localStorage.getItem('dugnad_active_team_filter') || '';
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -47,12 +49,20 @@ export const SalesCampaignPage: React.FC = () => {
     const { data: campaignData } = await query.maybeSingle();
 
     if (!campaignData) {
-      // Sjekk completed
-      let q2 = supabase.from('sales_campaigns').select('*').eq('status', 'completed');
-      if (teamId) q2 = q2.eq('team_id', teamId);
-      const { data: completed } = await q2.order('created_at', { ascending: false }).limit(1);
-      if (completed && completed.length > 0) setCampaign(completed[0]);
-      else setCampaign(null);
+      // Sjekk draft (opprettet i prøve-modus)
+      let qDraft = supabase.from('sales_campaigns').select('*').eq('status', 'draft');
+      if (teamId) qDraft = qDraft.eq('team_id', teamId);
+      const { data: draftData } = await qDraft.order('created_at', { ascending: false }).limit(1);
+      if (draftData && draftData.length > 0) {
+        setCampaign(draftData[0]);
+      } else {
+        // Sjekk completed
+        let q2 = supabase.from('sales_campaigns').select('*').eq('status', 'completed');
+        if (teamId) q2 = q2.eq('team_id', teamId);
+        const { data: completed } = await q2.order('created_at', { ascending: false }).limit(1);
+        if (completed && completed.length > 0) setCampaign(completed[0]);
+        else setCampaign(null);
+      }
     } else {
       setCampaign(campaignData);
     }
@@ -85,7 +95,7 @@ export const SalesCampaignPage: React.FC = () => {
 
   const createCampaign = async () => {
     if (!form.title || !form.product_name || !form.unit_price) { alert('Fyll inn tittel, produktnavn og pris.'); return; }
-    await supabase.from('sales_campaigns').insert({ ...form, team_id: teamId || null, status: 'active' });
+    await supabase.from('sales_campaigns').insert({ ...form, team_id: teamId || null, status: hasPremium() ? 'active' : 'draft' });
     setShowCreate(false);
     fetchData();
   };
@@ -298,27 +308,39 @@ export const SalesCampaignPage: React.FC = () => {
     );
   }
 
-  // --- TILSTAND 2: Aktiv kampanje ---
+  // --- TILSTAND 2: Aktiv eller utkast-kampanje ---
+  const isDraft = campaign.status === 'draft';
   const daysLeft = campaign.end_date ? Math.max(0, Math.ceil((new Date(campaign.end_date).getTime() - Date.now()) / 86400000)) : null;
   const totalTarget = families.length * (campaign.target_per_family || 10);
   const maxSeller = sellerStats[0]?.qty || 1;
+
+  const publishCampaign = async () => {
+    if (!hasPremium()) { setShowPremiumGate(true); return; }
+    await supabase.from('sales_campaigns').update({ status: 'active' }).eq('id', campaign.id);
+    fetchData();
+  };
 
   return (
     <div style={{ padding: '20px 24px 40px', maxWidth: '900px', margin: '0 auto', background: '#faf8f4', minHeight: '100vh' }}>
       <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0, marginBottom: '24px', display: 'block' }}>← Tilbake til dashbordet</button>
 
-      {/* Active header bar */}
+      {/* Active/Draft header bar */}
       <div style={{ background: '#1e3a2f', borderRadius: '10px', padding: '16px 20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 style={{ margin: 0, color: '#ffffff', fontSize: '20px', fontWeight: '700' }}>{campaign.title}</h1>
-            <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '10px', background: 'rgba(126,200,160,0.2)', color: '#7ec8a0', fontWeight: '600' }}>Aktiv</span>
-            {daysLeft !== null && <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{daysLeft} dager igjen</span>}
+            <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '10px', background: isDraft ? 'rgba(250,199,117,0.2)' : 'rgba(126,200,160,0.2)', color: isDraft ? '#fac775' : '#7ec8a0', fontWeight: '600' }}>{isDraft ? 'Utkast' : 'Aktiv'}</span>
+            {!isDraft && daysLeft !== null && <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{daysLeft} dager igjen</span>}
           </div>
-          <p style={{ color: 'rgba(255,255,255,0.6)', margin: '4px 0 0', fontSize: '13px' }}>{campaign.product_name} · {campaign.unit_price} kr/stk</p>
+          <p style={{ color: 'rgba(255,255,255,0.6)', margin: '4px 0 0', fontSize: '13px' }}>{campaign.product_name} · {campaign.unit_price} kr/stk{isDraft ? ' · Ikke synlig for kjøpere ennå' : ''}</p>
         </div>
-        <button onClick={endCampaign} style={{ fontSize: '13px', color: '#854f0b', border: '1px solid #fac775', background: '#fff8e6', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}>Avslutt kampanje</button>
+        {isDraft ? (
+          <button onClick={publishCampaign} style={{ fontSize: '13px', color: '#1e3a2f', background: '#7ec8a0', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Publiser kampanje →</button>
+        ) : (
+          <button onClick={endCampaign} style={{ fontSize: '13px', color: '#854f0b', border: '1px solid #fac775', background: '#fff8e6', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}>Avslutt kampanje</button>
+        )}
       </div>
+      {showPremiumGate && <PremiumGateModal featureName="salgskampanjen" onClose={() => setShowPremiumGate(false)} />}
 
       {/* Stats */}
       <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Oversikt</div>

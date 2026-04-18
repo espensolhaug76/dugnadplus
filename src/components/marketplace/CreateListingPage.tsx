@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 const CATEGORIES = ['Sko', 'Treningsklær', 'Sportsutstyr', 'Vesker', 'Verneutstyr', 'Annet'];
 
@@ -60,7 +61,10 @@ export const CreateListingPage: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  const [showPremiumGate, setShowPremiumGate] = useState(false);
+
   const handleSubmit = () => {
+    if (!hasPremium()) { setShowPremiumGate(true); return; }
     if (!title.trim()) { alert('Fyll inn tittel.'); return; }
     if (listingType === 'sell' && (!price || parseFloat(price) <= 0)) { alert('Fyll inn en gyldig pris.'); return; }
 
@@ -254,6 +258,7 @@ export const CreateListingPage: React.FC = () => {
           </button>
         </div>
       </div>
+      {showPremiumGate && <PremiumGateModal featureName="markedsplassen" onClose={() => setShowPremiumGate(false)} />}
     </div>
   );
 };

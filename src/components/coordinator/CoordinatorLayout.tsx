@@ -366,127 +366,73 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
           </button>
         </div>
 
-        {/* SEKSJON 3: PREMIUM */}
+        {/* SEKSJON 3: INNTEKT */}
         <div style={{ padding: '12px 16px' }}>
-          {planLevel === 'free' && (
-            <>
-              {/* UPSELL BANNER */}
-              <div style={{ background: '#1a7a4a', borderRadius: '10px', padding: '16px', color: 'white', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: '700' }}>★ Premium</span>
-                  <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px' }}>Ikke aktivert</span>
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>Tjen penger til lagkassen</div>
-                <div style={{ fontSize: '11px', opacity: 0.85, marginBottom: '12px' }}>Loddbok, kiosk og sponsoravtaler — alt i ett</div>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <div style={{ flex: 1, background: 'rgba(255,255,255,0.15)', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '800' }}>12 500</div>
-                    <div style={{ fontSize: '9px', opacity: 0.7 }}>kr/loddsalg snitt</div>
-                  </div>
-                  <div style={{ flex: 1, background: 'rgba(255,255,255,0.15)', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '800' }}>100%</div>
-                    <div style={{ fontSize: '9px', opacity: 0.7 }}>til lagkassen</div>
-                  </div>
-                </div>
-                <div style={{ fontSize: '10px', opacity: 0.8, marginBottom: '8px' }}>Trenger du bare SMS-varsler? <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigateTo('/premium')}>Aktiv-plan fra 99 kr/mnd</span></div>
-                <button onClick={() => navigateTo('/premium')} style={{ width: '100%', padding: '10px', background: 'white', color: '#1a7a4a', border: 'none', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
-                  Se hva dere kan tjene...
-                </button>
+          {/* Upsell-banner for ikke-premium */}
+          {planLevel !== 'premium' && (
+            <div style={{ background: '#f2faf6', borderRadius: '8px', padding: '12px', borderBottom: '2px solid #2d6a4f', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#2d6a4f' }}>★ {planLevel === 'aktiv' ? 'Aktiv' : 'Gratis'}-plan</span>
               </div>
-              {/* Låste elementer */}
-              <div style={{ background: '#f2faf6', borderRadius: '8px', padding: '8px' }}>
-                {premiumItems.map(item => (
-                  <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', fontSize: '13px', color: 'var(--text-secondary)', opacity: 0.7 }}>
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '11px' }}>🔒</span>
-                  </div>
-                ))}
+              <div style={{ fontSize: '12px', color: '#2d6a4f' }}>Du bruker {planLevel === 'aktiv' ? 'Aktiv' : 'Gratis'}-planen</div>
+              <div style={{ fontSize: '11px', color: '#4a5e50', marginTop: '4px' }}>
+                <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigateTo('/premium')}>Se Premium-planen →</span>
               </div>
-            </>
-          )}
-          {planLevel === 'aktiv' && (
-            <>
-              <div style={{ background: '#e6f0e8', borderRadius: '8px', padding: '12px', borderBottom: '2px solid #2d6a4f', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#2d6a4f' }}>★ Aktiv</span>
-                  <span style={{ fontSize: '10px', background: '#2d6a4f', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>Aktivert</span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#2d6a4f' }}>SMS-varsler aktivert</div>
-                <div style={{ fontSize: '11px', color: '#4a5e50', marginTop: '4px' }}>📱 SMS-kreditter → <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigateTo('/settings/sms')}>Innstillinger</span></div>
-              </div>
-              {/* SMS settings link */}
-              <button onClick={() => navigateTo('/settings/sms')}
-                style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '8px 10px', margin: '1px 0', borderRadius: '6px', border: 'none', background: currentPath === '/settings/sms' ? '#e8f5ef' : 'transparent', color: currentPath === '/settings/sms' ? '#0f6e56' : 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === '/settings/sms' ? '500' : '400' }}>
-                <span>📱</span><span style={{ flex: 1, textAlign: 'left' }}>SMS-varsler</span>
-              </button>
-              {/* Locked premium items */}
-              <div style={{ marginTop: '8px' }}>
-                {premiumItems.filter(item => item.revenue).map(item => (
-                  <div key={item.path} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', fontSize: '13px', color: 'var(--text-secondary)', opacity: 0.5 }}>
-                    <span>{item.icon}</span><span>{item.label}</span><span style={{ marginLeft: 'auto', fontSize: '11px' }}>🔒</span>
-                  </div>
-                ))}
-                <div style={{ fontSize: '10px', color: '#4a5e50', padding: '8px', textAlign: 'center' }}>
-                  <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigateTo('/premium')}>Oppgrader til Premium</span> for loddbok og kiosk
-                </div>
-              </div>
-            </>
+            </div>
           )}
           {planLevel === 'premium' && (
-            <>
-              {/* AKTIVERT */}
-              <div style={{ background: '#f2faf6', borderRadius: '8px', padding: '12px', borderBottom: '2px solid #1a7a4a', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#1a7a4a' }}>★ Premium</span>
-                  <span style={{ fontSize: '10px', background: '#e8f5ef', color: '#0f6e56', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>Aktivert</span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#1a7a4a' }}>Tjen penger til lagkassen</div>
+            <div style={{ background: '#f2faf6', borderRadius: '8px', padding: '12px', borderBottom: '2px solid #1a7a4a', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#1a7a4a' }}>★ Premium</span>
+                <span style={{ fontSize: '10px', background: '#e8f5ef', color: '#0f6e56', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>Aktivert</span>
               </div>
-              {premiumItems.map(item => (
-                <button key={item.path} onClick={() => navigateTo(item.path)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                    padding: '8px 10px', margin: '1px 0', borderRadius: '6px', border: 'none',
-                    background: currentPath === item.path ? '#e8f5ef' : 'transparent',
-                    color: currentPath === item.path ? '#0f6e56' : 'var(--text-primary)',
-                    fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === item.path ? '500' : '400'
-                  }}
-                >
-                  <span>{item.icon}</span>
-                  <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
-                  {item.revenue && <span style={{ fontSize: '10px', color: '#1a7a4a' }}>+ inntekt</span>}
-                </button>
-              ))}
-              {/* SMS-varsler */}
-              <button onClick={() => navigateTo('/settings/sms')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                  padding: '8px 10px', margin: '1px 0', borderRadius: '6px', border: 'none',
-                  background: currentPath === '/settings/sms' ? '#e8f5ef' : 'transparent',
-                  color: currentPath === '/settings/sms' ? '#0f6e56' : 'var(--text-primary)',
-                  fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === '/settings/sms' ? '500' : '400'
-                }}
-              >
-                <span>📱</span>
-                <span style={{ flex: 1, textAlign: 'left' }}>SMS-varsler</span>
-              </button>
-              {/* Kampanjeoversikt */}
-              <button onClick={() => navigateTo('/campaign-overview')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                  padding: '8px 10px', margin: '4px 0 1px', borderRadius: '6px', border: 'none',
-                  borderTop: '0.5px solid #e8e0d0',
-                  background: currentPath === '/campaign-overview' ? '#e8f5ef' : 'transparent',
-                  color: currentPath === '/campaign-overview' ? '#0f6e56' : 'var(--text-primary)',
-                  fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === '/campaign-overview' ? '500' : '400'
-                }}
-              >
-                <span>📊</span>
-                <span style={{ flex: 1, textAlign: 'left' }}>Kampanjeoversikt</span>
-              </button>
-            </>
+              <div style={{ fontSize: '12px', color: '#1a7a4a' }}>Tjen penger til lagkassen</div>
+            </div>
           )}
+          {/* Alle premium-features er alltid tilgjengelige for utforsking */}
+          {premiumItems.map(item => (
+            <button key={item.path} onClick={() => navigateTo(item.path)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                padding: '8px 10px', margin: '1px 0', borderRadius: '6px', border: 'none',
+                background: currentPath === item.path ? '#e8f5ef' : 'transparent',
+                color: currentPath === item.path ? '#0f6e56' : 'var(--text-primary)',
+                fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === item.path ? '500' : '400'
+              }}
+            >
+              <span>{item.icon}</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+            </button>
+          ))}
+          {/* SMS-varsler (aktiv/premium) */}
+          {planLevel !== 'free' && (
+            <button onClick={() => navigateTo('/settings/sms')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                padding: '8px 10px', margin: '1px 0', borderRadius: '6px', border: 'none',
+                background: currentPath === '/settings/sms' ? '#e8f5ef' : 'transparent',
+                color: currentPath === '/settings/sms' ? '#0f6e56' : 'var(--text-primary)',
+                fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === '/settings/sms' ? '500' : '400'
+              }}
+            >
+              <span>📱</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>SMS-varsler</span>
+            </button>
+          )}
+          {/* Kampanjeoversikt */}
+          <button onClick={() => navigateTo('/campaign-overview')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+              padding: '8px 10px', margin: '4px 0 1px', borderRadius: '6px', border: 'none',
+              borderTop: '0.5px solid #e8e0d0',
+              background: currentPath === '/campaign-overview' ? '#e8f5ef' : 'transparent',
+              color: currentPath === '/campaign-overview' ? '#0f6e56' : 'var(--text-primary)',
+              fontSize: '13px', cursor: 'pointer', fontWeight: currentPath === '/campaign-overview' ? '500' : '400'
+            }}
+          >
+            <span>📊</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>Kampanjeoversikt</span>
+          </button>
         </div>
 
         {/* FOOTER */}

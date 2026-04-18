@@ -74,7 +74,7 @@ function AppContent() {
 
   return (
       <div style={{
-          width: '100vw',
+          width: '100%',
           minHeight: '100vh',
           margin: 0,
           padding: isFullBleed ? '0' : '16px 0 0 16px',
