@@ -571,16 +571,20 @@ Alt etter dette er **ikke gjort ennå**. Estimater er grove.
 - **Estimat:** 24–48 timer elapsed, ~0 aktiv jobb.
 - **Stoppunkt:** ✅ Trygt. Kan forlenges så lenge man vil.
 
-#### Steg E — Helper-funksjoner i Postgres (SECURITY DEFINER)
-- **Hvem:** [Espen] kjører SQL fra CC.
-- **Hva:**
-  - `auth_user_team_ids() returns setof text`
-  - `auth_user_role_in(team text) returns text`
-  - `auth_user_family_id() returns uuid`
-  - `get_seller_display_name(family_id uuid) returns text` — returnerer KUN fornavn
-  - `resolve_join_code(code text) returns (family_id uuid, child_first_name text, team_name text)` — strikt dataminimering
-- **Estimat:** CC skriver SQL: 2 timer. Espen kjører: 10 min.
-- **Avhengigheter:** Steg B (tabellen må finnes). Ikke avhengig av Steg C eller D — kan gjøres parallelt med Steg C.
+#### Steg E — Helper-funksjoner i Postgres (SECURITY DEFINER) ✅ FERDIG
+- **Commit:** `d75b39f` — `supabase/migrations/20260418_step_e_security_definer_helpers.sql`
+- **Dato kjørt:** 2026-04-18
+- **Hvem:** [CC] skrev SQL, [Espen] kjørte i Supabase SQL Editor.
+- **Hva som faktisk ble opprettet:**
+  - `auth_user_team_ids() → text[]` — alle team_id-verdier for innlogget bruker
+  - `auth_user_role_in(p_team_id text) → text` — rolle i gitt team, NULL hvis ikke medlem
+  - `auth_user_family_id() → uuid` — family_id for parent-brukere
+  - `get_seller_display_name(p_family_id uuid) → text` — GDPR-minimert fornavn for anon shop-flows
+  - `resolve_join_code(p_code text) → TABLE(child_name, team_display_name, family_member_id)` — strikt dataminimering for /claim-family
+- **Alle funksjoner:** SECURITY DEFINER, SET search_path = public, STABLE, CREATE OR REPLACE (idempotent).
+- **Verifikasjon grønn:** Selvsjekk passerte — alle 5 funksjoner eksisterer med riktig signatur.
+- **Estimat vs. faktisk:** Estimat: CC 2t + Espen 10 min. Faktisk: CC ~30 min, Espen ~5 min.
+- **Avhengigheter:** Steg A (team_members-tabellen). Ikke avhengig av Steg C eller D.
 - **Stoppunkt:** ✅ Trygt. Funksjonene er installert, men ingen policy bruker dem ennå. Null effekt på appen.
 
 #### Steg F — Policy-innstramming (den store brytende endringen) 🛑
