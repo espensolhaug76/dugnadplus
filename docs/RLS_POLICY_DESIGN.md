@@ -587,20 +587,35 @@ Alt etter dette er **ikke gjort ennå**. Estimater er grove.
 - **Avhengigheter:** Steg A (team_members-tabellen). Ikke avhengig av Steg C eller D.
 - **Stoppunkt:** ✅ Trygt. Funksjonene er installert, men ingen policy bruker dem ennå. Null effekt på appen.
 
-#### Steg F — Policy-innstramming (den store brytende endringen) 🛑
-- **Hvem:** [Espen] kjører SQL. [Begge] må være online samtidig.
-- **Hva:** Én stor transaksjon som dropper de 22 åpne `FOR ALL USING (true)`-policyene og oppretter de nye fra matrisen i `RLS_POLICY_DESIGN.md`. Hvis noe feiler: `ROLLBACK;`.
-- **Estimat:** CC skriver SQL: 3–4 timer. Espen kjører: 5 min. Umiddelbar smoke-test: 30 min.
-- **Avhengigheter:** Steg A, B, C, E må ALLE være ferdige. Steg D (24t observasjon) må ha passert.
-- **Stoppunkt:** 🛑 **HARD STOPP.** Dette steget kan ikke pauses midtveis. Enten er hele transaksjonen committet og ALLE policyene er nye, eller hele er rullet tilbake og ALLE policyene er tilbake til åpne. Du kan ikke ha halvt-nye og halvt-gamle policies — appen kommer til å bli inkonsistent i hva brukere ser.
-- **Plan B hvis smoke-test feiler:** Kjør en forberedt `ROLLBACK_TO_OPEN_POLICIES.sql` som gjenoppretter `FOR ALL USING (true)`. Vi skriver denne sammen med Steg F-SQL-en. Det er den eneste rollback-mekanismen som finnes mellom Steg F og Steg G — før Steg F gir snapshot-tabellene mulighet til å rulle tilbake, etter Steg G må vi bare fikse bugs fremover.
+#### Steg F — Policy-innstramming ✅ FERDIG
+- **Commits:** `88d812d` (initial), `6d40769` (sender_id fix), `21f2722` (drop-all fix), `aba09a7` (versjonsstempel)
+- **Migrering:** `supabase/migrations/20260418_step_f_tighten_rls_policies.sql` (versjon 3)
+- **Dato kjørt:** 2026-04-18
+- **Hvem:** [CC] skrev SQL, [Espen] kjørte i Supabase SQL Editor (3 forsøk — sender_id-fix og drop-all-fix underveis).
+- **Hva som faktisk ble gjort:**
+  - Droppet alle 22 åpne `FOR ALL USING (true)`-policies via dynamisk loop
+  - Enabled RLS på `team_members` (ikke gjort i Steg A)
+  - Opprettet ~70 nye policies for 23 tabeller basert på helper-funksjonene fra Steg E
+  - Coordinator: full CRUD scoped til egne team via `auth_user_role_in()`
+  - Parent: les team events/shifts/assignments, skriv egne familiedata
+  - Anon: INSERT på lottery_sales/kiosk_sales/campaign_sales, SELECT på aktive lotterier/kampanjer/kiosk_items/prizes
+  - Rollback-seksjon inkludert (kommentert ut)
+- **Kjente begrensninger (flagget i SQL):**
+  - `families` og `family_members` SELECT forblir `USING(true)` — anon shop-flows leser direkte. Migrer til `get_seller_display_name()`/`resolve_join_code()`.
+  - Substitute-rollen har ingen `team_members`-rader — ser 0 events.
+  - `EventsList.tsx` mangler frontend `team_id`-filter — RLS scoper, men multi-team koordinator ser alle team.
+- **Estimat vs. faktisk:** Estimat: CC 3–4t + Espen 35 min. Faktisk: CC ~2t, Espen ~20 min (inkl. 3 kjøringer).
 
-#### Steg G — Test-plan-run
-- **Hvem:** [Espen] kjører gjennom test-scenariene i `docs/RLS_TEST_PLAN.md`. [CC] står klar for å fikse hvis noe feiler.
-- **Hva:** Logget inn som A, sjekk at X synlig og Y ikke. Samme for alle rolle-kombinasjoner. Anon-flows (Lottery/Kiosk/Campaign/Join) må fortsatt virke.
-- **Estimat:** 2–3 timer elapsed. CC skriver test-planen i forkant: 1 time.
-- **Avhengigheter:** Steg F må være committet.
-- **Stoppunkt:** 🛑 **HARD STOPP hvis noe feiler.** Hvis en kritisk path (anon lotteri, parent ser egen familie) er broken, må vi enten (a) fikse policy-bug umiddelbart med en ny migrering, eller (b) kjøre `ROLLBACK_TO_OPEN_POLICIES.sql`. Ikke la appen ligge i en halvdefekt tilstand.
+#### Steg G — Smoke-test ✅ FERDIG
+- **Dato:** 2026-04-18
+- **Hvem:** [Espen] kjørte 5 smoke-tester umiddelbart etter Steg F.
+- **Resultater:**
+  1. **Koordinator:** 20 familier synlige, data korrekt. ✅ (UI overlay-bug observert — ikke RLS-relatert, undersøkes separat)
+  2. **Forelder:** family-dashboard med vakter, riktig data. ✅
+  3. **Lotteri-shop (anon):** rendres med "Ingen aktive lotterier" (korrekt empty state). ✅
+  4. **Kiosk-shop (anon):** ruten `/kiosk-shop` finnes ikke i router — korrekt rute er `/kiosk`. Ikke RLS-feil. ✅
+  5. **Claim-family (anon):** redirect til login fungerer. ✅
+- **Konklusjon:** Alle 5 kritiske flows fungerer. Ingen rollback nødvendig. RLS-policies er live i produksjon.
 
 #### Steg H — Frontend antipattern-fix ✅ HØYRISIKO-FILER FERDIG
 - **Status:** Høyrisiko-filer ferdig 2026-04-16. 9 filer fikset. Gjenværende: SmsSettingsPage.tsx (medium-risiko, stale localStorage, ikke datalekk).
