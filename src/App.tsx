@@ -66,7 +66,7 @@ import { DevTools } from './components/common/DevTools';
 import { ThemeProvider } from './components/theme/ThemeContext';
 import { ThemeSettings } from './components/theme/ThemeSettings';
 
-const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap'];
+const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium'];
 
 function AppContent() {
   const location = useLocation();
