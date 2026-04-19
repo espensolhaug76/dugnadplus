@@ -40,6 +40,20 @@ const SortablePrizeItem: React.FC<{ prize: Prize; onDelete: (id: string) => void
   );
 };
 
+const SortableCreatePrize: React.FC<{ id: string; prize: any; onRemove: () => void }> = ({ id, prize, onRemove }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div ref={setNodeRef} style={{ ...style, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--card-bg, white)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#b0b0b0', fontSize: '14px', lineHeight: 1, userSelect: 'none' }} title="Dra for å sortere">⠿</span>
+        <span><strong>{prize.name}</strong> {prize.value && `(${prize.value} kr)`}{prize.donor && ` · ${prize.donor}`}</span>
+      </div>
+      <button onClick={onRemove} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>×</button>
+    </div>
+  );
+};
+
 interface Lottery {
   id: string;
   name: string;
@@ -334,7 +348,7 @@ export const LotteryAdmin: React.FC = () => {
 
   const addPrize = () => {
     if (!prizeName) return;
-    const newPrize = { name: prizeName, value: prizeValue, donor: prizeDonor };
+    const newPrize = { _tempId: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: prizeName, value: prizeValue, donor: prizeDonor };
     setPrizes([...prizes, newPrize]);
     setPrizeName(''); setPrizeValue(''); setPrizeDonor('');
   };
@@ -343,6 +357,14 @@ export const LotteryAdmin: React.FC = () => {
     const newPrizes = [...prizes];
     newPrizes.splice(index, 1);
     setPrizes(newPrizes);
+  };
+
+  const handleCreatePrizeDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = prizes.findIndex((p: any) => p._tempId === active.id);
+    const newIndex = prizes.findIndex((p: any) => p._tempId === over.id);
+    setPrizes(arrayMove(prizes, oldIndex, newIndex));
   };
 
   const saveLottery = async () => {
@@ -1024,14 +1046,15 @@ export const LotteryAdmin: React.FC = () => {
                                 <button onClick={addPrize} className="btn btn-primary" style={{ padding: '8px 14px' }}>+</button>
                             </div>
                             {prizes.length > 0 ? (
+                                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCreatePrizeDragEnd}>
+                                <SortableContext items={prizes.map((p: any) => p._tempId)} strategy={verticalListSortingStrategy}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    {prizes.map((p, idx) => (
-                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--card-bg, white)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px' }}>
-                                            <span><strong>{p.name}</strong> {p.value && `(${p.value} kr)`}{p.donor && ` · ${p.donor}`}</span>
-                                            <button onClick={() => removePrize(idx)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>×</button>
-                                        </div>
+                                    {prizes.map((p: any, idx) => (
+                                        <SortableCreatePrize key={p._tempId} id={p._tempId} prize={p} onRemove={() => removePrize(idx)} />
                                     ))}
                                 </div>
+                                </SortableContext>
+                                </DndContext>
                             ) : (
                                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'center', padding: '8px 0', margin: 0 }}>Legg til minst én premie</p>
                             )}
