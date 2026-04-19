@@ -606,12 +606,43 @@ export const LotteryAdmin: React.FC = () => {
             <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px', marginTop: '16px' }}>Tidligere lotterier</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {archivedLotteries.map((l: any) => (
-                <div key={l.id} style={{ padding: '10px 14px', background: '#fff', borderRadius: '8px', border: '0.5px solid #dedddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: '500', fontSize: '13px', color: '#1a2e1f' }}>{l.name}</div>
-                    <div style={{ fontSize: '11px', color: '#4a5e50' }}>{l.totalSold} lodd · {l.totalRevenue} kr · {l.winnersDrawn}/{l.prizeCount} trukket</div>
+                <div key={l.id} style={{ padding: '10px 14px', background: '#fff', borderRadius: '8px', border: '0.5px solid #dedddd' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div>
+                      <div style={{ fontWeight: '500', fontSize: '13px', color: '#1a2e1f' }}>{l.name}</div>
+                      <div style={{ fontSize: '11px', color: '#4a5e50' }}>{l.totalSold} lodd · {l.totalRevenue} kr · {l.winnersDrawn}/{l.prizeCount} trukket</div>
+                    </div>
+                    <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', background: '#f3f4f6', color: '#6b7f70', fontWeight: '500' }}>Avsluttet</span>
                   </div>
-                  <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', background: '#f3f4f6', color: '#6b7f70', fontWeight: '500' }}>Avsluttet</span>
+                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                    <button onClick={async () => {
+                      const warn = l.winnersDrawn > 0
+                        ? `\n\n⚠️ ${l.winnersDrawn} vinnere er allerede trukket. Disse nullstilles og må trekkes på nytt.`
+                        : '';
+                      if (!confirm(`Gjenåpne "${l.name}"?${warn}\n\nLotteriet blir aktivt igjen og synlig for kjøpere.`)) return;
+                      // Nullstill vinnere
+                      if (l.winnersDrawn > 0) {
+                        await supabase.from('prizes').update({ winner_name: null, winner_phone: null }).eq('lottery_id', l.id);
+                      }
+                      await supabase.from('lotteries').update({ is_active: true }).eq('id', l.id);
+                      fetchActiveLottery();
+                      fetchArchivedLotteries();
+                    }} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #2d6a4f', background: '#fff', color: '#2d6a4f', cursor: 'pointer', fontWeight: '500' }}>
+                      Gjenåpne
+                    </button>
+                    <button onClick={async () => {
+                      let msg = `Slette "${l.name}" permanent?`;
+                      if (l.totalSold > 0) {
+                        msg += `\n\n⚠️ ADVARSEL: ${l.totalSold} lodd solgt for ${l.totalRevenue} kr. Alt slettes permanent og kan ikke gjenopprettes.`;
+                      }
+                      if (!confirm(msg)) return;
+                      if (l.totalSold > 0 && !confirm('Er du HELT sikker? Denne handlingen kan ikke angres.')) return;
+                      await supabase.from('lotteries').delete().eq('id', l.id);
+                      fetchArchivedLotteries();
+                    }} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #fecaca', background: '#fff5f5', color: '#ef4444', cursor: 'pointer', fontWeight: '500' }}>
+                      Slett
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
