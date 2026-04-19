@@ -2,15 +2,43 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface Prize {
   id: string;
   name: string;
   value: string;
   donor: string;
-  winner_name?: string;  // Nytt: Vinnerinfo
-  winner_phone?: string; // Nytt: Vinnerinfo
+  winner_name?: string;
+  winner_phone?: string;
+  display_order: number;
 }
+
+const SortablePrizeItem: React.FC<{ prize: Prize; onDelete: (id: string) => void; onResetWinner: (id: string) => void }> = ({ prize, onDelete, onResetWinner }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: prize.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  const isWon = !!prize.winner_name;
+  return (
+    <div ref={setNodeRef} style={{ ...style, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: '6px', background: isWon ? '#e8f5ef' : '#faf8f4', border: isWon ? '0.5px solid #b8dfc9' : '0.5px solid #dedddd' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#b0b0b0', fontSize: '14px', lineHeight: 1, userSelect: 'none' }} title="Dra for å sortere">⠿</span>
+        <div><div style={{ fontWeight: '500', fontSize: '13px', color: '#1a2e1f' }}>{prize.name}</div><div style={{ fontSize: '11px', color: '#4a5e50' }}>Verdi: {prize.value} kr{prize.donor ? ` · ${prize.donor}` : ''}</div></div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {isWon ? (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '12px', fontWeight: '500', color: '#2d6a4f' }}>🏆 {prize.winner_name}</div>
+            <div style={{ fontSize: '10px', color: '#4a5e50' }}>{prize.winner_phone} <button onClick={() => onResetWinner(prize.id)} style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '10px', textDecoration: 'underline' }}>Angre</button></div>
+          </div>
+        ) : (
+          <><span style={{ fontSize: '11px', color: '#6b7f70', fontStyle: 'italic' }}>Ikke trukket</span><button onClick={() => onDelete(prize.id)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px' }}>×</button></>
+        )}
+      </div>
+    </div>
+  );
+};
 
 interface Lottery {
   id: string;
@@ -133,7 +161,7 @@ export const LotteryAdmin: React.FC = () => {
                 goal: lotteryData.goal,
                 vippsNumber: lotteryData.vipps_number,
                 isActive: lotteryData.is_active,
-                prizes: lotteryData.prizes || []
+                prizes: (lotteryData.prizes || []).sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
             };
             setLottery(mappedLottery);
 
@@ -329,7 +357,7 @@ export const LotteryAdmin: React.FC = () => {
         if (error) throw error;
 
         if (prizes.length > 0) {
-            const prizesToInsert = prizes.map(p => ({ lottery_id: newLottery.id, name: p.name, value: p.value, donor: p.donor }));
+            const prizesToInsert = prizes.map((p, i) => ({ lottery_id: newLottery.id, name: p.name, value: p.value, donor: p.donor, display_order: i }));
             await supabase.from('prizes').insert(prizesToInsert);
         }
         window.location.reload();
@@ -341,7 +369,8 @@ export const LotteryAdmin: React.FC = () => {
 
   const addPrizeToActive = async () => {
     if (!lottery || !prizeName) return;
-    const { error } = await supabase.from('prizes').insert({ lottery_id: lottery.id, name: prizeName, value: prizeValue, donor: prizeDonor });
+    const nextOrder = lottery.prizes.length;
+    const { error } = await supabase.from('prizes').insert({ lottery_id: lottery.id, name: prizeName, value: prizeValue, donor: prizeDonor, display_order: nextOrder });
     if (error) alert(error.message);
     else { setPrizeName(''); setPrizeValue(''); setPrizeDonor(''); fetchActiveLottery(); }
   };
@@ -350,6 +379,22 @@ export const LotteryAdmin: React.FC = () => {
     if (!confirm('Slette denne premien?')) return;
     await supabase.from('prizes').delete().eq('id', prizeId);
     fetchActiveLottery();
+  };
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handlePrizeDragEnd = async (event: DragEndEvent) => {
+    if (!lottery) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = lottery.prizes.findIndex(p => p.id === active.id);
+    const newIndex = lottery.prizes.findIndex(p => p.id === over.id);
+    const reordered = arrayMove(lottery.prizes, oldIndex, newIndex);
+    setLottery({ ...lottery, prizes: reordered });
+    // Persist new order to DB
+    await Promise.all(reordered.map((p, i) =>
+      supabase.from('prizes').update({ display_order: i }).eq('id', p.id)
+    ));
   };
 
   const updateLotteryField = async (field: string, value: any) => {
@@ -680,26 +725,15 @@ export const LotteryAdmin: React.FC = () => {
                     {/* Premier */}
                     <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px' }}>Premier ({lottery.prizes.length})</div>
                     <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '14px' }}>
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handlePrizeDragEnd}>
+                        <SortableContext items={lottery.prizes.map(p => p.id)} strategy={verticalListSortingStrategy}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                            {lottery.prizes.map((p) => {
-                                const isWon = !!p.winner_name;
-                                return (
-                                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: '6px', background: isWon ? '#e8f5ef' : '#faf8f4', border: isWon ? '0.5px solid #b8dfc9' : '0.5px solid #dedddd' }}>
-                                        <div><div style={{ fontWeight: '500', fontSize: '13px', color: '#1a2e1f' }}>{p.name}</div><div style={{ fontSize: '11px', color: '#4a5e50' }}>Verdi: {p.value} kr{p.donor ? ` · ${p.donor}` : ''}</div></div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            {isWon ? (
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontSize: '12px', fontWeight: '500', color: '#2d6a4f' }}>🏆 {p.winner_name}</div>
-                                                    <div style={{ fontSize: '10px', color: '#4a5e50' }}>{p.winner_phone} <button onClick={() => resetWinner(p.id)} style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '10px', textDecoration: 'underline' }}>Angre</button></div>
-                                                </div>
-                                            ) : (
-                                                <><span style={{ fontSize: '11px', color: '#6b7f70', fontStyle: 'italic' }}>Ikke trukket</span><button onClick={() => deletePrizeFromActive(p.id)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px' }}>×</button></>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                            {lottery.prizes.map((p) => (
+                                <SortablePrizeItem key={p.id} prize={p} onDelete={deletePrizeFromActive} onResetWinner={resetWinner} />
+                            ))}
                         </div>
+                        </SortableContext>
+                        </DndContext>
                         <div style={{ padding: '10px', background: '#faf8f4', borderRadius: '6px', border: '1px dashed #dedddd' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px' }}>
                                 <input className="input" placeholder="Ny premie" value={prizeName} onChange={e => setPrizeName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPrizeToActive(); }} />

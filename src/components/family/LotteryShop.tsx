@@ -45,7 +45,7 @@ export const LotteryShop: React.FC = () => {
                     description: lotteryData.description,
                     ticketPrice: lotteryData.ticket_price,
                     vippsNumber: lotteryData.vipps_number,
-                    prizes: lotteryData.prizes || []
+                    prizes: (lotteryData.prizes || []).sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
                 });
             }
 
