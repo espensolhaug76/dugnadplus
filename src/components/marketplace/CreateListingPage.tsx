@@ -52,13 +52,32 @@ export const CreateListingPage: React.FC = () => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setImage(base64);
-      setImagePreview(base64);
+    // Canvas-redraw: stripper ALL metadata (EXIF, GPS, kommentarer,
+    // ICC-profiler) fra bildet ved å tegne pikslene til et nytt canvas
+    // og eksportere som ren JPEG. Dette forhindrer:
+    // 1. EXIF-metadata med script i kommentarfelter (defence-in-depth)
+    // 2. GPS-data som kan avsløre brukerens lokasjon (GDPR)
+    // 3. Kamera-identifikasjon via EXIF-makernotes
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      // Begrens dimensjoner for å holde base64-størrelsen nede
+      const MAX_DIM = 1200;
+      let w = img.width;
+      let h = img.height;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w > h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+        else { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, w, h);
+      const cleanBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      setImage(cleanBase64);
+      setImagePreview(cleanBase64);
     };
-    reader.readAsDataURL(file);
+    img.src = URL.createObjectURL(file);
   };
 
   const [showPremiumGate, setShowPremiumGate] = useState(false);
