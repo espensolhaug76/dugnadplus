@@ -617,6 +617,9 @@ export const LotteryAdmin: React.FC = () => {
             </div>
           </>
         )}
+        {/* Nytt lotteri */}
+        <button onClick={() => { setLottery(null); setShowCreateModal(true); }} style={{ width: '100%', marginTop: '16px', padding: '10px', fontSize: '13px', background: 'none', border: '1px dashed #cbd5e0', borderRadius: '8px', color: '#4a5e50', cursor: 'pointer', fontWeight: '500' }}>+ Opprett nytt lotteri</button>
+
         {showPremiumGate && <PremiumGateModal featureName="loddsalget" onClose={() => setShowPremiumGate(false)} />}
       </div>
     );
