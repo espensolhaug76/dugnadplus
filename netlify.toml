@@ -9,12 +9,9 @@
 
 # Sikkerhets-headers.
 #
-# CSP-en er foreløpig i Report-Only-modus. Det betyr at brudd kun blir
-# logget til browser-konsollen (ingen report-uri satt opp ennå) — appen
-# blir ikke knekt av en feilkonfigurert policy. Etter 24-48 timer med
-# observasjon mot produksjon skal vi bytte header-navnet fra
-# Content-Security-Policy-Report-Only til Content-Security-Policy for å
-# aktivere enforcement. Se docs/SECURITY_BACKLOG.md.
+# CSP-en er i enforce-modus siden 2026-04-19 (Steg I).
+# Report-Only observasjonsperiode: 2026-04-12 → 2026-04-19 (7 dager).
+# Alle nødvendige domener er verifisert i produksjon.
 #
 # Kjente avveininger i denne policyen:
 # - style-src tillater 'unsafe-inline' fordi hele appen bruker React
@@ -50,7 +47,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://api.qrserver.com https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
