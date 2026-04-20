@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
+import { validateRequired, errorBorderStyle, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -132,6 +133,18 @@ export const LotteryAdmin: React.FC = () => {
   const [prizeName, setPrizeName] = useState('');
   const [prizeValue, setPrizeValue] = useState('');
   const [prizeDonor, setPrizeDonor] = useState('');
+
+  // Opprett-modal validering
+  const [createErrors, setCreateErrors] = useState<FormErrors>({});
+  const createFieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const clearCreateError = (key: string) => {
+    setCreateErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   const getActiveTeamId = (): string => {
     try {
@@ -351,6 +364,7 @@ export const LotteryAdmin: React.FC = () => {
     const newPrize = { _tempId: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: prizeName, value: prizeValue, donor: prizeDonor };
     setPrizes([...prizes, newPrize]);
     setPrizeName(''); setPrizeValue(''); setPrizeDonor('');
+    clearCreateError('prizes');
   };
 
   const removePrize = (index: number) => {
@@ -368,7 +382,22 @@ export const LotteryAdmin: React.FC = () => {
   };
 
   const saveLottery = async () => {
-    if (!vippsNumber) return alert('Mangler Vipps-nummer');
+    const errors = validateRequired(
+      { name, ticketPrice, goal, vippsNumber, prizes },
+      {
+        name: 'Du må gi lotteriet et navn',
+        ticketPrice: 'Velg pris per lodd',
+        goal: 'Sett et mål for lotteriet',
+        vippsNumber: 'Vipps-nummer mangler — du finner det i Vipps Bedrift',
+        prizes: 'Legg til minst én premie',
+      }
+    );
+    if (Object.keys(errors).length > 0) {
+      setCreateErrors(errors);
+      scrollToFirstError(errors, createFieldRefs.current);
+      return;
+    }
+    setCreateErrors({});
     setLoading(true);
     try {
         const { data: newLottery, error } = await supabase
@@ -1038,7 +1067,16 @@ export const LotteryAdmin: React.FC = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
                             <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Navn på lotteriet *</label>
-                            <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="F.eks. Julelotteri 2026" autoFocus />
+                            <input
+                                ref={el => { createFieldRefs.current.name = el; }}
+                                className="input"
+                                value={name}
+                                onChange={e => { setName(e.target.value); clearCreateError('name'); }}
+                                placeholder="F.eks. Julelotteri 2026"
+                                autoFocus
+                                style={errorBorderStyle(!!createErrors.name)}
+                            />
+                            {createErrors.name && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.name}</p>}
                         </div>
                         <div>
                             <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Beskrivelse</label>
@@ -1046,28 +1084,45 @@ export const LotteryAdmin: React.FC = () => {
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                            <div>
+                            <div ref={el => { createFieldRefs.current.ticketPrice = el; }}>
                                 <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Pris per lodd</label>
                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
                                     {PRICE_OPTIONS.map(p => (
-                                        <button key={p} onClick={() => setTicketPrice(p)} style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', background: ticketPrice === p ? '#2d6a4f' : 'white', color: ticketPrice === p ? 'white' : '#1a2e1f', border: ticketPrice === p ? 'none' : '0.5px solid #dedddd', fontWeight: ticketPrice === p ? '600' : '400' }}>{p} kr</button>
+                                        <button key={p} onClick={() => { setTicketPrice(p); clearCreateError('ticketPrice'); }} style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', background: ticketPrice === p ? '#2d6a4f' : 'white', color: ticketPrice === p ? 'white' : '#1a2e1f', border: ticketPrice === p ? 'none' : '0.5px solid #dedddd', fontWeight: ticketPrice === p ? '600' : '400' }}>{p} kr</button>
                                     ))}
                                 </div>
-                                <input type="number" className="input" value={ticketPrice} onChange={e => setTicketPrice(parseInt(e.target.value) || 0)} placeholder="Egendefinert" style={{ fontSize: '13px' }} />
+                                <input type="number" className="input" value={ticketPrice} onChange={e => { setTicketPrice(parseInt(e.target.value) || 0); clearCreateError('ticketPrice'); }} placeholder="Egendefinert" style={{ fontSize: '13px', ...errorBorderStyle(!!createErrors.ticketPrice) }} />
+                                {createErrors.ticketPrice && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.ticketPrice}</p>}
                             </div>
                             <div>
                                 <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Mål (kr)</label>
-                                <input type="number" className="input" value={goal} onChange={e => setGoal(parseInt(e.target.value) || 0)} />
-                                {ticketPrice > 0 && <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>= {Math.ceil(goal / ticketPrice)} lodd</p>}
+                                <input
+                                    ref={el => { createFieldRefs.current.goal = el; }}
+                                    type="number"
+                                    className="input"
+                                    value={goal}
+                                    onChange={e => { setGoal(parseInt(e.target.value) || 0); clearCreateError('goal'); }}
+                                    style={errorBorderStyle(!!createErrors.goal)}
+                                />
+                                {createErrors.goal && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.goal}</p>}
+                                {ticketPrice > 0 && !createErrors.goal && <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>= {Math.ceil(goal / ticketPrice)} lodd</p>}
                             </div>
                             <div>
                                 <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Vipps-nummer *</label>
-                                <input className="input" value={vippsNumber} onChange={e => setVippsNumber(e.target.value)} placeholder="12345" />
+                                <input
+                                    ref={el => { createFieldRefs.current.vippsNumber = el; }}
+                                    className="input"
+                                    value={vippsNumber}
+                                    onChange={e => { setVippsNumber(e.target.value); clearCreateError('vippsNumber'); }}
+                                    placeholder="12345"
+                                    style={errorBorderStyle(!!createErrors.vippsNumber)}
+                                />
+                                {createErrors.vippsNumber && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.vippsNumber}</p>}
                             </div>
                         </div>
 
                         {/* Premier */}
-                        <div style={{ padding: '20px', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                        <div ref={el => { createFieldRefs.current.prizes = el; }} style={{ padding: '20px', background: 'var(--bg-secondary)', borderRadius: '12px', border: createErrors.prizes ? `1px solid ${ERROR_COLOR}` : '1px solid var(--border-color)' }}>
                             <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '15px' }}>🎁 Premier</h4>
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '8px', marginBottom: '10px' }}>
                                 <input className="input" placeholder="Premienavn" value={prizeName} onChange={e => setPrizeName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPrize(); }} />
@@ -1088,11 +1143,12 @@ export const LotteryAdmin: React.FC = () => {
                             ) : (
                                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'center', padding: '8px 0', margin: 0 }}>Legg til minst én premie</p>
                             )}
+                            {createErrors.prizes && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '8px 0 0 0' }}>{createErrors.prizes}</p>}
                         </div>
 
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '8px' }}>
                             <button onClick={() => setShowCreateModal(false)} className="btn">Avbryt</button>
-                            <button onClick={() => { saveLottery(); setShowCreateModal(false); }} className="btn btn-primary" style={{ padding: '12px 32px' }} disabled={!name || !vippsNumber || prizes.length === 0}>
+                            <button onClick={() => saveLottery()} className="btn btn-primary" style={{ padding: '12px 32px' }}>
                                 {loading ? 'Lagrer...' : '🚀 Start lotteriet'}
                             </button>
                         </div>

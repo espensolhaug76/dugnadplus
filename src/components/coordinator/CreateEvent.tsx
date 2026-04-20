@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
 
 interface ShiftTemplate {
   name: string;
@@ -77,6 +78,17 @@ export const CreateEvent: React.FC = () => {
   const [selectedTeam, setSelectedTeam] = useState('');
   
   const [saving, setSaving] = useState(false);
+
+  const [errors, setErrors] = useState<FormErrors>({});
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const clearError = (key: string) => {
+    setErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   useEffect(() => {
     fetchTeamsAndSetDefault();
@@ -236,6 +248,7 @@ export const CreateEvent: React.FC = () => {
     }
 
     setShifts(newShifts);
+    clearError('shifts');
   };
 
   const updateShiftDescription = (id: string, text: string) => {
@@ -253,14 +266,27 @@ export const CreateEvent: React.FC = () => {
   const SHIFT_TYPE_RATE: Record<string, number> = { standard: 100, weekend: 150, holiday: 200 };
 
   const handleSave = async () => {
-    const missing: string[] = [];
-    if (!eventName.trim()) missing.push('Navn på arrangement');
-    if (!date) missing.push('Dato');
-    if (shifts.length === 0) missing.push('Vakter (trykk "Generer vakter")');
-    if (missing.length > 0) {
-      alert(`Mangler:\n\n${missing.map(m => '• ' + m).join('\n')}`);
+    const validation: Record<string, unknown> = {
+      eventName,
+      date,
+      shifts,
+    };
+    const messages: Record<string, string> = {
+      eventName: 'Du må gi arrangementet et navn',
+      date: 'Velg en dato',
+      shifts: 'Trykk "Generer vakter" for å opprette vakter',
+    };
+    if (assignmentMode === 'self-service') {
+      validation.selfServiceOpenDate = selfServiceOpenDate;
+      messages.selfServiceOpenDate = 'Velg dato for når selvvalg åpner';
+    }
+    const nextErrors = validateRequired(validation, messages);
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      scrollToFirstError(nextErrors, fieldRefs.current);
       return;
     }
+    setErrors({});
     if (!selectedTeam) {
         if (!confirm('Du har ikke valgt et lag. Arrangementet blir synlig for alle. Vil du fortsette?')) return;
     }
@@ -355,11 +381,30 @@ export const CreateEvent: React.FC = () => {
 
         <div style={{ marginBottom: '24px' }}>
           <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Navn på arrangement</label>
-          <input className="input" value={eventName} onChange={e => setEventName(e.target.value)} placeholder="F.eks. Hjemmekamp, Turnering, Danseshow Vår 2025" />
+          <input
+            ref={el => { fieldRefs.current.eventName = el; }}
+            className="input"
+            value={eventName}
+            onChange={e => { setEventName(e.target.value); clearError('eventName'); }}
+            placeholder="F.eks. Hjemmekamp, Turnering, Danseshow Vår 2025"
+            style={errors.eventName ? { borderColor: ERROR_COLOR } : undefined}
+          />
+          {errors.eventName && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{errors.eventName}</p>}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-          <div><label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Dato</label><input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} /></div>
+          <div>
+            <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Dato</label>
+            <input
+              ref={el => { fieldRefs.current.date = el; }}
+              type="date"
+              className="input"
+              value={date}
+              onChange={e => { setDate(e.target.value); clearError('date'); }}
+              style={errors.date ? { borderColor: ERROR_COLOR } : undefined}
+            />
+            {errors.date && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{errors.date}</p>}
+          </div>
           <div><label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Start</label><input type="time" className="input" value={startTime} onChange={e => setStartTime(e.target.value)} /></div>
           <div><label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Slutt</label><input type="time" className="input" value={endTime} onChange={e => setEndTime(e.target.value)} /></div>
         </div>
@@ -456,7 +501,13 @@ export const CreateEvent: React.FC = () => {
           </div>
         </div>
 
-        <button onClick={generateShifts} className="btn btn-primary" style={{ width: '100%', marginBottom: '24px' }}>✨ Generer vakter</button>
+        <button
+          ref={el => { fieldRefs.current.shifts = el; }}
+          onClick={generateShifts}
+          className="btn btn-primary"
+          style={{ width: '100%', marginBottom: errors.shifts ? '8px' : '24px', ...(errors.shifts ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+        >✨ Generer vakter</button>
+        {errors.shifts && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '0 0 24px 0' }}>{errors.shifts}</p>}
 
         {shifts.length > 0 && (
           <div style={{ marginTop: '24px' }}>
@@ -621,7 +672,15 @@ export const CreateEvent: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
                     <div>
                         <label className="input-label" style={{ fontSize: '12px' }}>Åpner dato</label>
-                        <input type="date" className="input" value={selfServiceOpenDate} onChange={(e) => setSelfServiceOpenDate(e.target.value)} />
+                        <input
+                            ref={el => { fieldRefs.current.selfServiceOpenDate = el; }}
+                            type="date"
+                            className="input"
+                            value={selfServiceOpenDate}
+                            onChange={(e) => { setSelfServiceOpenDate(e.target.value); clearError('selfServiceOpenDate'); }}
+                            style={errors.selfServiceOpenDate ? { borderColor: ERROR_COLOR } : undefined}
+                        />
+                        {errors.selfServiceOpenDate && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{errors.selfServiceOpenDate}</p>}
                     </div>
                     <div>
                         <label className="input-label" style={{ fontSize: '12px' }}>Åpner tid</label>

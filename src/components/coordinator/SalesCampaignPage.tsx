@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
+import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface Campaign { id: string; title: string; description: string; product_name: string; unit_price: number; target_per_family: number; start_date: string; end_date: string; status: string; vipps_number: string; }
@@ -38,6 +39,17 @@ export const SalesCampaignPage: React.FC = () => {
 
   const teamId = localStorage.getItem('dugnad_active_team_filter') || '';
   const [showPremiumGate, setShowPremiumGate] = useState(false);
+
+  const [createErrors, setCreateErrors] = useState<FormErrors>({});
+  const createFieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const clearCreateError = (key: string) => {
+    setCreateErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -94,7 +106,21 @@ export const SalesCampaignPage: React.FC = () => {
   };
 
   const createCampaign = async () => {
-    if (!form.title || !form.product_name || !form.unit_price) { alert('Fyll inn tittel, produktnavn og pris.'); return; }
+    const errors = validateRequired(
+      { title: form.title, product_name: form.product_name, unit_price: form.unit_price, vipps_number: form.vipps_number },
+      {
+        title: 'Du må gi kampanjen et navn',
+        product_name: 'Du må gi produktet et navn',
+        unit_price: 'Velg pris per enhet',
+        vipps_number: 'Vipps-nummer mangler — du finner det i Vipps Bedrift',
+      }
+    );
+    if (Object.keys(errors).length > 0) {
+      setCreateErrors(errors);
+      scrollToFirstError(errors, createFieldRefs.current);
+      return;
+    }
+    setCreateErrors({});
     await supabase.from('sales_campaigns').insert({ ...form, team_id: teamId || null, status: hasPremium() ? 'active' : 'draft' });
     setShowCreate(false);
     fetchData();
@@ -207,16 +233,37 @@ export const SalesCampaignPage: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>Kampanjenavn *</label>
-                <input style={inputStyle} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="F.eks. Julekalender 2025" />
+                <input
+                  ref={el => { createFieldRefs.current.title = el; }}
+                  style={{ ...inputStyle, ...(createErrors.title ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+                  value={form.title}
+                  onChange={e => { setForm({ ...form, title: e.target.value }); clearCreateError('title'); }}
+                  placeholder="F.eks. Julekalender 2025"
+                />
+                {createErrors.title && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.title}</p>}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>Produktnavn *</label>
-                  <input style={inputStyle} value={form.product_name} onChange={e => setForm({ ...form, product_name: e.target.value })} placeholder="F.eks. Julekalender" />
+                  <input
+                    ref={el => { createFieldRefs.current.product_name = el; }}
+                    style={{ ...inputStyle, ...(createErrors.product_name ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+                    value={form.product_name}
+                    onChange={e => { setForm({ ...form, product_name: e.target.value }); clearCreateError('product_name'); }}
+                    placeholder="F.eks. Julekalender"
+                  />
+                  {createErrors.product_name && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.product_name}</p>}
                 </div>
                 <div>
                   <label style={labelStyle}>Utsalgspris per enhet (kr) *</label>
-                  <input type="number" style={inputStyle} value={form.unit_price} onChange={e => setForm({ ...form, unit_price: parseInt(e.target.value) || 0 })} />
+                  <input
+                    ref={el => { createFieldRefs.current.unit_price = el; }}
+                    type="number"
+                    style={{ ...inputStyle, ...(createErrors.unit_price ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+                    value={form.unit_price}
+                    onChange={e => { setForm({ ...form, unit_price: parseInt(e.target.value) || 0 }); clearCreateError('unit_price'); }}
+                  />
+                  {createErrors.unit_price && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.unit_price}</p>}
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -234,8 +281,15 @@ export const SalesCampaignPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Vipps-nummer</label>
-                <input style={inputStyle} value={form.vipps_number} onChange={e => setForm({ ...form, vipps_number: e.target.value })} placeholder="For betaling" />
+                <label style={labelStyle}>Vipps-nummer *</label>
+                <input
+                  ref={el => { createFieldRefs.current.vipps_number = el; }}
+                  style={{ ...inputStyle, ...(createErrors.vipps_number ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+                  value={form.vipps_number}
+                  onChange={e => { setForm({ ...form, vipps_number: e.target.value }); clearCreateError('vipps_number'); }}
+                  placeholder="For betaling"
+                />
+                {createErrors.vipps_number && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.vipps_number}</p>}
               </div>
               <div>
                 <label style={labelStyle}>Beskrivelse (valgfritt)</label>

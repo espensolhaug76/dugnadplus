@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface KioskItem {
@@ -42,6 +43,18 @@ export const KioskAdmin: React.FC = () => {
   const [newEmoji, setNewEmoji] = useState('🛒');
   const [showSetup, setShowSetup] = useState(false);
   const [showPremiumGate, setShowPremiumGate] = useState(false);
+
+  // Validering ved "Legg til vare"
+  const [itemErrors, setItemErrors] = useState<FormErrors>({});
+  const itemFieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const clearItemError = (key: string) => {
+    setItemErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   useEffect(() => {
     loadData();
@@ -128,7 +141,20 @@ export const KioskAdmin: React.FC = () => {
   };
 
   const addItem = async () => {
-    if (!newName.trim() || newPrice <= 0) return;
+    const errors = validateRequired(
+      { newName, newPrice, vippsNumber },
+      {
+        newName: 'Du må gi varen et navn',
+        newPrice: 'Velg pris for varen',
+        vippsNumber: 'Vipps-nummer mangler — du finner det i Vipps Bedrift',
+      }
+    );
+    if (Object.keys(errors).length > 0) {
+      setItemErrors(errors);
+      scrollToFirstError(errors, itemFieldRefs.current);
+      return;
+    }
+    setItemErrors({});
     const { error } = await supabase.from('kiosk_items').insert({
       team_id: teamId,
       name: newName.trim(),
@@ -364,11 +390,13 @@ export const KioskAdmin: React.FC = () => {
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Vipps-nummer</label>
                 <input
+                  ref={el => { itemFieldRefs.current.vippsNumber = el; }}
                   value={vippsNumber}
-                  onChange={e => saveVipps(e.target.value)}
+                  onChange={e => { saveVipps(e.target.value); clearItemError('vippsNumber'); }}
                   placeholder="F.eks. 12345"
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: itemErrors.vippsNumber ? `1px solid ${ERROR_COLOR}` : '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', outline: 'none', boxSizing: 'border-box' }}
                 />
+                {itemErrors.vippsNumber && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{itemErrors.vippsNumber}</p>}
               </div>
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Kiosk-lenke (del denne eller lag QR-kode)</label>
@@ -460,22 +488,26 @@ export const KioskAdmin: React.FC = () => {
                 <div style={{ flex: 2 }}>
                   <label style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Varenavn</label>
                   <input
+                    ref={el => { itemFieldRefs.current.newName = el; }}
                     value={newName}
-                    onChange={e => setNewName(e.target.value)}
+                    onChange={e => { setNewName(e.target.value); clearItemError('newName'); }}
                     placeholder="F.eks. Vaffel"
                     onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', height: '42px', border: '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', height: '42px', border: itemErrors.newName ? `1px solid ${ERROR_COLOR}` : '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', boxSizing: 'border-box' }}
                   />
+                  {itemErrors.newName && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{itemErrors.newName}</p>}
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Pris (kr)</label>
                   <input
+                    ref={el => { itemFieldRefs.current.newPrice = el; }}
                     type="number"
                     value={newPrice || ''}
-                    onChange={e => setNewPrice(parseInt(e.target.value) || 0)}
+                    onChange={e => { setNewPrice(parseInt(e.target.value) || 0); clearItemError('newPrice'); }}
                     placeholder="25"
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', height: '42px', border: '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '8px 12px', fontSize: '14px', height: '42px', border: itemErrors.newPrice ? `1px solid ${ERROR_COLOR}` : '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', boxSizing: 'border-box' }}
                   />
+                  {itemErrors.newPrice && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{itemErrors.newPrice}</p>}
                 </div>
                 <button
                   onClick={addItem}
