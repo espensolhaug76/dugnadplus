@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { supabase } from './services/supabaseClient'
 import './index.css'
+import './styles/driver-custom.css'
 import App from './App.tsx'
 
 // ============================================================

@@ -1,7 +1,26 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { ThemeToggle } from '../theme/ThemeToggle';
+import { runGuide, hasSeenGuide, resetAllGuides } from '../../utils/guides';
 import './CoordinatorLayout.css';
+
+const PATH_TO_GUIDE_ID: Record<string, string> = {
+  '/coordinator-dashboard': 'coordinator-dashboard',
+  '/manage-families': 'manage-families',
+  '/lottery-admin': 'lottery-admin',
+  '/kiosk-admin': 'kiosk-admin',
+  '/sales-campaign': 'sales-campaign',
+  '/create-event': 'create-event',
+};
+
+// Eksponer reset-funksjonen i konsollen for testing:
+//   window.resetDugnadGuides()
+if (typeof window !== 'undefined') {
+  (window as any).resetDugnadGuides = () => {
+    resetAllGuides();
+    console.log('[guide] Alle guider nullstilt. Reload siden for å se guiden igjen.');
+  };
+}
 
 interface CoordinatorLayoutProps {
   children: React.ReactNode;
@@ -76,6 +95,19 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     if (authGate !== 'allowed') return;
     loadTeams();
     loadClubInfo();
+  }, [authGate]);
+
+  // Auto-trigger onboarding-guide første gang en side besøkes.
+  useEffect(() => {
+    if (authGate !== 'allowed') return;
+    const path = window.location.pathname;
+    const guideId = PATH_TO_GUIDE_ID[path];
+    if (!guideId) return;
+    if (hasSeenGuide(guideId)) return;
+    const t = window.setTimeout(() => {
+      runGuide(guideId);
+    }, 800);
+    return () => window.clearTimeout(t);
   }, [authGate]);
 
   const loadClubInfo = () => {

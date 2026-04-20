@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+import { GuideButton } from '../../utils/guides/GuideButton';
 
 interface ShiftTemplate {
   name: string;
@@ -357,15 +358,18 @@ export const CreateEvent: React.FC = () => {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>Opprett arrangement</h1>
-        <button onClick={() => window.location.href = '/multi-day-event'} className="btn btn-secondary" style={{ fontSize: '14px' }}>
-          📅 Flerdag / Turnering
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <GuideButton guideId="create-event" />
+          <button onClick={() => window.location.href = '/multi-day-event'} className="btn btn-secondary" style={{ fontSize: '14px' }}>
+            📅 Flerdag / Turnering
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: '32px', marginBottom: '24px' }}>
         
         {/* LAG VELGER */}
-        <div style={{ marginBottom: '24px' }}>
+        <div data-guide="create-event-team" style={{ marginBottom: '24px' }}>
             <label className="input-label">Hvilket lag gjelder dugnaden for?</label>
             <select 
                 className="input" 
@@ -379,7 +383,7 @@ export const CreateEvent: React.FC = () => {
             <p style={{fontSize:'12px', color:'#6b7280', marginTop:'4px'}}>Sporten og vaktmalen oppdateres automatisk.</p>
         </div>
 
-        <div style={{ marginBottom: '24px' }}>
+        <div data-guide="create-event-name" style={{ marginBottom: '24px' }}>
           <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Navn på arrangement</label>
           <input
             ref={el => { fieldRefs.current.eventName = el; }}
@@ -392,7 +396,7 @@ export const CreateEvent: React.FC = () => {
           {errors.eventName && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{errors.eventName}</p>}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+        <div data-guide="create-event-date" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
           <div>
             <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Dato</label>
             <input
@@ -432,7 +436,7 @@ export const CreateEvent: React.FC = () => {
         </div>
 
         {/* Vakttype-velger */}
-        <div style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+        <div data-guide="create-event-shifts" style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
           <label className="input-label" style={{ marginBottom: '12px', display: 'block', fontSize: '14px' }}>Hvilke vakter trenger du?</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', marginBottom: '12px' }}>
             {(SPORT_SHIFTS[sport] || SPORT_SHIFTS.football).map((tmpl) => (
@@ -503,6 +507,7 @@ export const CreateEvent: React.FC = () => {
 
         <button
           ref={el => { fieldRefs.current.shifts = el; }}
+          data-guide="create-event-generate"
           onClick={generateShifts}
           className="btn btn-primary"
           style={{ width: '100%', marginBottom: errors.shifts ? '8px' : '24px', ...(errors.shifts ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
@@ -660,7 +665,7 @@ export const CreateEvent: React.FC = () => {
         )}
 
         {/* Assignment Mode */}
-        <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+        <div data-guide="create-event-assignment" style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <label className="input-label">Tildeling</label>
             <select className="input" value={assignmentMode} onChange={(e) => setAssignmentMode(e.target.value as any)}>
                 <option value="auto">🤖 Automatisk</option>
@@ -690,7 +695,7 @@ export const CreateEvent: React.FC = () => {
             )}
         </div>
 
-        <button onClick={handleSave} className="btn btn-primary" style={{ width: '100%', marginTop: '24px' }} disabled={saving}>
+        <button data-guide="create-event-save" onClick={handleSave} className="btn btn-primary" style={{ width: '100%', marginTop: '24px' }} disabled={saving}>
             {saving ? 'Lagrer...' : '💾 Lagre arrangement'}
         </button>
 

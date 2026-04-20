@@ -1,0 +1,133 @@
+/* Dugnad+ overrides for driver.js default styles.
+   Matches the coordinator design system: cream background, green
+   primary, 0.5px borders, DM Sans (via system stack). */
+
+.dugnad-driver-popover.driver-popover {
+  background: var(--card-bg, #ffffff);
+  border: 0.5px solid var(--border-color, #dedddd);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  font-family: 'DM Sans', Inter, system-ui, -apple-system, sans-serif;
+  color: var(--text-primary, #1a2e1f);
+  max-width: 360px;
+  padding: 16px 18px 14px;
+}
+
+.dugnad-driver-popover .driver-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #1a2e1f);
+  margin: 0 0 6px;
+  line-height: 1.35;
+}
+
+.dugnad-driver-popover .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #4a5e50);
+  margin-bottom: 12px;
+}
+
+.dugnad-driver-popover .driver-popover-progress-text {
+  font-size: 11px;
+  color: var(--text-secondary, #6b7f70);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.dugnad-driver-popover .driver-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dugnad-driver-popover .driver-popover-navigation-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.dugnad-driver-popover button.driver-popover-next-btn,
+.dugnad-driver-popover button.driver-popover-prev-btn,
+.dugnad-driver-popover button.driver-popover-close-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  text-shadow: none;
+  line-height: 1.2;
+}
+
+/* Primary action: Neste / Ferdig */
+.dugnad-driver-popover button.driver-popover-next-btn {
+  background: #2d6a4f;
+  color: #ffffff;
+  border: 1px solid #2d6a4f;
+}
+.dugnad-driver-popover button.driver-popover-next-btn:hover {
+  background: #245840;
+  border-color: #245840;
+}
+
+/* Secondary: Forrige */
+.dugnad-driver-popover button.driver-popover-prev-btn {
+  background: transparent;
+  color: var(--text-secondary, #4a5e50);
+  border: 1px solid var(--border-color, #dedddd);
+}
+.dugnad-driver-popover button.driver-popover-prev-btn:hover {
+  background: var(--bg-secondary, #fefcf5);
+}
+
+/* Hopp over / lukk: line-style */
+.dugnad-driver-popover button.driver-popover-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: transparent;
+  color: var(--text-secondary, #6b7f70);
+  border: none;
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.dugnad-driver-popover button.driver-popover-close-btn:hover {
+  color: var(--text-primary, #1a2e1f);
+}
+
+/* Highlight-ring rundt målet */
+.driver-active-element,
+.driver-popover-stage {
+  border-radius: 8px !important;
+}
+
+.driver-overlay {
+  opacity: 1 !important;
+}
+
+/* Pil på popover */
+.dugnad-driver-popover .driver-popover-arrow-side-top.driver-popover-arrow,
+.dugnad-driver-popover .driver-popover-arrow-side-bottom.driver-popover-arrow,
+.dugnad-driver-popover .driver-popover-arrow-side-left.driver-popover-arrow,
+.dugnad-driver-popover .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-color: var(--card-bg, #ffffff);
+}
+
+/* Mobil: smalere popover, tettere padding */
+@media (max-width: 600px) {
+  .dugnad-driver-popover.driver-popover {
+    max-width: calc(100vw - 32px);
+    padding: 14px 14px 12px;
+  }
+  .dugnad-driver-popover .driver-popover-title {
+    font-size: 14px;
+  }
+  .dugnad-driver-popover .driver-popover-description {
+    font-size: 12.5px;
+  }
+}

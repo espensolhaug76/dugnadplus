@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { GuideButton } from '../../utils/guides/GuideButton';
 import './CoordinatorLayout.css';
 
 // --- HJELPEKOMPONENTER ---
@@ -232,7 +233,7 @@ export const CoordinatorDashboard: React.FC = () => {
     <div style={{ width: '100%', height: '100%', background: 'var(--bg-secondary)' }}>
       
       {/* Header */}
-      <div style={{ background: '#1a7a4a', padding: '20px 40px', color: 'white' }}>
+      <div data-guide="coordinator-dashboard-header" style={{ background: '#1a7a4a', padding: '20px 40px', color: 'white' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
                 <h1 style={{ fontSize: '24px', fontWeight: '700', color: 'white', margin: '0 0 4px' }}>Hei, {userName}! 👋</h1>
@@ -258,7 +259,10 @@ export const CoordinatorDashboard: React.FC = () => {
                   })()}
                 </div>
             </div>
-            <button onClick={() => window.location.href = '/create-event'} style={{ background: 'white', color: '#1a7a4a', border: 'none', borderRadius: '8px', padding: '10px 24px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>+ Nytt arrangement</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <GuideButton guideId="coordinator-dashboard" style={{ background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }} />
+              <button data-guide="coordinator-dashboard-new-event" onClick={() => window.location.href = '/create-event'} style={{ background: 'white', color: '#1a7a4a', border: 'none', borderRadius: '8px', padding: '10px 24px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>+ Nytt arrangement</button>
+            </div>
         </div>
       </div>
 
@@ -276,7 +280,7 @@ export const CoordinatorDashboard: React.FC = () => {
       )}
 
       {/* Tabs */}
-      <div style={{ padding: '0 40px', background: 'var(--card-bg)', borderBottom: '0.5px solid #e8e0d0' }}>
+      <div data-guide="coordinator-dashboard-tabs" style={{ padding: '0 40px', background: 'var(--card-bg)', borderBottom: '0.5px solid #e8e0d0' }}>
         <div style={{ display: 'flex', gap: '0' }}>
             {[
               { id: 'oversikt', label: 'Oversikt' },
@@ -329,7 +333,7 @@ export const CoordinatorDashboard: React.FC = () => {
           <div>
             {/* Onboarding progress */}
             {showOnboarding && (
-              <div style={{ padding: '16px 20px', marginBottom: '20px', background: 'var(--card-bg)', borderRadius: '10px', border: '0.5px solid #e2e8f0' }}>
+              <div data-guide="coordinator-dashboard-onboarding" style={{ padding: '16px 20px', marginBottom: '20px', background: 'var(--card-bg)', borderRadius: '10px', border: '0.5px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
                   <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Kom i gang</span>
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{completedCount} av 4 steg fullført</span>

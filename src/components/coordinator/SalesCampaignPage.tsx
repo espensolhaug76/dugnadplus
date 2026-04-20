@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
 import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+import { GuideButton } from '../../utils/guides/GuideButton';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface Campaign { id: string; title: string; description: string; product_name: string; unit_price: number; target_per_family: number; start_date: string; end_date: string; status: string; vipps_number: string; }
@@ -178,21 +179,24 @@ export const SalesCampaignPage: React.FC = () => {
   if (!campaign) {
     return (
       <div style={{ padding: '20px 24px 40px', maxWidth: '900px', margin: '0 auto', background: '#faf8f4', minHeight: '100vh' }}>
-        <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0, marginBottom: '24px', display: 'block' }}>← Tilbake til dashbordet</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0 }}>← Tilbake til dashbordet</button>
+          <GuideButton guideId="sales-campaign" />
+        </div>
 
         {!showCreate ? (
           <>
             {/* Empty state hero */}
-            <div style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
+            <div data-guide="sales-campaign-hero" style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
               <div style={{ fontSize: '11px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: '600', marginBottom: '10px' }}>🛍️ Salgskampanje</div>
               <h1 style={{ fontSize: '22px', fontWeight: '500', color: '#fff', margin: '0 0 10px' }}>Selg produkter uten <span style={{ color: '#7ec8a0' }}>organiserings-kaos</span></h1>
               <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.65', margin: '0 auto 20px', maxWidth: '520px' }}>Skal laget selge kalendere, juleris eller noe annet? Du starter en kampanje, spillerne får egne salgslenker, og systemet holder full oversikt over hvem som har solgt hva. Pengene kommer rett inn på lagets Vipps — du slipper å jage etter betaling.</p>
-              <button onClick={() => setShowCreate(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Start ny kampanje</button>
+              <button data-guide="sales-campaign-create" onClick={() => setShowCreate(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Start ny kampanje</button>
               <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '10px' }}>Fungerer for alle typer produktsalg</div>
             </div>
 
             {/* Fordel-kort 3x2 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+            <div data-guide="sales-campaign-benefits" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
               {[
                 { icon: '📊', title: 'Full oversikt — alltid', desc: 'Se nøyaktig hvem som har solgt hva, og hvem som ikke har startet. Send purring med ett klikk.' },
                 { icon: '🔗', title: 'Personlig lenke per spiller', desc: 'Hver familie deler sin lenke til familie og venner. Salget registreres automatisk på riktig spiller.' },

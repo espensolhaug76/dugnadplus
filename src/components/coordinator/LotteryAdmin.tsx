@@ -5,6 +5,7 @@ import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } fr
 
 const errorBorder = (hasError: boolean): React.CSSProperties =>
   hasError ? { border: `1px solid ${ERROR_COLOR}` } : {};
+import { GuideButton } from '../../utils/guides/GuideButton';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -988,19 +989,22 @@ export const LotteryAdmin: React.FC = () => {
 
   return (
     <div style={{ padding: '20px 24px 40px', maxWidth: '900px', margin: '0 auto' }}>
-        <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', marginBottom: '16px', padding: 0 }}>← Tilbake til dashbordet</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0 }}>← Tilbake til dashbordet</button>
+          <GuideButton guideId="lottery-admin" />
+        </div>
 
         {/* HERO */}
-        <div style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
+        <div data-guide="lottery-admin-hero" style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
           <div style={{ fontSize: '11px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: '600', marginBottom: '10px' }}>🎟️ Digital loddbok</div>
           <h1 style={{ fontSize: '22px', fontWeight: '500', color: '#fff', margin: '0 0 10px' }}>Lag et loddsalg på <span style={{ color: '#7ec8a0' }}>2 minutter</span> — 100% av inntekten til laget</h1>
           <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.65', margin: '0 auto 20px', maxWidth: '520px' }}>Du og foreldrene setter opp premier selv. Hver spiller får sin egen salgslenke å dele på sosiale medier eller via QR-kode. Systemet trekker vinnere automatisk. Alt som samles inn går rett til lagets Vipps — ingenting til oss.</p>
-          <button onClick={() => setShowCreateModal(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Start nytt loddsalg</button>
+          <button data-guide="lottery-admin-create" onClick={() => setShowCreateModal(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Start nytt loddsalg</button>
           <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '10px' }}>Ingen tekniske forkunnskaper nødvendig</div>
         </div>
 
         {/* Fordel-kort 3x2 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+        <div data-guide="lottery-admin-benefits" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '20px' }}>
           {[
             { icon: '🔗', title: 'Personlig salgslenke per spiller', desc: 'Hver familie får en unik lenke å dele i WhatsApp, på Facebook eller via QR-kode på treningsfeltet.' },
             { icon: '🏆', title: 'Live toppliste og statistikk', desc: 'Se hvem som selger mest i sanntid. Litt sunn konkurranse motiverer familiene til å selge mer.' },

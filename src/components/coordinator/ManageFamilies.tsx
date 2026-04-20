@@ -2,6 +2,7 @@
 import { supabase } from '../../services/supabaseClient';
 import { csvRow } from '../../utils/csvSafe';
 import { generateJoinCode } from '../../utils/joinCode';
+import { GuideButton } from '../../utils/guides/GuideButton';
 
 interface Member {
   id: string;
@@ -607,7 +608,7 @@ export const ManageFamilies: React.FC = () => {
       
       <button onClick={() => window.location.href = '/coordinator-dashboard'} className="btn btn-secondary" style={{ marginBottom: '16px' }}>← Tilbake</button>
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+      <div data-guide="manage-families-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '32px', fontWeight: '700', margin: '0 0 8px 0' }}>Administrer familier</h1>
           <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
@@ -615,7 +616,8 @@ export const ManageFamilies: React.FC = () => {
             {families.length} familier • {families.reduce((sum, f) => sum + f.members.filter(m=>m.role==='child').length, 0)} spillere
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <GuideButton guideId="manage-families" />
           <button onClick={() => setBulkMode(!bulkMode)} className="btn" style={{ fontSize: '12px', background: bulkMode ? '#1f2937' : 'var(--card-bg)', color: bulkMode ? 'white' : 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
             {bulkMode ? `✓ ${selectedFamilyIds.size} valgt` : '☑️ Velg flere'}
           </button>
@@ -624,8 +626,8 @@ export const ManageFamilies: React.FC = () => {
           )}
           <button onClick={exportCsv} className="btn" style={{ fontSize: '12px', border: '1px solid var(--border-color)' }}>📥 Eksporter CSV</button>
           <button onClick={() => setShowInviteModal(true)} className="btn btn-secondary" style={{ fontSize: '12px' }}>📋 Invitasjon</button>
-          <button onClick={() => setAddingFamily(true)} className="btn btn-primary" style={{ fontSize: '12px' }}>➕ Ny familie</button>
-          <button onClick={() => window.location.href = '/import-families'} className="btn btn-secondary" style={{ fontSize: '12px' }}>📁 Importer</button>
+          <button data-guide="manage-families-add" onClick={() => setAddingFamily(true)} className="btn btn-primary" style={{ fontSize: '12px' }}>➕ Ny familie</button>
+          <button data-guide="manage-families-import" onClick={() => window.location.href = '/import-families'} className="btn btn-secondary" style={{ fontSize: '12px' }}>📁 Importer</button>
         </div>
       </div>
 
@@ -759,7 +761,7 @@ export const ManageFamilies: React.FC = () => {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div data-guide="manage-families-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {filteredFamilies.map(family => {
             const parents = family.members.filter(m => m.role === 'parent');
             const children = family.members.filter(m => m.role === 'child');

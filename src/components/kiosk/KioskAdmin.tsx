@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+import { GuideButton } from '../../utils/guides/GuideButton';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface KioskItem {
@@ -274,24 +275,27 @@ export const KioskAdmin: React.FC = () => {
     return (
       <div style={{ background: '#faf8f4', minHeight: '100vh' }}>
         <div style={{ padding: '20px 24px 40px', maxWidth: '900px', margin: '0 auto' }}>
-          <button
-            onClick={() => window.location.href = '/coordinator-dashboard'}
-            style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0, marginBottom: '24px' }}
-          >
-            ← Tilbake til dashbordet
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <button
+              onClick={() => window.location.href = '/coordinator-dashboard'}
+              style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+            >
+              ← Tilbake til dashbordet
+            </button>
+            <GuideButton guideId="kiosk-admin" />
+          </div>
 
           {/* Hero */}
-          <div style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
+          <div data-guide="kiosk-admin-hero" style={{ background: '#1e3a2f', borderRadius: '12px', padding: '32px 28px', textAlign: 'center', marginBottom: '20px' }}>
             <div style={{ fontSize: '11px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: '600', marginBottom: '10px' }}>🛒 Kiosk</div>
             <h1 style={{ fontSize: '22px', fontWeight: '500', color: '#fff', margin: '0 0 10px' }}>Sett opp kiosken på <span style={{ color: '#7ec8a0' }}>2 minutter</span> — kjøperne betaler selv</h1>
             <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.65', margin: '0 auto 20px', maxWidth: '520px' }}>Perfekt til kaffe, kaker og brus på treninger og kampdager. Du lager en enkel meny, henger opp en QR-kode, og kjøperne ordner resten selv med Vipps. Du slipper å sitte og ta imot penger — og alt går rett til laget.</p>
-            <button onClick={() => setShowSetup(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Sett opp kiosk</button>
+            <button data-guide="kiosk-admin-setup" onClick={() => setShowSetup(true)} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Sett opp kiosk</button>
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '10px' }}>Ingen kasse, ingen kontanter, ingen stress</div>
           </div>
 
           {/* Fordel-kort 3x2 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
+          <div data-guide="kiosk-admin-benefits" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
             {[
               { icon: '📱', title: 'QR-kode gjør jobben', desc: 'Print eller vis QR-koden. Kjøpere skanner, velger varer og betaler med Vipps. Du trenger ikke å gjøre noe.' },
               { icon: '🍕', title: 'Du bestemmer menyen', desc: 'Legg inn det dere selger — kaffe, kaker, brus, pølser. Sett priser og skru av det som er utsolgt.' },
@@ -333,12 +337,15 @@ export const KioskAdmin: React.FC = () => {
   return (
     <div style={{ background: '#faf8f4', minHeight: '100vh' }}>
       <div style={{ padding: '20px 24px 40px', maxWidth: '900px', margin: '0 auto' }}>
-        <button
-          onClick={() => window.location.href = '/coordinator-dashboard'}
-          style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0, marginBottom: '24px' }}
-        >
-          ← Tilbake til dashbordet
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <button
+            onClick={() => window.location.href = '/coordinator-dashboard'}
+            style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+          >
+            ← Tilbake til dashbordet
+          </button>
+          <GuideButton guideId="kiosk-admin" />
+        </div>
 
         {/* Active header bar */}
         <div style={{ background: '#1e3a2f', borderRadius: '10px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
