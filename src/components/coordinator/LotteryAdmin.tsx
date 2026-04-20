@@ -395,7 +395,6 @@ export const LotteryAdmin: React.FC = () => {
         prizes: 'Legg til minst én premie',
       }
     );
-    console.log('[saveLottery] validation errors:', errors, 'state:', { name, ticketPrice, goal, vippsNumber, prizesCount: prizes.length });
     if (Object.keys(errors).length > 0) {
       setCreateErrors(errors);
       scrollToFirstError(errors, createFieldRefs.current);
