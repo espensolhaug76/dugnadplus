@@ -197,6 +197,7 @@ export const ImportFamilies: React.FC = () => {
         const uniqueParents = [...new Set(famData.parents)];
         const parentInserts = uniqueParents.map(pName => ({
           family_id: newFamilyUUID,
+          team_id: activeTeamId || null,
           name: pName,
           role: 'parent'
         }));
@@ -211,6 +212,7 @@ export const ImportFamilies: React.FC = () => {
           childCodesMap[child.name] = joinCode;
           return {
             family_id: newFamilyUUID,
+            team_id: activeTeamId || null,
             name: child.name,
             role: 'child',
             birth_year: child.birthDate ? new Date(child.birthDate).getFullYear() : 2016,
