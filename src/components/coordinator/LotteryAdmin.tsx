@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
-import { validateRequired, errorBorderStyle, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+
+const errorBorder = (hasError: boolean): React.CSSProperties =>
+  hasError ? { border: `1px solid ${ERROR_COLOR}` } : {};
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -392,6 +395,7 @@ export const LotteryAdmin: React.FC = () => {
         prizes: 'Legg til minst én premie',
       }
     );
+    console.log('[saveLottery] validation errors:', errors, 'state:', { name, ticketPrice, goal, vippsNumber, prizesCount: prizes.length });
     if (Object.keys(errors).length > 0) {
       setCreateErrors(errors);
       scrollToFirstError(errors, createFieldRefs.current);
@@ -1074,7 +1078,7 @@ export const LotteryAdmin: React.FC = () => {
                                 onChange={e => { setName(e.target.value); clearCreateError('name'); }}
                                 placeholder="F.eks. Julelotteri 2026"
                                 autoFocus
-                                style={errorBorderStyle(!!createErrors.name)}
+                                style={errorBorder(!!createErrors.name)}
                             />
                             {createErrors.name && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.name}</p>}
                         </div>
@@ -1091,7 +1095,7 @@ export const LotteryAdmin: React.FC = () => {
                                         <button key={p} onClick={() => { setTicketPrice(p); clearCreateError('ticketPrice'); }} style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', background: ticketPrice === p ? '#2d6a4f' : 'white', color: ticketPrice === p ? 'white' : '#1a2e1f', border: ticketPrice === p ? 'none' : '0.5px solid #dedddd', fontWeight: ticketPrice === p ? '600' : '400' }}>{p} kr</button>
                                     ))}
                                 </div>
-                                <input type="number" className="input" value={ticketPrice} onChange={e => { setTicketPrice(parseInt(e.target.value) || 0); clearCreateError('ticketPrice'); }} placeholder="Egendefinert" style={{ fontSize: '13px', ...errorBorderStyle(!!createErrors.ticketPrice) }} />
+                                <input type="number" className="input" value={ticketPrice} onChange={e => { setTicketPrice(parseInt(e.target.value) || 0); clearCreateError('ticketPrice'); }} placeholder="Egendefinert" style={{ fontSize: '13px', ...errorBorder(!!createErrors.ticketPrice) }} />
                                 {createErrors.ticketPrice && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.ticketPrice}</p>}
                             </div>
                             <div>
@@ -1102,7 +1106,7 @@ export const LotteryAdmin: React.FC = () => {
                                     className="input"
                                     value={goal}
                                     onChange={e => { setGoal(parseInt(e.target.value) || 0); clearCreateError('goal'); }}
-                                    style={errorBorderStyle(!!createErrors.goal)}
+                                    style={errorBorder(!!createErrors.goal)}
                                 />
                                 {createErrors.goal && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.goal}</p>}
                                 {ticketPrice > 0 && !createErrors.goal && <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>= {Math.ceil(goal / ticketPrice)} lodd</p>}
@@ -1115,7 +1119,7 @@ export const LotteryAdmin: React.FC = () => {
                                     value={vippsNumber}
                                     onChange={e => { setVippsNumber(e.target.value); clearCreateError('vippsNumber'); }}
                                     placeholder="12345"
-                                    style={errorBorderStyle(!!createErrors.vippsNumber)}
+                                    style={errorBorder(!!createErrors.vippsNumber)}
                                 />
                                 {createErrors.vippsNumber && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.vippsNumber}</p>}
                             </div>
