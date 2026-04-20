@@ -575,6 +575,36 @@ export const LotteryAdmin: React.FC = () => {
           </div>
         )}
 
+        {/* Forhåndsvisning — slik ser det ut for kjøpere */}
+        <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px', marginTop: '16px' }}>Slik ser kjøperne det</div>
+        <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '10px', overflow: 'hidden', marginBottom: '16px' }}>
+          {/* Mini-header */}
+          <div style={{ background: '#1e3a2f', padding: '20px 16px', color: 'white', textAlign: 'center' }}>
+            <div style={{ fontSize: '32px', marginBottom: '4px' }}>🎟️</div>
+            <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: '700' }}>{lottery.name}</h3>
+            {lottery.description && <p style={{ color: 'rgba(255,255,255,0.6)', margin: 0, fontSize: '13px' }}>{lottery.description}</p>}
+          </div>
+          <div style={{ padding: '16px' }}>
+            {/* Pris */}
+            <div style={{ background: '#faf8f4', padding: '12px', borderRadius: '8px', textAlign: 'center', marginBottom: '12px' }}>
+              <div style={{ fontSize: '13px', color: '#4a5e50' }}>{lottery.ticketPrice} kr per lodd</div>
+            </div>
+            {/* Premierliste */}
+            {lottery.prizes.length > 0 && (
+              <div style={{ background: '#faf8f4', padding: '12px 16px', borderRadius: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '8px', textAlign: 'center' }}>🏆 Premieoversikt</div>
+                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#4a5e50', lineHeight: '1.6' }}>
+                  {lottery.prizes.map(p => (
+                    <li key={p.id}>
+                      <strong>{p.name}</strong>{p.value && ` (${p.value} kr)`}{p.donor && <span style={{ color: '#2d6a4f', fontSize: '11px' }}> · Sponset av {p.donor}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Trekningsknapp */}
         {prizesLeft > 0 && (
           <div style={{ marginBottom: '12px' }}>
