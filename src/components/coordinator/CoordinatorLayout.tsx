@@ -251,7 +251,8 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     { path: '/sales-campaign', label: 'Salgskampanje', icon: '🛍️', revenue: true },
     { path: '/kiosk-admin', label: 'Kiosk', icon: '🛒', revenue: true },
     { path: '/marketplace', label: 'Marked', icon: '🏷️', revenue: false },
-    { path: '/sponsor-admin', label: 'Sponsorer', icon: '🏪', revenue: true },
+    // TODO: Skru på igjen når sponsor-modulen er klar for pilot
+    // { path: '/sponsor-admin', label: 'Sponsorer', icon: '🏪', revenue: true },
   ];
 
   // Auth-gate: vis nøytral loading mens sjekken kjører, render aldri

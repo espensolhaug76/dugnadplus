@@ -249,7 +249,7 @@ export const LandingPage: React.FC = () => {
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <div style={{ fontSize: '11px', color: gl, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: '12px' }}>Premium — 199 kr/mnd eller 990 kr/sesong</div>
             <h2 className="mkt-h2" style={{ fontFamily: serif, fontSize: '34px', color: '#fff', margin: '0 0 12px' }}>Tjen penger til lagkassen — <em style={{ color: gl, fontStyle: 'italic' }}>uten ekstraarbeid</em></h2>
-            <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.5)', maxWidth: '540px', margin: '0 auto' }}>Alt du trenger for å samle inn penger digitalt. Loddsalg, kiosk, salgskampanjer og sponsorer — på ett sted.</p>
+            <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.5)', maxWidth: '540px', margin: '0 auto' }}>Alt du trenger for å samle inn penger digitalt. Loddsalg, kiosk og salgskampanjer — på ett sted.</p>
           </div>
 
           {/* Income grid — 3 kort */}
@@ -366,7 +366,7 @@ export const LandingPage: React.FC = () => {
                 <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>eller 199 kr/mnd</div>
               </div>
               <div style={{ padding: '20px' }}>
-                {['Alt i Aktiv (500 SMS inkl.)', 'Digital loddbok — snitt 12 500 kr/salg', 'Vipps-kiosk', 'Salgskampanjer', 'Sponsormodul', '100% til lagets Vipps'].map((f, i) => (
+                {['Alt i Aktiv (500 SMS inkl.)', 'Digital loddbok — snitt 12 500 kr/salg', 'Vipps-kiosk', 'Salgskampanjer', '100% til lagets Vipps'].map((f, i) => (
                   <div key={i} style={{ fontSize: '13px', color: text, padding: '6px 0', display: 'flex', gap: '8px' }}>
                     <span style={{ color: gm }}>✓</span> {f}
                   </div>

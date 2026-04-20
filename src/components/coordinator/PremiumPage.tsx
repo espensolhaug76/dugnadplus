@@ -24,7 +24,7 @@ export const PremiumPage: React.FC = () => {
           <div>
             <div style={{ fontSize: '11px', color: '#7ec8a0', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '12px', fontWeight: '600' }}>★ Fra 99 kr/mnd — tre planer for alle lag</div>
             <h1 style={{ fontSize: '32px', fontWeight: '600', color: '#ffffff', margin: '0 0 16px', lineHeight: '1.2' }}>Tjen penger til <span style={{ color: '#a8e6c3' }}>lagkassen</span></h1>
-            <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.9)', lineHeight: '1.7', margin: '0 0 24px' }}>Loddbok, kiosk og sponsoravtaler samlet i én løsning. Alt du tjener går direkte til laget — ingen mellommann, ingen cut.</p>
+            <p style={{ fontSize: '15px', color: 'rgba(255,255,255,0.9)', lineHeight: '1.7', margin: '0 0 24px' }}>Loddbok, kiosk og salgskampanjer samlet i én løsning. Alt du tjener går direkte til laget — ingen mellommann, ingen cut.</p>
             <button onClick={activate} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', padding: '12px 24px', fontWeight: '500', fontSize: '14px', cursor: 'pointer', marginBottom: '8px' }}>Kom i gang</button>
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>Ingen bindingstid · Avbryt når som helst</div>
           </div>
@@ -76,8 +76,7 @@ export const PremiumPage: React.FC = () => {
           {[
             { icon: '🎟️', iconBg: '#e6f0e8', iconColor: '#2d6a4f', badge: 'Ditt eget lotteri', title: 'Digital loddbok', text: 'Du setter opp premiene, du bestemmer prisen, og du beholder alt. Fungerer like bra for et lite klassisk loddsalg som for et stort sesongavslutningslotteri med storpremie. Foreldre betaler med Vipps og deler videre — ingen papirlodd, ingen kontanter.', earn: 'Snitt 12 500 kr per salg', earnBg: '#e6f0e8', earnColor: '#2d6a4f' },
             { icon: '🛒', iconBg: '#faeeda', iconColor: '#854f0b', badge: '', title: 'Kiosk', text: 'Selg mat og drikke på hjemmekamper med Vipps-betaling. Sett opp menyen på 2 minutter.', earn: '300–800 kr per kamp', earnBg: '#faeeda', earnColor: '#854f0b' },
-            { icon: '🏷️', iconBg: '#e6f1fb', iconColor: '#185fa5', badge: '', title: 'Marked', text: 'La familiene kjøpe og selge brukt sportsutstyr seg imellom. Laget tar en liten andel av hvert salg.', earn: 'Passiv inntekt hele sesongen', earnBg: '#e6f1fb', earnColor: '#185fa5' },
-            { icon: '🏪', iconBg: '#eeedfe', iconColor: '#534ab7', badge: '', title: 'Sponsorer', text: 'Lokale bedrifter kan vise tilbud til lagets familier. Du setter betingelsene og godkjenner hvem som er med.', earn: 'Faste sponsorinntekter', earnBg: '#eeedfe', earnColor: '#534ab7' },
+            { icon: '🛍️', iconBg: '#edf5e0', iconColor: '#639922', badge: '', title: 'Salgskampanjer', text: 'Selg kalendere, juleris eller andre produkter. Spillerne får egne salgslenker, og systemet holder full oversikt.', earn: 'Tilpass til laget', earnBg: '#edf5e0', earnColor: '#639922' },
           ].map((f, i) => (
             <div key={i} style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '12px', padding: '20px', display: 'flex', gap: '16px' }}>
               <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: f.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>{f.icon}</div>
@@ -119,7 +118,7 @@ export const PremiumPage: React.FC = () => {
           <div className="mkt-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
             {[
               { num: '1', title: 'Aktiver premium', text: 'Velg abonnement for laget. Ingen binding, avbryt når du vil.' },
-              { num: '2', title: 'Sett opp en kampanje', text: 'Loddbok, kiosk eller sponsor — klar på under 3 minutter.' },
+              { num: '2', title: 'Sett opp en kampanje', text: 'Loddbok, kiosk eller salgskampanje — klar på under 3 minutter.' },
               { num: '3', title: 'Pengene kommer rett inn', text: 'Vipps betaler direkte til lagets konto. Du ser alt i dashbordet.' },
             ].map((s, i) => (
               <div key={i} style={{ textAlign: 'center' }}>
@@ -188,7 +187,7 @@ export const PremiumPage: React.FC = () => {
                 <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>eller 199 kr/mnd</div>
               </div>
               <div style={{ padding: '18px' }}>
-                {['Alt i Aktiv (500 SMS inkl.)', 'Digital loddbok', 'Vipps-kiosk', 'Salgskampanjer', 'Sponsormodul', '100% til lagets Vipps'].map((f, i) => (
+                {['Alt i Aktiv (500 SMS inkl.)', 'Digital loddbok', 'Vipps-kiosk', 'Salgskampanjer', '100% til lagets Vipps'].map((f, i) => (
                   <div key={i} style={{ fontSize: '12px', color: '#1a2e1f', padding: '4px 0', display: 'flex', gap: '6px' }}><span style={{ color: '#2d6a4f' }}>✓</span> {f}</div>
                 ))}
                 <button onClick={activate} style={{ width: '100%', marginTop: '14px', padding: '10px', background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Se hva dere kan tjene...</button>
