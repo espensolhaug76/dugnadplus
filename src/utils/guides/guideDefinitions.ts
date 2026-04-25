@@ -18,23 +18,23 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="coordinator-dashboard-header"]',
-        'TODO: velkomstoverskrift',
-        'TODO: forklare hva dashbordet er og hva koordinatoren kan gjøre her.'
+        'Velkommen som dugnadsansvarlig',
+        'Her styrer du alt for laget ditt. Vi tar en kjapp runde så du vet hvor ting ligger.'
       ),
       step(
         '[data-guide="coordinator-dashboard-onboarding"]',
-        'TODO: kom-i-gang-listen',
-        'TODO: forklare de 4 stegene for å komme i gang (importer, arrangement, tildel, inviter).'
+        'Fire steg før du er i gang',
+        'Følg denne listen i rekkefølge. Når alle fire er fullført, er laget klart for sesongen.'
       ),
       step(
         '[data-guide="coordinator-dashboard-new-event"]',
-        'TODO: lag første arrangement',
-        'TODO: forklare at koordinatoren kan opprette et arrangement her.'
+        'Legg inn arrangementer',
+        'Legg inn arrangementer du ønsker dugnadsvakter til. Kamper, turneringer, kakelotteri, eller hva enn laget trenger hjelp til.'
       ),
       step(
         '[data-guide="coordinator-dashboard-tabs"]',
-        'TODO: faneoversikt',
-        'TODO: forklare hva fanene (Oversikt, Arrangementer, Vakter, Familier, Historikk) inneholder.'
+        'Resten finner du her',
+        'Bla gjennom arrangementer, vakter, familier og historikk etter hvert som du trenger dem.'
       ),
     ],
   },
@@ -45,23 +45,23 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="manage-families-header"]',
-        'TODO: oversikt over familier',
-        'TODO: forklare hva denne siden viser og hvordan familier organiseres.'
+        'Her samler du laget',
+        'Du ser alltid familiene som hører til laget du står på. Det første du må gjøre er å få dem inn.'
       ),
       step(
         '[data-guide="manage-families-import"]',
-        'TODO: importer fra Spond',
-        'TODO: forklare hvordan man importerer spillere fra Spond via CSV.'
+        'Anbefalt: importer fra Spond',
+        'Last ned medlemslisten fra Spond og dra den inn her. Alle familier kommer inn på sekunder, med ferdige koder til foreldrene.'
       ),
       step(
         '[data-guide="manage-families-add"]',
-        'TODO: legg til familie manuelt',
-        'TODO: forklare hvordan legge til en familie uten import.'
+        'Eller legg inn manuelt',
+        'Hvis en familie kommer til midt i sesongen, legger du dem inn her uten å importere på nytt.'
       ),
       step(
         '[data-guide="manage-families-list"]',
-        'TODO: familielisten',
-        'TODO: forklare hvordan man ser og redigerer enkeltfamilier.'
+        'Alt ligger samlet',
+        'Klikk på en familie for å se foresatte, barn og koden de bruker til å logge inn.'
       ),
     ],
   },
@@ -72,18 +72,18 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="lottery-admin-hero"]',
-        'TODO: velkommen til lotteri',
-        'TODO: forklare hva digitale lodd er og hvorfor det er nyttig for laget.'
+        'Digital loddbok',
+        'Gi hver spiller en personlig salgslenke. Familiene kan også selv legge inn premier de skaffer. Alle pengene går rett til lagets Vipps.'
       ),
       step(
         '[data-guide="lottery-admin-benefits"]',
-        'TODO: fordeler',
-        'TODO: peke på fordelskortene og forklare hva loddsalg gir laget.'
+        'Slik sparer dere tid',
+        'Ingen papirlodd, ingen manuell oversikt, ingen tulling med veksel. Systemet teller, trekker vinnere og sender kvittering.'
       ),
       step(
         '[data-guide="lottery-admin-create"]',
-        'TODO: start nytt lotteri',
-        'TODO: forklare at knappen åpner et skjema for å sette opp lotteriet.'
+        'Klar på to minutter',
+        'Du trenger bare navn, pris per lodd, lagets Vipps-nummer og minst én premie. Vi tar deg gjennom resten.'
       ),
     ],
   },
@@ -94,18 +94,18 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="kiosk-admin-hero"]',
-        'TODO: velkommen til kiosk',
-        'TODO: forklare hva kiosk-funksjonen er og hva den brukes til.'
+        'Kiosk på kampdag',
+        'Sett opp en enkel meny for kaffe, pølser, kaker eller hva dere selger. Foreldre betaler med Vipps via QR-kode.'
       ),
       step(
         '[data-guide="kiosk-admin-benefits"]',
-        'TODO: fordeler',
-        'TODO: forklare fordeler med QR-kode-basert kiosk fremfor kontanter.'
+        'Slipper kontantkassen',
+        'Ingen veksel, ingen papirregnskap. Alt betales direkte til laget, og du ser hvert salg fortløpende.'
       ),
       step(
         '[data-guide="kiosk-admin-setup"]',
-        'TODO: sett opp kiosk',
-        'TODO: forklare at knappen åpner oppsett for meny og Vipps-nummer.'
+        'Lag menyen',
+        'Legg inn varene dere vil selge med pris. Du får en QR-kode å henge opp ved kiosken.'
       ),
     ],
   },
@@ -116,18 +116,18 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="sales-campaign-hero"]',
-        'TODO: velkommen til salgskampanje',
-        'TODO: forklare hva salgskampanje er (eks: kalendersalg, julesalg).'
+        'Salgskampanje',
+        'Skal dere selge kalendere, sjokolade eller julelys? Her får hver spiller sin egen salgslenke, og du slipper å jage innbetalinger.'
       ),
       step(
         '[data-guide="sales-campaign-benefits"]',
-        'TODO: fordeler',
-        'TODO: forklare hvordan kampanjen fordeler salgslenker per familie.'
+        'Full oversikt, null purring',
+        'Alle betalinger går rett til laget. Du ser hvem som har solgt hva, og hvor mange enheter som skal leveres.'
       ),
       step(
         '[data-guide="sales-campaign-create"]',
-        'TODO: start ny kampanje',
-        'TODO: forklare at knappen åpner skjema for navn, produkt, pris og Vipps.'
+        'Sett opp første kampanje',
+        'Du bestemmer produkt, pris og salgsperiode. Systemet ordner salgslenker og toppliste automatisk.'
       ),
     ],
   },
@@ -138,38 +138,38 @@ const GUIDES: Record<string, GuideDefinition> = {
     steps: [
       step(
         '[data-guide="create-event-team"]',
-        'TODO: velg lag',
-        'TODO: forklare at arrangementet knyttes til ett lag og hvorfor det er viktig.'
+        'Velg lag',
+        'Arrangementet kobles til ett lag. NB! Har du flere lag, sjekk at du står på riktig lag før du oppretter.'
       ),
       step(
         '[data-guide="create-event-name"]',
-        'TODO: navn på arrangement',
-        'TODO: forklare hva slags navn som gir mening (hjemmekamp, turnering).'
+        'Gi det et navn',
+        'Skriv noe konkret som \"Hjemmekamp 8. mai\" eller \"Turnering Kongsvinger Cup\". Det er dette familiene ser.'
       ),
       step(
         '[data-guide="create-event-date"]',
-        'TODO: dato og tid',
-        'TODO: forklare at start/slutt-tid styrer vaktgenereringen.'
+        'Dato, start og slutt',
+        'Tidspunktene styrer hvor mange vakter som genereres automatisk.'
       ),
       step(
         '[data-guide="create-event-shifts"]',
-        'TODO: velg vakter',
-        'TODO: forklare vakt-mal per sport og hvordan huke av riktig.'
+        'Hvilke vakter trenger dere?',
+        'Vi har satt opp vanlige vakter for sporten du valgte. Huk av de dere faktisk har behov for.'
       ),
       step(
         '[data-guide="create-event-generate"]',
-        'TODO: generer vakter',
-        'TODO: forklare at systemet deler tidsrommet i vaktslots automatisk.'
+        'La systemet sette opp vakter',
+        'Klikk her, så lager vi et utkast basert på tidene og typene du valgte. Du kan justere enkeltvakter etterpå.'
       ),
       step(
         '[data-guide="create-event-assignment"]',
-        'TODO: tildeling',
-        'TODO: forklare auto vs manuell vs selvvalg.'
+        'Hvem får vaktene?',
+        'Automatisk fordeling gir vaktene til familiene med lavest poeng. Du kan også velge manuell, eller la familiene plukke selv.'
       ),
       step(
         '[data-guide="create-event-save"]',
-        'TODO: lagre arrangement',
-        'TODO: forklare at dette publiserer arrangementet til familiene.'
+        'Ferdig',
+        'Lagre, så publiseres arrangementet til familiene med varsel om vakten de har fått.'
       ),
     ],
   },
