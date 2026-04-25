@@ -6,6 +6,7 @@ import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } fr
 const errorBorder = (hasError: boolean): React.CSSProperties =>
   hasError ? { border: `1px solid ${ERROR_COLOR}` } : {};
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { runGuide, hasSeenGuide, markGuideSeen } from '../../utils/guides';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -160,6 +161,21 @@ export const LotteryAdmin: React.FC = () => {
     fetchActiveLottery();
     fetchArchivedLotteries();
   }, []);
+
+  // State-aware guide-trigger:
+  // - lottery === null: la CoordinatorLayout's path-baserte trigger
+  //   håndtere V1 'lottery-admin'.
+  // - lottery !== null: marker V1 som seen (forhindrer at den kjører
+  //   senere) og kjør V2 (active eller detail) basert på showDetail.
+  useEffect(() => {
+    if (loading) return;
+    if (!lottery) return;
+    markGuideSeen('lottery-admin');
+    const guideId = showDetail ? 'lottery-admin-detail' : 'lottery-admin-active';
+    if (hasSeenGuide(guideId)) return;
+    const t = window.setTimeout(() => runGuide(guideId), 800);
+    return () => window.clearTimeout(t);
+  }, [loading, lottery?.id, showDetail]);
 
   const fetchActiveLottery = async () => {
     setLoading(true);
@@ -559,7 +575,7 @@ export const LotteryAdmin: React.FC = () => {
         <button onClick={() => window.location.href = '/coordinator-dashboard'} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', marginBottom: '16px', padding: 0 }}>← Tilbake til dashbordet</button>
 
         {/* Active Header */}
-        <div style={{ background: '#1e3a2f', borderRadius: '10px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div data-guide="lottery-active-header" style={{ background: '#1e3a2f', borderRadius: '10px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>🎟️ {lottery.name}</span>
@@ -572,12 +588,12 @@ export const LotteryAdmin: React.FC = () => {
             {!lottery.isActive && (
               <button onClick={() => { if (hasPremium()) { updateLotteryField('is_active', true); } else { setShowPremiumGate(true); } }} style={{ background: '#7ec8a0', color: '#1e3a2f', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Publiser →</button>
             )}
-            <button onClick={() => setShowDetail(true)} style={{ background: lottery.isActive ? '#7ec8a0' : 'rgba(255,255,255,0.15)', color: lottery.isActive ? '#1e3a2f' : '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>Administrer →</button>
+            <button data-guide="lottery-active-manage" onClick={() => setShowDetail(true)} style={{ background: lottery.isActive ? '#7ec8a0' : 'rgba(255,255,255,0.15)', color: lottery.isActive ? '#1e3a2f' : '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>Administrer →</button>
           </div>
         </div>
 
         {/* Stat Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
+        <div data-guide="lottery-active-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
           <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
             <div style={{ fontSize: '17px', fontWeight: '500', color: '#1a2e1f' }}>{stats.totalRevenue} kr</div>
             <div style={{ fontSize: '10px', color: '#4a5e50', marginTop: '2px' }}>Innsamlet</div>
@@ -598,7 +614,7 @@ export const LotteryAdmin: React.FC = () => {
 
         {/* Progress */}
         {lottery.goal > 0 && (
-          <div style={{ marginBottom: '12px' }}>
+          <div data-guide="lottery-active-progress" style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#4a5e50', marginBottom: '3px' }}>
               <span>{pct}%</span><span>{stats.totalRevenue} / {lottery.goal} kr</span>
             </div>
@@ -641,7 +657,7 @@ export const LotteryAdmin: React.FC = () => {
         {/* Trekningsknapp */}
         {prizesLeft > 0 && (
           <div style={{ marginBottom: '12px' }}>
-            <button onClick={handleDraw} disabled={drawing || stats.totalSold === 0} style={{ width: '100%', padding: '10px', fontSize: '13px', background: stats.totalSold > 0 ? '#2d6a4f' : '#e8e0d0', color: stats.totalSold > 0 ? '#fff' : '#6b7f70', border: 'none', borderRadius: '8px', fontWeight: '500', cursor: stats.totalSold > 0 ? 'pointer' : 'not-allowed' }}>
+            <button data-guide="lottery-active-draw" onClick={handleDraw} disabled={drawing || stats.totalSold === 0} style={{ width: '100%', padding: '10px', fontSize: '13px', background: stats.totalSold > 0 ? '#2d6a4f' : '#e8e0d0', color: stats.totalSold > 0 ? '#fff' : '#6b7f70', border: 'none', borderRadius: '8px', fontWeight: '500', cursor: stats.totalSold > 0 ? 'pointer' : 'not-allowed' }}>
               {drawing ? 'Trekker...' : `🎰 Trekk vinnere (${prizesLeft} premier gjenstår)`}
             </button>
             {stats.totalSold === 0 && (
@@ -750,7 +766,7 @@ export const LotteryAdmin: React.FC = () => {
                 <button onClick={() => setShowDetail(false)} style={{ background: 'none', border: 'none', color: '#6b7f70', cursor: 'pointer', fontSize: '13px', padding: 0 }}>← Tilbake til lotterioversikt</button>
                 <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => setShowCashModal(true)} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '6px', border: '0.5px solid #dedddd', background: '#fff', cursor: 'pointer', color: '#1a2e1f' }}>💵 Kontantsalg</button>
-                    <button onClick={archiveLottery} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '6px', border: '1px solid #fac775', background: '#fff8e6', cursor: 'pointer', color: '#854f0b' }}>📦 Avslutt</button>
+                    <button data-guide="lottery-detail-finish" onClick={archiveLottery} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '6px', border: '1px solid #fac775', background: '#fff8e6', cursor: 'pointer', color: '#854f0b' }}>📦 Avslutt</button>
                     <button onClick={deleteLottery} style={{ fontSize: '12px', padding: '5px 12px', borderRadius: '6px', border: '1px solid #fecaca', background: '#fff5f5', cursor: 'pointer', color: '#ef4444' }}>🗑️</button>
                 </div>
             </div>
@@ -787,7 +803,7 @@ export const LotteryAdmin: React.FC = () => {
             </div>
 
             {/* Faner */}
-            <div style={{ display: 'flex', gap: '0', marginBottom: '16px', borderBottom: '1px solid #dedddd' }}>
+            <div data-guide="lottery-detail-tabs" style={{ display: 'flex', gap: '0', marginBottom: '16px', borderBottom: '1px solid #dedddd' }}>
                 {([['oversikt', '📊 Oversikt'], ['transaksjoner', '📋 Transaksjoner'], ['kjopere', '👥 Kjøpere']] as [string, string][]).map(([id, label]) => (
                     <button key={id} onClick={() => setActiveView(id as any)} style={{
                         padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px',
@@ -805,7 +821,7 @@ export const LotteryAdmin: React.FC = () => {
                     {sellerStats.length > 0 && (
                       <>
                         <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px' }}>Topp selgere</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+                        <div data-guide="lottery-detail-sellers" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
                             {sellerStats.slice(0, 5).map((seller, idx) => {
                                 const maxTickets = sellerStats[0]?.tickets || 1;
                                 return (
@@ -843,7 +859,7 @@ export const LotteryAdmin: React.FC = () => {
 
                     {/* Premier */}
                     <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px' }}>Premier ({lottery.prizes.length})</div>
-                    <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '14px' }}>
+                    <div data-guide="lottery-detail-prizes" style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '14px' }}>
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handlePrizeDragEnd}>
                         <SortableContext items={lottery.prizes.map(p => p.id)} strategy={verticalListSortingStrategy}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>

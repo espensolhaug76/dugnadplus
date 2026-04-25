@@ -1,7 +1,8 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabaseClient';
 import { generateJoinCode } from '../../utils/joinCode';
+import { runGuide, hasSeenGuide, markGuideSeen } from '../../utils/guides';
 
 interface ParsedPlayer {
   name: string;
@@ -26,6 +27,23 @@ export const ImportFamilies: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState<ImportedFamilyResult[]>([]);
   const [skipCount, setSkipCount] = useState(0);
+  const [showSpondHelp, setShowSpondHelp] = useState(false);
+
+  // Auto-trigger guide for før/etter-import. import-families-after
+  // trigges når importResults går fra 0 til >0; import-families-before
+  // markeres som seen samtidig siden brukeren da har fullført flyten.
+  useEffect(() => {
+    if (importResults.length === 0) {
+      if (hasSeenGuide('import-families-before')) return;
+      const t = window.setTimeout(() => runGuide('import-families-before'), 800);
+      return () => window.clearTimeout(t);
+    } else {
+      markGuideSeen('import-families-before');
+      if (hasSeenGuide('import-families-after')) return;
+      const t = window.setTimeout(() => runGuide('import-families-after'), 600);
+      return () => window.clearTimeout(t);
+    }
+  }, [importResults.length]);
 
   // Max 10 MB på import-fila. Beskytter mot klient-side DoS via en
   // stor Excel med millioner av tomme rader, og mot å fylle DB-quota
@@ -267,12 +285,12 @@ export const ImportFamilies: React.FC = () => {
       <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>Last opp "For import"-filen (CSV/Excel). Systemet leser lagtilhørighet og genererer koder.</p>
 
       {importResults.length > 0 ? (
-          <div className="card" style={{ padding: '32px', background: '#f0fdf4', border: '2px solid #16a8b8' }}>
+          <div data-guide="import-success" className="card" style={{ padding: '32px', background: '#f0fdf4', border: '2px solid #16a8b8' }}>
               <div style={{textAlign:'center', marginBottom:'24px'}}>
                 <div style={{fontSize:'48px'}}>🎉</div>
                 <h2 style={{color:'#166534', margin:'8px 0'}}>Import Suksess!</h2>
                 <p style={{color:'#15803d'}}>{importResults.length} familier opprettet. {skipCount > 0 && `(${skipCount} duplikater hoppet over)`}<br/>Del kodene med foreldrene.</p>
-                <button onClick={copyResults} className="btn btn-primary">📋 Kopier liste for Spond</button>
+                <button data-guide="import-copy" onClick={copyResults} className="btn btn-primary">📋 Kopier liste for Spond</button>
               </div>
 
               <div style={{maxHeight:'500px', overflowY:'auto', background:'white', borderRadius:'8px', border:'1px solid #e5e7eb'}}>
@@ -299,7 +317,7 @@ export const ImportFamilies: React.FC = () => {
           </div>
       ) : (
         <>
-            <div className="card" style={{ padding: '32px', marginBottom: '24px' }}>
+            <div data-guide="import-upload" className="card" style={{ padding: '32px', marginBottom: '24px' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>📁 Last opp Excel/CSV</h3>
                 <input
                     type="file"
@@ -315,9 +333,49 @@ export const ImportFamilies: React.FC = () => {
                 )}
             </div>
 
+            <div className="card" style={{ padding: '20px 24px', marginBottom: '24px' }}>
+                <button
+                    onClick={() => setShowSpondHelp(!showSpondHelp)}
+                    style={{
+                        width: '100%',
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                    }}
+                    aria-expanded={showSpondHelp}
+                >
+                    <span>ℹ️ Hvor finner jeg medlemslista i Spond?</span>
+                    <span style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>{showSpondHelp ? '▾' : '▸'}</span>
+                </button>
+                {showSpondHelp && (
+                    <div style={{ marginTop: '16px' }}>
+                        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '12px', lineHeight: 1.5 }}>
+                            Åpne lagets Spond-gruppe → klikk de tre prikkene øverst til høyre → <strong>"Last ned medlemsliste (Excel)"</strong>.
+                        </p>
+                        <img
+                            src="/spond-export-help.jpg"
+                            alt="Skjermbilde av Spond med menyen åpen"
+                            style={{
+                                maxWidth: '100%',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-md)',
+                                display: 'block',
+                            }}
+                        />
+                    </div>
+                )}
+            </div>
+
             {parsedData.length > 0 && (
                 <>
-                <div className="card" style={{ padding: '32px', marginBottom: '24px' }}>
+                <div data-guide="import-preview" className="card" style={{ padding: '32px', marginBottom: '24px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>📊 Forhåndsvisning ({parsedData.length} spillere)</h3>
                     <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -343,7 +401,7 @@ export const ImportFamilies: React.FC = () => {
                     </div>
                 </div>
 
-                <button onClick={handleImport} className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '18px' }} disabled={importing}>
+                <button data-guide="import-submit" onClick={handleImport} className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '18px' }} disabled={importing}>
                     {importing ? '⏳ Genererer koder og lagrer...' : '🚀 Importer og generer koder'}
                 </button>
                 </>

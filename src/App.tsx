@@ -30,6 +30,7 @@ import { LotteryAdmin } from './components/coordinator/LotteryAdmin';
 import { CampaignOverviewPage } from './components/coordinator/CampaignOverviewPage';
 
 // Familie
+import { FamilyLayout } from './components/family/FamilyLayout';
 import { FamilyDashboard } from './components/family/FamilyDashboard';
 import { MyShiftsPage } from './components/family/MyShiftsPage';
 import { FamilyMembersPage } from './components/family/FamilyMembersPage';
@@ -140,9 +141,9 @@ function AppContent() {
           <Route path="/settings/sms" element={<CoordinatorLayout><SmsSettingsPage /></CoordinatorLayout>} />
 
           {/* Familie */}
-          <Route path="/family-dashboard" element={<FamilyDashboard />} />
-          <Route path="/my-shifts" element={<MyShiftsPage />} />
-          <Route path="/family-members" element={<FamilyMembersPage />} />
+          <Route path="/family-dashboard" element={<FamilyLayout><FamilyDashboard /></FamilyLayout>} />
+          <Route path="/my-shifts" element={<FamilyLayout><MyShiftsPage /></FamilyLayout>} />
+          <Route path="/family-members" element={<FamilyLayout><FamilyMembersPage /></FamilyLayout>} />
           <Route path="/points-tier" element={<PointsTierPage />} />
           <Route path="/my-lottery" element={<MyLottery />} />
           <Route path="/lottery-shop" element={<LotteryShop />} />

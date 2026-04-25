@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
+import { GuideButton } from '../../utils/guides/GuideButton';
 
 interface SwapRequest {
   id?: string;
@@ -371,6 +372,21 @@ export const MyShiftsPage: React.FC = () => {
   const groupedEvents = getFilteredEvents();
   const sortedKeys = Object.keys(groupedEvents).sort((a, b) => new Date(groupedEvents[a][0].date).getTime() - new Date(groupedEvents[b][0].date).getTime());
 
+  const firstAvailableShiftId = useMemo(() => {
+    if (activeTab !== 'available') return null;
+    for (const name of sortedKeys) {
+      const group = groupedEvents[name];
+      for (const ev of group) {
+        for (const sh of ev.shifts) {
+          const taken = sh.assignedFamilies?.includes(currentFamilyId);
+          const full = (sh.peopleNeeded - (sh.assignedFamilies?.length || 0)) <= 0;
+          if (!taken && !full) return sh.id;
+        }
+      }
+    }
+    return null;
+  }, [activeTab, sortedKeys, groupedEvents, currentFamilyId]);
+
   const getCount = (type: string) => {
     let count = 0;
     events.forEach(e => e.shifts.forEach(s => {
@@ -406,11 +422,11 @@ export const MyShiftsPage: React.FC = () => {
               {(() => { try { const u = JSON.parse(localStorage.getItem('dugnad_user') || '{}'); return u.name || u.fullName || currentUserEmail; } catch { return currentUserEmail; } })()}
             </p>
           </div>
-          {/* Slettet dropdown herfra. Bruk DevTools for å bytte. */}
+          <GuideButton guideId="parent-shifts" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }} />
         </div>
       </div>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #dedddd', background: '#fff', justifyContent: 'center' }}>
+      <div data-guide="my-shifts-tabs" style={{ display: 'flex', borderBottom: '1px solid #dedddd', background: '#fff', justifyContent: 'center' }}>
         <div style={{ display: 'flex', width: '100%', maxWidth: '1200px' }}>
             {['available', 'mine', 'swap'].map(t => (
                 <button key={t} onClick={() => setActiveTab(t as any)} style={{
@@ -498,7 +514,10 @@ export const MyShiftsPage: React.FC = () => {
                           const swapperName = swapReq ? otherFamilies.find(f => f.id === swapReq.familyId)?.name || 'Ukjent' : 'Ukjent';
 
                           return (
-                            <div key={shift.id} style={{
+                            <div
+                              key={shift.id}
+                              data-guide={shift.id === firstAvailableShiftId ? 'my-shifts-first-available' : undefined}
+                              style={{
                                 display: 'grid', gridTemplateColumns: '2fr 140px 100px 160px', alignItems: 'center',
                                 padding: '16px', borderRadius: '8px', border: isTakenByMe ? '2px solid #2d6a4f' : isDirectToMe ? '1px solid #2d6a4f' : '0.5px solid #dedddd',
                                 background: isTakenByMe ? '#e8f5ef' : isDirectToMe ? '#e8f5ef' : '#ffffff',

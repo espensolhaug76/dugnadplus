@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { VikarChat } from '../substitute/VikarChat';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
+import { GuideButton } from '../../utils/guides/GuideButton';
 
 interface SwapProposal {
   id: string;
@@ -289,7 +290,7 @@ export const FamilyDashboard: React.FC = () => {
     <div style={{ minHeight: '100vh', background: '#faf8f4', paddingBottom: '80px' }}>
 
       {/* Header */}
-      <div style={{ background: '#1e3a2f', padding: '24px', color: '#fff' }}>
+      <div data-guide="family-dashboard-header" style={{ background: '#1e3a2f', padding: '24px', color: '#fff' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
                 <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: '#fff' }}>Hei, {displayName || 'Familie'}!</h1>
@@ -297,12 +298,15 @@ export const FamilyDashboard: React.FC = () => {
                     {points < 100 ? 'Basis' : points < 300 ? 'Aktiv' : 'Premium'} Nivå
                 </div>
             </div>
-            <button onClick={handleLogout} style={{background:'none', border:'1px solid rgba(255,255,255,0.4)', color:'#fff', borderRadius:'8px', padding:'6px 12px', cursor:'pointer', fontSize:'12px'}}>
-                Logg ut
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <GuideButton guideId="family-dashboard-first-time" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }} />
+                <button onClick={handleLogout} style={{background:'none', border:'1px solid rgba(255,255,255,0.4)', color:'#fff', borderRadius:'8px', padding:'6px 12px', cursor:'pointer', fontSize:'12px'}}>
+                    Logg ut
+                </button>
+            </div>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', color: '#1a2e1f', border: '0.5px solid #dedddd' }}>
+        <div data-guide="family-dashboard-points" style={{ background: '#fff', borderRadius: '8px', padding: '20px', color: '#1a2e1f', border: '0.5px solid #dedddd' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
                 <span style={{ fontSize: '14px', color: '#4a5e50', fontWeight: '600' }}>DINE POENG</span>
                 <span style={{ fontSize: '32px', fontWeight: '700', color: '#2d6a4f' }}>{points}</span>
@@ -324,6 +328,7 @@ export const FamilyDashboard: React.FC = () => {
             et annet lag). ClaimFamilyPage flytter barnet fra
             ghost-familien til denne familien og bevarer team_id. */}
         <button
+          data-guide="family-dashboard-add-child"
           onClick={() => window.location.href = '/claim-family?mode=add'}
           style={{
             width: '100%',
@@ -384,7 +389,7 @@ export const FamilyDashboard: React.FC = () => {
         <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: '#1a2e1f' }}>Dine kommende vakter</h2>
 
         {myShifts.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px' }}>
+            <div data-guide="family-dashboard-shifts" style={{ padding: '32px', textAlign: 'center', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px' }}>
                 <div style={{ fontSize: '40px', marginBottom: '12px' }}>📅</div>
                 <p style={{ color: '#4a5e50' }}>Du har ingen kommende vakter.</p>
                 {pendingEvents.length === 0 && (
@@ -392,7 +397,7 @@ export const FamilyDashboard: React.FC = () => {
                 )}
             </div>
         ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div data-guide="family-dashboard-shifts" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {myShifts.map(shift => {
                     const isSwapRequested = !!shift.swapRequestId;
                     const isSubstituteRequested = !!shift.substituteRequestId;
@@ -499,7 +504,7 @@ export const FamilyDashboard: React.FC = () => {
         </div>
 
       </div>
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '0.5px solid #dedddd', display: 'flex', justifyContent: 'space-around', padding: '8px 0', zIndex: 100 }}>
+      <div data-guide="family-dashboard-nav" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '0.5px solid #dedddd', display: 'flex', justifyContent: 'space-around', padding: '8px 0', zIndex: 100 }}>
         <button style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#2d6a4f', fontSize: '11px', fontWeight: '600', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🏠</div>Hjem</button>
         <button onClick={() => window.location.href = '/my-lottery'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🎟️</div>Lodd</button>
         <button onClick={() => window.location.href = '/my-shifts'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>📅</div>Vakter</button>

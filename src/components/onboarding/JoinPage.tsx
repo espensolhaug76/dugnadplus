@@ -1,7 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '../../services/supabaseClient';
 import { normalizeJoinCode } from '../../utils/joinCode';
+import { runGuide, hasSeenGuide } from '../../utils/guides';
+import { GuideButton } from '../../utils/guides/GuideButton';
 
 const TURNSTILE_SITE_KEY =
   (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)
@@ -50,6 +52,15 @@ export const JoinPage: React.FC = () => {
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Auto-trigger 'parent-join'-guide ved første besøk. 1500ms delay
+  // (ikke 800ms) fordi Turnstile-CAPTCHA tar tid å rendre — uten
+  // ekstra delay kan elementer mangle på trigger-tidspunktet.
+  useEffect(() => {
+    if (hasSeenGuide('parent-join')) return;
+    const t = window.setTimeout(() => runGuide('parent-join'), 1500);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Step 2: add-more inline state
   const [showAddMore, setShowAddMore] = useState(false);
@@ -271,6 +282,9 @@ export const JoinPage: React.FC = () => {
   const renderLogo = () => (
     <div style={logoStyle}>
       Dugnad<span style={{ color: COLORS.accent }}>+</span>
+      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
+        <GuideButton guideId="parent-join" />
+      </div>
     </div>
   );
 
@@ -329,6 +343,7 @@ export const JoinPage: React.FC = () => {
           </p>
 
           <input
+            data-guide="join-step1-code"
             value={codeInput}
             onChange={e => { setCodeInput(e.target.value.toUpperCase()); setLookupError(''); }}
             onKeyDown={e => { if (e.key === 'Enter') handleStep1Continue(); }}
@@ -367,6 +382,7 @@ export const JoinPage: React.FC = () => {
           )}
 
           <button
+            data-guide="join-step1-continue"
             onClick={handleStep1Continue}
             disabled={looking || !turnstileToken}
             style={{ ...primaryBtnStyle, opacity: (looking || !turnstileToken) ? 0.7 : 1 }}
@@ -524,7 +540,7 @@ export const JoinPage: React.FC = () => {
           )}
 
           {/* Parent name input */}
-          <div style={{ marginTop: 24 }}>
+          <div data-guide="join-step2-name" style={{ marginTop: 24 }}>
             <label style={labelStyle}>Ditt navn</label>
             <input
               value={parentName}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { runGuide, hasSeenGuide, markGuideSeen } from '../../utils/guides';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
 interface KioskItem {
@@ -60,6 +61,19 @@ export const KioskAdmin: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // State-aware guide-trigger:
+  // - showSetup === true || items.length > 0: vis V2 'kiosk-admin-setup'
+  //   og marker V1 som seen for å hindre duplikat fra Layout.
+  // - Ellers: la Layout's path-baserte trigger håndtere V1.
+  useEffect(() => {
+    if (loading) return;
+    if (!showSetup && items.length === 0) return;
+    markGuideSeen('kiosk-admin');
+    if (hasSeenGuide('kiosk-admin-setup')) return;
+    const t = window.setTimeout(() => runGuide('kiosk-admin-setup'), 800);
+    return () => window.clearTimeout(t);
+  }, [loading, showSetup, items.length]);
 
   const loadData = async () => {
     setLoading(true);
@@ -348,7 +362,7 @@ export const KioskAdmin: React.FC = () => {
         </div>
 
         {/* Active header bar */}
-        <div style={{ background: '#1e3a2f', borderRadius: '10px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div data-guide="kiosk-setup-header" style={{ background: '#1e3a2f', borderRadius: '10px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '15px', fontWeight: '600', color: '#ffffff' }}>Kiosk</span>
             <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e3a2f', background: '#7ec8a0', padding: '2px 10px', borderRadius: '20px' }}>
@@ -357,6 +371,7 @@ export const KioskAdmin: React.FC = () => {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
+              data-guide="kiosk-setup-print"
               onClick={() => { if (hasPremium()) printQR(); else setShowPremiumGate(true); }}
               style={{ padding: '8px 18px', fontSize: '13px', fontWeight: '600', borderRadius: '6px', border: 'none', background: '#7ec8a0', color: '#1e3a2f', cursor: 'pointer' }}
             >
@@ -394,7 +409,7 @@ export const KioskAdmin: React.FC = () => {
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: '8px' }}>Innstillinger</div>
           <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '20px 24px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'end' }}>
-              <div>
+              <div data-guide="kiosk-setup-vipps">
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Vipps-nummer</label>
                 <input
                   ref={el => { itemFieldRefs.current.vippsNumber = el; }}
@@ -431,6 +446,7 @@ export const KioskAdmin: React.FC = () => {
             <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Meny ({items.length} varer)</div>
             {items.length === 0 && (
               <button
+                data-guide="kiosk-setup-seed"
                 onClick={seedDefaults}
                 style={{ padding: '6px 14px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', border: 'none', background: '#7ec8a0', color: '#1e3a2f', cursor: 'pointer' }}
               >
@@ -439,7 +455,7 @@ export const KioskAdmin: React.FC = () => {
             )}
           </div>
 
-          <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '20px 24px' }}>
+          <div data-guide="kiosk-setup-menu" style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '20px 24px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
               {items.map(item => (
                 <div key={item.id} style={{
@@ -481,7 +497,7 @@ export const KioskAdmin: React.FC = () => {
             </div>
 
             {/* Legg til ny vare */}
-            <div style={{ padding: '18px 20px', background: '#faf8f4', borderRadius: '8px', border: '1px dashed #dedddd' }}>
+            <div data-guide="kiosk-setup-add" style={{ padding: '18px 20px', background: '#faf8f4', borderRadius: '8px', border: '1px dashed #dedddd' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#2d6a4f', marginBottom: '12px' }}>+ Legg til ny vare</div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'end' }}>
                 <div style={{ width: '72px' }}>

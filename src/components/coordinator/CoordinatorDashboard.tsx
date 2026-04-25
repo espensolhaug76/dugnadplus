@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { runGuide, hasSeenGuide, markGuideSeen } from '../../utils/guides';
 import './CoordinatorLayout.css';
 
 // --- HJELPEKOMPONENTER ---
@@ -33,6 +34,23 @@ export const CoordinatorDashboard: React.FC = () => {
     loadUserInfo();
     fetchSupabaseData();
   }, []);
+
+  // State-aware guide-trigger for V2 'coordinator-dashboard-populated':
+  // hvis alle 4 onboarding-steg er fullført, marker V1 som seen så
+  // CoordinatorLayout's path-baserte trigger ikke kjører V1 i tillegg,
+  // og kjør V2.
+  useEffect(() => {
+    if (loading) return;
+    const onboardingDone =
+      families.length > 0 &&
+      allEvents.length > 0 &&
+      stats.assignedShifts > 0;
+    if (!onboardingDone) return;
+    markGuideSeen('coordinator-dashboard');
+    if (hasSeenGuide('coordinator-dashboard-populated')) return;
+    const t = window.setTimeout(() => runGuide('coordinator-dashboard-populated'), 800);
+    return () => window.clearTimeout(t);
+  }, [loading, families.length, allEvents.length, stats.assignedShifts]);
 
   const loadUserInfo = () => {
     try {
@@ -268,7 +286,7 @@ export const CoordinatorDashboard: React.FC = () => {
 
       {/* Varselbanner for uløste saker */}
       {stats.pendingShifts > 0 && !dbEmpty && (
-        <div style={{ background: '#fff8e6', borderBottom: '1px solid #fac775', padding: '10px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+        <div data-guide="coordinator-dashboard-pending" style={{ background: '#fff8e6', borderBottom: '1px solid #fac775', padding: '10px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
           <div style={{ fontSize: '13px', color: '#633806', flex: 1 }}>
             ⚠️ <strong>{stats.pendingShifts} uløste saker</strong> — {stats.pendingShifts} vakter mangler bemanning{attentionItems.length > 0 ? `, ${attentionItems[0]?.task}` : ''}
           </div>
@@ -364,7 +382,7 @@ export const CoordinatorDashboard: React.FC = () => {
             )}
 
             {/* Statistikkort */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+            <div data-guide="coordinator-dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
               <div style={{ padding: '16px', textAlign: 'center', background: 'var(--card-bg)', borderRadius: '10px', border: '0.5px solid #e2e8f0' }}>
                 <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-primary)' }}>{families.length}</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>Familier registrert</div>
@@ -385,7 +403,7 @@ export const CoordinatorDashboard: React.FC = () => {
 
             {/* Kommende arrangementer */}
             {upcomingEvents.length > 0 && (
-              <div>
+              <div data-guide="coordinator-dashboard-upcoming">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>Kommende arrangementer</h3>
                   <button onClick={() => setActiveTab('arrangementer')} style={{ fontSize: '12px', color: '#1a7a4a', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>Se alle →</button>
@@ -614,7 +632,7 @@ export const CoordinatorDashboard: React.FC = () => {
             {/* Søk og visningsvalg */}
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
               <input type="text" className="input" placeholder="Søk etter familie eller navn..." value={familySearch} onChange={(e) => setFamilySearch(e.target.value)} style={{ maxWidth: '300px', flex: 1 }} />
-              <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+              <div data-guide="dashboard-familier-ranking" style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                 <button onClick={() => setFamilyView('cards')} style={{ padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: familyView === 'cards' ? '700' : '400', background: familyView === 'cards' ? 'var(--color-primary)' : 'transparent', color: familyView === 'cards' ? 'white' : 'var(--text-secondary)' }}>Kort</button>
                 <button onClick={() => setFamilyView('ranking')} style={{ padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: familyView === 'ranking' ? '700' : '400', background: familyView === 'ranking' ? 'var(--color-primary)' : 'transparent', color: familyView === 'ranking' ? 'white' : 'var(--text-secondary)' }}>🏆 Poeng</button>
               </div>
