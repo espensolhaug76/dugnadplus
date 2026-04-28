@@ -67,7 +67,14 @@ import { DevTools } from './components/common/DevTools';
 import { ThemeProvider } from './components/theme/ThemeContext';
 import { ThemeSettings } from './components/theme/ThemeSettings';
 
-const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium'];
+// Legal
+import { PersonvernPage } from './components/legal/PersonvernPage';
+import { VilkarPage } from './components/legal/VilkarPage';
+
+// Profil
+import { ProfilePage } from './components/family/ProfilePage';
+
+const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium', '/personvern', '/vilkar'];
 
 function AppContent() {
   const location = useLocation();
@@ -144,9 +151,14 @@ function AppContent() {
           <Route path="/family-dashboard" element={<FamilyLayout><FamilyDashboard /></FamilyLayout>} />
           <Route path="/my-shifts" element={<FamilyLayout><MyShiftsPage /></FamilyLayout>} />
           <Route path="/family-members" element={<FamilyLayout><FamilyMembersPage /></FamilyLayout>} />
+          <Route path="/profile" element={<FamilyLayout><ProfilePage /></FamilyLayout>} />
           <Route path="/points-tier" element={<PointsTierPage />} />
           <Route path="/my-lottery" element={<MyLottery />} />
           <Route path="/lottery-shop" element={<LotteryShop />} />
+
+          {/* Juridisk */}
+          <Route path="/personvern" element={<PersonvernPage />} />
+          <Route path="/vilkar" element={<VilkarPage />} />
 
           {/* Vikar */}
           <Route path="/substitute-dashboard" element={<SubstituteDashboard />} />

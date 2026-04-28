@@ -509,6 +509,7 @@ export const FamilyDashboard: React.FC = () => {
         <button onClick={() => window.location.href = '/my-lottery'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🎟️</div>Lodd</button>
         <button onClick={() => window.location.href = '/my-shifts'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>📅</div>Vakter</button>
         <button onClick={() => window.location.href = '/family-members'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>👨‍👩‍👧</div>Familie</button>
+        <button onClick={() => window.location.href = '/profile'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>👤</div>Profil</button>
       </div>
       {chatOpen && currentFamily && (
         <VikarChat

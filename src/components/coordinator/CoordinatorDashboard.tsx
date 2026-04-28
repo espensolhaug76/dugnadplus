@@ -336,11 +336,18 @@ export const CoordinatorDashboard: React.FC = () => {
         
         {/* --- FAN 1: OVERSIKT --- */}
         {activeTab === 'oversikt' && (() => {
+          // 4. steg "Inviter foreldre" regnes som fullført når
+          // koordinator har trykket "Kopier liste for Spond" på
+          // /import-families minst én gang. Flagget settes der.
+          const invitationsSent = (() => {
+            try { return !!localStorage.getItem('dugnad_invitations_sent'); }
+            catch { return false; }
+          })();
           const onboardingSteps = [
             { title: 'Importer spillere fra Spond', desc: families.length > 0 ? `${families.length} spillere importert` : '', pendingDesc: 'Last opp spillerlisten fra Spond', btn: 'Importer', href: '/import-families', done: families.length > 0 },
             { title: 'Opprett første arrangement', desc: allEvents.length > 0 ? `${allEvents.length} arrangement lagt til` : '', pendingDesc: 'Legg til kamp eller turnering', btn: 'Nytt arrangement', href: '/create-event', done: allEvents.length > 0 },
             { title: 'Tildel vakter', desc: stats.assignedShifts > 0 ? 'Automatisk tildeling kjørt' : '', pendingDesc: 'Fordel vakter rettferdig', btn: 'Mine arrangementer', href: '/events-list', done: stats.assignedShifts > 0 },
-            { title: 'Inviter foreldre', desc: '', pendingDesc: 'Generer invitasjonstekst og del via Spond', btn: 'Administrer familier', href: '/manage-families', done: false },
+            { title: 'Inviter foreldre', desc: invitationsSent ? 'Invitasjonsliste delt' : '', pendingDesc: 'Kopier invitasjonsliste fra import-siden', btn: 'Importer / inviter', href: '/import-families', done: invitationsSent },
           ];
           const completedCount = onboardingSteps.filter(s => s.done).length;
           const showOnboarding = completedCount < 4;

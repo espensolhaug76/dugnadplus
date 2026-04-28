@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '../../services/supabaseClient';
+import { Footer } from '../common/Footer';
 
 // Cloudflare Turnstile — bot-beskyttelse på registrering.
 // Produksjons-site-key settes via VITE_TURNSTILE_SITE_KEY i
@@ -26,6 +27,7 @@ export const RegisterPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [consentGiven, setConsentGiven] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance | null>(null);
 
@@ -57,6 +59,10 @@ export const RegisterPage: React.FC = () => {
       setError('Vennligst bekreft at du ikke er en bot.');
       return;
     }
+    if (!consentGiven) {
+      setError('Du må godta personvernerklæringen og vilkårene for å fortsette.');
+      return;
+    }
 
     setLoading(true);
 
@@ -80,7 +86,21 @@ export const RegisterPage: React.FC = () => {
     }
 
     if (authData.user) {
-      // 2. Lagre brukerinfo i localStorage også (for kompatibilitet med resten av appen enn så lenge)
+      // 2. Lagre samtykke. Hvis e-postbekreftelse er på vil session
+      // ennå ikke være satt, og insert kan feile på RLS — men vi har
+      // selve consent-aksepten i auth.user metadata fallback. Vi
+      // gjør et best-effort kall her.
+      try {
+        await supabase.from('user_consents').insert({
+          user_id: authData.user.id,
+          privacy_version: '1.0',
+          terms_version: '1.0',
+        });
+      } catch (consentErr) {
+        console.warn('Klarte ikke å logge samtykke i user_consents:', consentErr);
+      }
+
+      // 3. Lagre brukerinfo i localStorage også (for kompatibilitet med resten av appen enn så lenge)
       const user = {
         id: authData.user.id,
         email: authData.user.email,
@@ -182,7 +202,39 @@ export const RegisterPage: React.FC = () => {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading}>
+            <label
+              style={{
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'flex-start',
+                background: 'var(--bg-secondary, #f8fafc)',
+                borderRadius: '10px',
+                padding: '12px',
+                fontSize: '13px',
+                cursor: 'pointer',
+                lineHeight: 1.5,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={e => setConsentGiven(e.target.checked)}
+                style={{ marginTop: '3px', flexShrink: 0 }}
+              />
+              <span>
+                Jeg har lest og godtar{' '}
+                <a href="/personvern" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
+                  personvernerklæringen
+                </a>
+                {' '}og{' '}
+                <a href="/vilkar" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
+                  vilkårene
+                </a>
+                .
+              </span>
+            </label>
+
+            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading || !consentGiven}>
               {loading ? 'Oppretter...' : 'Opprett konto'}
             </button>
           </form>
@@ -197,6 +249,7 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   );
 };

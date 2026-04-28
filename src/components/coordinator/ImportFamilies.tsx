@@ -274,7 +274,47 @@ export const ImportFamilies: React.FC = () => {
   const copyResults = () => {
       const text = importResults.map(r => `${r.name} (Barn: ${r.children.join(', ')}): KODE = ${r.code}`).join('\n');
       navigator.clipboard.writeText(text);
+      // Marker onboarding-steget "Inviter foreldre" som fullført. Brukes
+      // av CoordinatorDashboard til å sette done: true på 4. steg.
+      try { localStorage.setItem('dugnad_invitations_sent', new Date().toISOString()); } catch {}
       alert('Liste kopiert til utklippstavlen!');
+  };
+
+  // GDPR-banner: brukeren kan lukke den, lagres i localStorage.
+  const [gdprBannerDismissed, setGdprBannerDismissed] = useState(() => {
+    try { return localStorage.getItem('dugnad_import_gdpr_banner_dismissed') === '1'; }
+    catch { return false; }
+  });
+  const [showInfoText, setShowInfoText] = useState(false);
+  const [infoCopied, setInfoCopied] = useState(false);
+
+  const dismissGdprBanner = () => {
+    try { localStorage.setItem('dugnad_import_gdpr_banner_dismissed', '1'); } catch {}
+    setGdprBannerDismissed(true);
+  };
+
+  const INFO_TEXT_TEMPLATE = `Hei alle foreldre på [LAGNAVN],
+
+Vi tar i bruk Dugnad+ for å organisere dugnaden vår fra og med [DATO]. Det betyr at navn, telefonnummer og e-post flyttes fra Spond til Dugnad+.
+
+Du vil få en personlig kode du bruker til å logge inn. Du kan se og endre dine egne data, og du kan slette kontoen din når som helst.
+
+Les personvernerklæringen her:
+https://dugnadpluss.netlify.app/personvern
+
+Si fra hvis du har spørsmål.
+
+Hilsen
+[KOORDINATOR]`;
+
+  const copyInfoText = async () => {
+    try {
+      await navigator.clipboard.writeText(INFO_TEXT_TEMPLATE);
+      setInfoCopied(true);
+      window.setTimeout(() => setInfoCopied(false), 2000);
+    } catch {
+      alert('Klarte ikke kopiere — marker teksten manuelt.');
+    }
   };
 
   return (
@@ -282,7 +322,98 @@ export const ImportFamilies: React.FC = () => {
       <button onClick={() => window.location.href = '/coordinator-dashboard'} className="btn btn-secondary" style={{ marginBottom: '16px' }}>← Tilbake</button>
 
       <h1 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>Importer familier fra Spond</h1>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>Last opp "For import"-filen (CSV/Excel). Systemet leser lagtilhørighet og genererer koder.</p>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>Last opp "For import"-filen (CSV/Excel). Systemet leser lagtilhørighet og genererer koder.</p>
+
+      {!gdprBannerDismissed && (
+        <div
+          style={{
+            background: '#fff8e6',
+            border: '1px solid #fac775',
+            borderRadius: 10,
+            padding: '14px 16px',
+            marginBottom: 24,
+            color: '#633806',
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Husk å informere foreldrene først</div>
+              <div>
+                Foreldrene må være informert om at dataene flyttes til Dugnad+ før import.
+                Bruk teksten under hvis du trenger hjelp til å informere dem.
+              </div>
+              <button
+                onClick={() => setShowInfoText(s => !s)}
+                style={{
+                  marginTop: 10,
+                  background: 'transparent',
+                  border: '1px solid #fac775',
+                  color: '#633806',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {showInfoText ? 'Skjul forslag' : 'Vis forslag til informasjonstekst'}
+              </button>
+
+              {showInfoText && (
+                <div style={{ marginTop: 12, background: '#fff', borderRadius: 8, border: '1px solid #fde2a8', padding: 12 }}>
+                  <pre
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      wordWrap: 'break-word',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      color: '#3d2305',
+                      margin: 0,
+                    }}
+                  >
+{INFO_TEXT_TEMPLATE}
+                  </pre>
+                  <button
+                    onClick={copyInfoText}
+                    style={{
+                      marginTop: 10,
+                      background: '#854f0b',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '6px 12px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {infoCopied ? '✓ Kopiert' : '📋 Kopier teksten'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={dismissGdprBanner}
+              aria-label="Lukk"
+              title="Lukk banneret"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#633806',
+                cursor: 'pointer',
+                fontSize: 18,
+                lineHeight: 1,
+                padding: '0 4px',
+                opacity: 0.6,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {importResults.length > 0 ? (
           <div data-guide="import-success" className="card" style={{ padding: '32px', background: '#f0fdf4', border: '2px solid #16a8b8' }}>

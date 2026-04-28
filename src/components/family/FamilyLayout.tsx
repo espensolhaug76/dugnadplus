@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { Footer } from '../common/Footer';
 import { runGuide, hasSeenGuide } from '../../utils/guides';
 
 const PATH_TO_GUIDE_ID: Record<string, string> = {
@@ -45,5 +46,10 @@ export const FamilyLayout: React.FC<FamilyLayoutProps> = ({ children }) => {
     return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4a5e50' }}>Omdirigerer...</div>;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <Footer />
+    </>
+  );
 };

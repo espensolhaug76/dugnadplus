@@ -4,6 +4,7 @@ import { supabase } from '../../services/supabaseClient';
 import { normalizeJoinCode } from '../../utils/joinCode';
 import { runGuide, hasSeenGuide } from '../../utils/guides';
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { Footer } from '../common/Footer';
 
 const TURNSTILE_SITE_KEY =
   (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined)
@@ -49,6 +50,7 @@ export const JoinPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [consentGiven, setConsentGiven] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -147,6 +149,10 @@ export const JoinPage: React.FC = () => {
       setSubmitError('Passord må være minst 8 tegn.');
       return;
     }
+    if (!consentGiven) {
+      setSubmitError('Du må godta personvernerklæringen og vilkårene for å fortsette.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -161,6 +167,9 @@ export const JoinPage: React.FC = () => {
           phone: phone.trim(),
           status: 'pending',
           login_method: 'password',
+          consent_privacy_version: '1.0',
+          consent_terms_version: '1.0',
+          consent_at: new Date().toISOString(),
         });
       }
       setDone(true);
@@ -630,6 +639,40 @@ export const JoinPage: React.FC = () => {
           </div>
         </div>
 
+        <label
+          style={{
+            display: 'flex',
+            gap: 10,
+            alignItems: 'flex-start',
+            background: '#fff',
+            border: `0.5px solid ${COLORS.border}`,
+            borderRadius: 10,
+            padding: 12,
+            marginBottom: 14,
+            fontSize: 13,
+            color: COLORS.text,
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={consentGiven}
+            onChange={e => setConsentGiven(e.target.checked)}
+            style={{ marginTop: 2, flexShrink: 0 }}
+          />
+          <span style={{ lineHeight: 1.5 }}>
+            Jeg har lest og godtar{' '}
+            <a href="/personvern" target="_blank" rel="noopener noreferrer" style={{ color: COLORS.mediumGreen, fontWeight: 600 }}>
+              personvernerklæringen
+            </a>
+            {' '}og{' '}
+            <a href="/vilkar" target="_blank" rel="noopener noreferrer" style={{ color: COLORS.mediumGreen, fontWeight: 600 }}>
+              vilkårene
+            </a>
+            .
+          </span>
+        </label>
+
         {submitError && (
           <p style={{ color: COLORS.warning, fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
             {submitError}
@@ -638,8 +681,8 @@ export const JoinPage: React.FC = () => {
 
         <button
           onClick={handleSubmit}
-          disabled={submitting}
-          style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1 }}
+          disabled={submitting || !consentGiven}
+          style={{ ...primaryBtnStyle, opacity: (submitting || !consentGiven) ? 0.6 : 1 }}
         >
           {submitting ? 'Registrerer...' : 'Fullfør registrering'}
         </button>
@@ -648,6 +691,7 @@ export const JoinPage: React.FC = () => {
           Du kan endre dette i innstillingene senere
         </p>
       </div>
+      <Footer />
     </div>
   );
 };

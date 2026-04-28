@@ -9,6 +9,7 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const accountDeleted = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('deleted');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -101,6 +102,11 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <div className="card" style={{ padding: '32px' }}>
+          {accountDeleted && (
+            <div style={{ background: '#e8f5ef', border: '1px solid #b7e0c8', color: '#0f6e56', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 14, textAlign: 'center' }}>
+              Kontoen din er slettet.
+            </div>
+          )}
           {error && <p style={{color: 'red', marginBottom: '16px', textAlign: 'center'}}>{error}</p>}
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

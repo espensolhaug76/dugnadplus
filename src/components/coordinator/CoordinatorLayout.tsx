@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { ThemeToggle } from '../theme/ThemeToggle';
+import { Footer } from '../common/Footer';
 import { runGuide, hasSeenGuide, resetAllGuides } from '../../utils/guides';
 import './CoordinatorLayout.css';
 
@@ -478,6 +479,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
 
       <main className="coordinator-main">
         {children}
+        <Footer />
       </main>
     </div>
   );
