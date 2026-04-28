@@ -181,14 +181,20 @@ export const JoinPage: React.FC = () => {
   };
 
   // --- Shared styles ---
-  const pageStyle: React.CSSProperties = {
+  const pageWrapperStyle: React.CSSProperties = {
     minHeight: '100vh',
     background: COLORS.bg,
+    display: 'flex',
+    flexDirection: 'column',
+    fontFamily: FONT_SANS,
+  };
+
+  const pageStyle: React.CSSProperties = {
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '20px',
-    fontFamily: FONT_SANS,
   };
 
   const containerStyle: React.CSSProperties = {
@@ -300,6 +306,7 @@ export const JoinPage: React.FC = () => {
   // --- Done state ---
   if (done) {
     return (
+      <div style={pageWrapperStyle}>
       <div style={pageStyle}>
         <div style={{ ...containerStyle, textAlign: 'center' }}>
           {renderLogo()}
@@ -336,12 +343,15 @@ export const JoinPage: React.FC = () => {
           </button>
         </div>
       </div>
+      <Footer />
+      </div>
     );
   }
 
   // --- Step 1: Child Code ---
   if (step === 1) {
     return (
+      <div style={pageWrapperStyle}>
       <div style={pageStyle}>
         <div style={containerStyle}>
           {renderLogo()}
@@ -407,6 +417,8 @@ export const JoinPage: React.FC = () => {
           </button>
         </div>
       </div>
+      <Footer />
+      </div>
     );
   }
 
@@ -414,6 +426,7 @@ export const JoinPage: React.FC = () => {
   if (step === 2) {
     const firstChild = matchedChildren[0];
     return (
+      <div style={pageWrapperStyle}>
       <div style={pageStyle}>
         <div style={containerStyle}>
           {renderLogo()}
@@ -587,6 +600,8 @@ export const JoinPage: React.FC = () => {
           </button>
         </div>
       </div>
+      <Footer />
+      </div>
     );
   }
 
@@ -596,6 +611,7 @@ export const JoinPage: React.FC = () => {
   // at koordinator-approval-flowen kan opprette en fullverdig
   // auth.users-rad med e-post + passord.
   return (
+    <div style={pageWrapperStyle}>
     <div style={pageStyle}>
       <div style={containerStyle}>
         {renderLogo()}
@@ -691,7 +707,8 @@ export const JoinPage: React.FC = () => {
           Du kan endre dette i innstillingene senere
         </p>
       </div>
-      <Footer />
+    </div>
+    <Footer />
     </div>
   );
 };

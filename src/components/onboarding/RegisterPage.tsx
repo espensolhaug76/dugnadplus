@@ -119,7 +119,8 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--background)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ maxWidth: '480px', width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: 'var(--primary-color)', marginBottom: '8px' }}>
@@ -248,6 +249,7 @@ export const RegisterPage: React.FC = () => {
             </p>
           </div>
         </div>
+      </div>
       </div>
       <Footer />
     </div>
