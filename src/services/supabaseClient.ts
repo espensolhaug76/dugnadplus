@@ -13,3 +13,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Create the Supabase client instance
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Anonym klient — ingen persistert session, ingen Authorization-header
+// med JWT. Sender kun anon-key. Brukes når vi MÅ treffe RLS-policies
+// som er definert for `anon`-rollen (TO anon), uten at en innlogget
+// bruker «forurenser» kallet med authenticated-rollen.
+//
+// Konkret bruk: CoordinatorInvitePage som leser opp invitasjon via
+// token. Policyen `coordinator_invites_select_by_token` er TO anon,
+// så en innlogget bruker som ikke er inviter eller team_member får
+// 0 rader tilbake hvis vi bruker `supabase`-klienten.
+export const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseAnon } from '../../services/supabaseClient';
 import { Footer } from '../common/Footer';
 
 interface InviteRow {
@@ -67,11 +67,24 @@ export const CoordinatorInvitePage: React.FC = () => {
       setAuthedEmail(user.email || '');
     }
 
-    const { data, error } = await supabase
+    // VIKTIG: Bruk supabaseAnon-klienten. RLS-policyen
+    // `coordinator_invites_select_by_token` er definert FOR SELECT
+    // TO anon — hvis vi kaller med den vanlige `supabase`-klienten
+    // mens brukeren er innlogget, går request-en som `authenticated`
+    // og ingen av authenticated-policy-radene matcher for en bruker
+    // som ikke er inviter eller team_member. Resultat: data null,
+    // error null, og UI viste «Invitasjonen finnes ikke».
+    // eslint-disable-next-line no-console
+    console.log('[invite-lookup] token:', t);
+
+    const { data, error } = await supabaseAnon
       .from('coordinator_invites')
       .select('id, team_id, club_id, invite_type, invited_email, invited_name, invited_by, expires_at, status')
       .eq('token', t)
       .maybeSingle();
+
+    // eslint-disable-next-line no-console
+    console.log('[invite-lookup] result:', { data, error });
 
     if (error) {
       setErrorMsg('Kunne ikke slå opp invitasjon: ' + error.message);
@@ -97,7 +110,11 @@ export const CoordinatorInvitePage: React.FC = () => {
     setInvite(data as InviteRow);
 
     if (data.club_id) {
-      const { data: clubRow } = await supabase
+      // Klubbnavnet er kosmetisk — clubs-tabellen er åpen for
+      // authenticated, så vi kan bruke standardklienten her.
+      // Faller tilbake til anon hvis brukeren ikke er innlogget.
+      const client = user ? supabase : supabaseAnon;
+      const { data: clubRow } = await client
         .from('clubs')
         .select('name')
         .eq('id', data.club_id)
