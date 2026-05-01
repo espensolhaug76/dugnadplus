@@ -49,8 +49,10 @@ export const LoginPage: React.FC = () => {
 
       const roles = (memberships || []).map(m => m.role);
       let role: string;
-      if (roles.includes('coordinator') || roles.includes('club_admin')) {
+      if (roles.includes('coordinator')) {
         role = 'coordinator';
+      } else if (roles.includes('club_admin')) {
+        role = 'club_admin';
       } else if (roles.includes('parent')) {
         role = 'parent';
       } else {
@@ -80,9 +82,20 @@ export const LoginPage: React.FC = () => {
         localStorage.setItem('dugnad_teams', JSON.stringify(userMeta.teams));
       }
 
-      // 5. Redirect basert på DB-verifisert rolle
+      // 5. Redirect basert på DB-verifisert rolle.
+      //    Hvis URL har ?next=... (f.eks. fra invitasjons-flyten),
+      //    går vi dit i stedet for default-dashboard.
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get('next');
+      if (next && next.startsWith('/')) {
+        window.location.href = next;
+        return;
+      }
+
       if (role === 'coordinator') {
         window.location.href = '/coordinator-dashboard';
+      } else if (role === 'club_admin') {
+        window.location.href = '/club-admin-dashboard';
       } else if (role === 'parent') {
         window.location.href = '/family-dashboard';
       } else {

@@ -100,10 +100,37 @@ export const TeamSetupPage: React.FC = () => {
 
     // VIKTIG: Sett dette som aktivt lag slik at dashboardet viser det
     localStorage.setItem('dugnad_current_team', JSON.stringify(team));
+    localStorage.setItem('dugnad_active_team_filter', team.id);
+
+    // Bootstrap første koordinator: oppretter team_members-rad med
+    // role='coordinator' for innloggede bruker. RLS hindrer normalt
+    // INSERT for brukere uten eksisterende rolle, så vi går via
+    // SECURITY DEFINER-RPC. Hvis laget allerede har en koordinator
+    // (sjelden — krever kollisjon på slug), kastes feilen til UI.
+    try {
+        const { error: bootstrapError } = await supabase.rpc('bootstrap_first_coordinator', {
+            p_team_id: team.id,
+            p_club_id: club.id,
+        });
+        if (bootstrapError) {
+            if (/Team already has at least one coordinator/i.test(bootstrapError.message || '')) {
+                alert('Dette laget finnes allerede med en annen koordinator. Velg et annet navn.');
+                window.location.href = '/create-club';
+                return;
+            }
+            console.error('bootstrap_first_coordinator feilet:', bootstrapError);
+            alert('Kunne ikke fullføre lagoppsettet: ' + bootstrapError.message);
+            return;
+        }
+    } catch (e: any) {
+        console.error('bootstrap_first_coordinator kall feilet:', e);
+        alert('Kunne ikke fullføre lagoppsettet: ' + (e?.message || 'ukjent feil'));
+        return;
+    }
 
     // Synk klubb+lag til Supabase user_metadata (overlever innlogging fra ny enhet)
     try {
-        await supabase.auth.updateUser({ data: { club, teams, role: 'coordinator' } });
+        await supabase.auth.updateUser({ data: { club, teams } });
     } catch {}
 
     window.location.href = '/coordinator-dashboard';

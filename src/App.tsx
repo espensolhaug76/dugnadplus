@@ -28,6 +28,13 @@ import { ManageFamilies } from './components/coordinator/ManageFamilies';
 import { ImportFamilies } from './components/coordinator/ImportFamilies';
 import { LotteryAdmin } from './components/coordinator/LotteryAdmin';
 import { CampaignOverviewPage } from './components/coordinator/CampaignOverviewPage';
+import { TeamCoordinatorsPage } from './components/coordinator/TeamCoordinatorsPage';
+
+// Klubbansvarlig
+import { ClubAdminDashboard } from './components/club-admin/ClubAdminDashboard';
+
+// Invitasjon
+import { CoordinatorInvitePage } from './components/onboarding/CoordinatorInvitePage';
 
 // Familie
 import { FamilyLayout } from './components/family/FamilyLayout';
@@ -74,7 +81,7 @@ import { VilkarPage } from './components/legal/VilkarPage';
 // Profil
 import { ProfilePage } from './components/family/ProfilePage';
 
-const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium', '/personvern', '/vilkar'];
+const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium', '/personvern', '/vilkar', '/coordinator-invite', '/club-admin-dashboard'];
 
 function AppContent() {
   const location = useLocation();
@@ -104,6 +111,7 @@ function AppContent() {
           <Route path="/setup-family" element={<FamilyProfileSetupPage />} />
           <Route path="/claim-family" element={<ClaimFamilyPage />} />
           <Route path="/join" element={<JoinPage />} />
+          <Route path="/coordinator-invite" element={<CoordinatorInvitePage />} />
 
           {/* Koordinator (Inne i Layout) */}
           <Route path="/coordinator-dashboard" element={<CoordinatorLayout><CoordinatorDashboard /></CoordinatorLayout>} />
@@ -116,6 +124,10 @@ function AppContent() {
           <Route path="/lottery-admin" element={<CoordinatorLayout><LotteryAdmin /></CoordinatorLayout>} />
           <Route path="/manage-families" element={<CoordinatorLayout><ManageFamilies /></CoordinatorLayout>} />
           <Route path="/import-families" element={<CoordinatorLayout><ImportFamilies /></CoordinatorLayout>} />
+          <Route path="/team-coordinators" element={<CoordinatorLayout><TeamCoordinatorsPage /></CoordinatorLayout>} />
+
+          {/* Klubbansvarlig */}
+          <Route path="/club-admin-dashboard" element={<ClubAdminDashboard />} />
 
           {/* Salgskampanje */}
           <Route path="/sales-campaign" element={<CoordinatorLayout><SalesCampaignPage /></CoordinatorLayout>} />

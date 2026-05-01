@@ -61,6 +61,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
   const [loading, setLoading] = useState(true);
   const [clubName, setClubName] = useState('Min Klubb');
   const [authGate, setAuthGate] = useState<'checking' | 'allowed' | 'denied'>('checking');
+  const [isClubAdmin, setIsClubAdmin] = useState(false);
 
   useEffect(() => {
     // Auth-gate: verifiser at brukeren er coordinator/club_admin via
@@ -79,8 +80,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
         .from('team_members')
         .select('role')
         .eq('auth_user_id', user.id)
-        .in('role', ['coordinator', 'club_admin'])
-        .limit(1);
+        .in('role', ['coordinator', 'club_admin']);
 
       if (!memberships || memberships.length === 0) {
         setAuthGate('denied');
@@ -88,6 +88,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
         return;
       }
 
+      setIsClubAdmin(memberships.some(m => m.role === 'club_admin'));
       setAuthGate('allowed');
     })();
   }, []);
@@ -276,6 +277,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     { path: '/coordinator-dashboard', label: 'Oversikt', icon: '📊' },
     { path: '/events-list', label: 'Arrangementer', icon: '📅' },
     { path: '/manage-families', label: 'Spillere & familier', icon: '👥' },
+    { path: '/team-coordinators', label: 'Koordinatorer', icon: '🤝' },
     { path: '/attendance', label: 'Historikk', icon: '📋' },
   ];
 
@@ -317,6 +319,25 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
             <ThemeToggle />
           </div>
         </div>
+
+        {/* KLUBBNIVÅ — synlig kun for club_admin */}
+        {isClubAdmin && (
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => navigateTo('/club-admin-dashboard')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                padding: '10px 12px', borderRadius: '8px', border: '1px solid #99f6e4',
+                background: '#f0fdfa', color: '#0f6e56',
+                fontWeight: '600', fontSize: '13px', cursor: 'pointer',
+              }}
+            >
+              <span style={{ fontSize: '16px' }}>🏛️</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>Klubbnivå</span>
+              <span style={{ fontSize: '11px', opacity: 0.7 }}>→</span>
+            </button>
+          </div>
+        )}
 
         {/* SEKSJON 1: LAG-VELGER */}
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>

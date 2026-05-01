@@ -112,6 +112,14 @@ export const RegisterPage: React.FC = () => {
       localStorage.setItem('dugnad_user', JSON.stringify(user));
 
       alert('✅ Konto opprettet! Du blir nå sendt videre.');
+      // Hvis URL har ?next=..., redirect dit etter registrering
+      // (f.eks. når brukeren kom fra coordinator-invite-lenke).
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get('next');
+      if (next && next.startsWith('/')) {
+        window.location.href = next;
+        return;
+      }
       window.location.href = '/role-selection';
     }
     

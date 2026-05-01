@@ -65,7 +65,7 @@ export const RoleSelectionPage: React.FC = () => {
       id: 'coordinator' as Role,
       icon: '👔',
       title: 'Jeg starter ny klubb/lag',
-      description: 'Jeg er dugnadsansvarlig eller koordinator',
+      description: 'Jeg er dugnadsansvarlig eller skal sette opp ny klubb',
       badge: 'Koordinator',
     },
     {

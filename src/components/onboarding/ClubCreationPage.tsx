@@ -81,6 +81,22 @@ export const ClubCreationPage: React.FC = () => {
       }
     }
 
+    // Bootstrap club_admin-rad: gjør den innloggede brukeren til
+    // første klubbansvarlig. RPC sjekker selv om klubben allerede
+    // har en club_admin og kaster i så fall feil — den ignorerer
+    // vi (brukeren blir da kun coordinator på sitt eget lag i
+    // neste steg, ikke club_admin).
+    if (clubId) {
+      try {
+        const { error: bootstrapError } = await supabase.rpc('bootstrap_first_club_admin', { p_club_id: clubId });
+        if (bootstrapError && !/already has a club_admin/i.test(bootstrapError.message || '')) {
+          console.warn('bootstrap_first_club_admin failed:', bootstrapError);
+        }
+      } catch (e) {
+        console.warn('bootstrap_first_club_admin call failed:', e);
+      }
+    }
+
     localStorage.setItem('dugnad_club', JSON.stringify({
       id: clubId || Date.now().toString(), name, county, municipality, sport, logoUrl, createdAt: new Date().toISOString()
     }));
