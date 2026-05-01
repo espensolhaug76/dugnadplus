@@ -66,35 +66,127 @@ export const TeamCoordinatorsPage: React.FC = () => {
       return;
     }
 
-    // Hent aktivt lag fra localStorage
-    const teams = (() => { try { return JSON.parse(localStorage.getItem('dugnad_teams') || '[]'); } catch { return []; } })();
-    const activeId = localStorage.getItem('dugnad_active_team_filter');
-    const team = activeId ? teams.find((t: any) => t.id === activeId) : teams[0];
-    if (!team) {
-      setErrorMsg('Ingen aktivt lag valgt.');
-      setLoading(false);
-      return;
-    }
-    setActiveTeam({ id: team.id, name: team.name || team.id, clubId: team.clubId || null });
-
-    // Hent koordinator-rader for laget
-    const { data: members, error: memErr } = await supabase
+    // Primærkilde: hent brukerens egne team_members-rader fra DB,
+    // joined med clubs. Stol IKKE på localStorage som kan være tom
+    // eller korrupt. Filtrerer ut syntetiske 'club:'-rader som er
+    // klubb-skopet club_admin-binding (de har ikke et "lag" å vise).
+    const { data: memberships, error: memErr } = await supabase
       .from('team_members')
-      .select('id, auth_user_id, role, created_at')
-      .eq('team_id', team.id)
+      .select('team_id, club_id, role, clubs(id, name)')
+      .eq('auth_user_id', user.id)
       .in('role', ['coordinator', 'club_admin']);
 
+    let resolvedTeam: { id: string; name: string; clubId: string | null } | null = null;
+    let usedFallback = false;
+
     if (memErr) {
-      setErrorMsg('Kunne ikke laste koordinatorer: ' + memErr.message);
+      // Fall tilbake til localStorage hvis DB-kallet feilet (offline,
+      // etc.). Vi advarer brukeren men fortsetter best effort.
+      // eslint-disable-next-line no-console
+      console.warn('[team-coordinators] team_members lookup failed, falling back to localStorage:', memErr);
+      usedFallback = true;
+    } else {
+      // Filtrer bort club:-rader (klubb-skopede club_admin-bindinger)
+      // og bygg lag-listen fra DB-resultatet.
+      const teamRows = (memberships || []).filter(m => !m.team_id?.startsWith('club:'));
+
+      if (teamRows.length === 0) {
+        setErrorMsg('Du har ingen koordinator-rolle for noe lag i databasen.');
+        setLoading(false);
+        return;
+      }
+
+      // Velg aktivt lag basert på dugnad_active_team_filter, ellers
+      // første rad fra DB.
+      const activeId = localStorage.getItem('dugnad_active_team_filter');
+      const matched = activeId ? teamRows.find(t => t.team_id === activeId) : null;
+      const chosen = matched || teamRows[0];
+
+      // Klubbnavn fra join hvis tilgjengelig — ellers fall tilbake
+      // til lagnavn i localStorage. Selve lagnavnet finnes ikke i
+      // DB (ingen teams-tabell), så vi bruker localStorage som
+      // kosmetisk supplement.
+      const localTeams = (() => { try { return JSON.parse(localStorage.getItem('dugnad_teams') || '[]'); } catch { return []; } })();
+      const localMatch = localTeams.find((t: any) => t.id === chosen.team_id);
+
+      const clubFromJoin = (chosen as any).clubs as { id: string; name: string } | null | undefined;
+
+      resolvedTeam = {
+        id: chosen.team_id,
+        name: localMatch?.name || chosen.team_id,
+        clubId: chosen.club_id || clubFromJoin?.id || null,
+      };
+
+      // Selv-helbredende cache: oppdater dugnad_club og dugnad_teams
+      // i localStorage med ferske verdier fra DB.
+      try {
+        if (clubFromJoin?.id && clubFromJoin.name) {
+          const storedClub = (() => { try { return JSON.parse(localStorage.getItem('dugnad_club') || '{}'); } catch { return {}; } })();
+          if (storedClub.id !== clubFromJoin.id || storedClub.name !== clubFromJoin.name) {
+            localStorage.setItem('dugnad_club', JSON.stringify({
+              ...storedClub,
+              id: clubFromJoin.id,
+              name: clubFromJoin.name,
+            }));
+          }
+        }
+
+        // Bygg dugnad_teams fra DB-resultatet, men behold localStorage-
+        // metadata (sport/gender/birthYear/name) der det finnes.
+        const refreshedTeams = teamRows.map(tr => {
+          const lm = localTeams.find((t: any) => t.id === tr.team_id);
+          const clubInfo = (tr as any).clubs as { id: string; name: string } | null | undefined;
+          return {
+            id: tr.team_id,
+            clubId: tr.club_id || clubInfo?.id || null,
+            name: lm?.name || tr.team_id,
+            sport: lm?.sport || 'football',
+            gender: lm?.gender || 'mixed',
+            birthYear: lm?.birthYear || 0,
+            createdAt: lm?.createdAt || new Date().toISOString(),
+            isActive: lm?.isActive,
+          };
+        });
+        localStorage.setItem('dugnad_teams', JSON.stringify(refreshedTeams));
+      } catch {
+        // Best effort; ikke blokker render hvis localStorage er disabled.
+      }
+    }
+
+    // Fallback til localStorage hvis DB-kallet feilet
+    if (!resolvedTeam && usedFallback) {
+      const teams = (() => { try { return JSON.parse(localStorage.getItem('dugnad_teams') || '[]'); } catch { return []; } })();
+      const activeId = localStorage.getItem('dugnad_active_team_filter');
+      const team = activeId ? teams.find((t: any) => t.id === activeId) : teams[0];
+      if (!team) {
+        setErrorMsg('Kunne ikke laste laginfo fra databasen, og lokal cache er tom. Prøv å laste siden på nytt.');
+        setLoading(false);
+        return;
+      }
+      resolvedTeam = { id: team.id, name: team.name || team.id, clubId: team.clubId || null };
+    }
+
+    if (!resolvedTeam) {
+      setErrorMsg('Ingen aktivt lag funnet.');
       setLoading(false);
       return;
     }
 
-    // Slå opp navn fra family_members hvis det finnes (parent-rad
-    // kan ha registrert navn) ellers bruk e-post som fallback. Vi
-    // kan ikke joine direkte mot auth.users via RLS. Pragmatisk
-    // løsning: vis e-post for innlogget bruker, og auth_user_id
-    // (forkortet) for andre — Espen kan utvide hvis behov.
+    setActiveTeam(resolvedTeam);
+
+    // Hent koordinator-rader for det valgte laget
+    const { data: members, error: teamMemErr } = await supabase
+      .from('team_members')
+      .select('id, auth_user_id, role, created_at')
+      .eq('team_id', resolvedTeam.id)
+      .in('role', ['coordinator', 'club_admin']);
+
+    if (teamMemErr) {
+      setErrorMsg('Kunne ikke laste koordinatorer: ' + teamMemErr.message);
+      setLoading(false);
+      return;
+    }
+
     const memberRows: CoordinatorRow[] = (members || []).map(m => ({
       team_member_id: m.id,
       auth_user_id: m.auth_user_id,
@@ -111,7 +203,7 @@ export const TeamCoordinatorsPage: React.FC = () => {
     const { data: invites } = await supabase
       .from('coordinator_invites')
       .select('id, token, invited_email, invited_name, created_at, expires_at')
-      .eq('team_id', team.id)
+      .eq('team_id', resolvedTeam.id)
       .eq('status', 'pending')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false });
