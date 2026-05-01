@@ -125,44 +125,105 @@ export const TeamCoordinatorsPage: React.FC = () => {
     return `${origin}/coordinator-invite?token=${token}`;
   };
 
+  // UUID v1-v5 (eller hex med bindestreker, 36 tegn). Brukes til å
+  // fange tilfeller der dugnad_club.id eller dugnad_teams[].clubId
+  // er en gammel timestamp-streng (Date.now().toString()) i stedet
+  // for klubb-UUID — den banen ga tidligere "invalid input syntax
+  // for type uuid" og kan komme tilbake hvis localStorage er stale.
+  const isUuid = (s: string | null | undefined): boolean =>
+    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
   const handleSendInvite = async (isTransfer: boolean) => {
     setErrorMsg('');
-    if (!activeTeam) return;
-    if (!inviteEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim())) {
-      setErrorMsg('Ugyldig e-postadresse.');
+
+    // 1) Validér aktivt lag
+    if (!activeTeam || !activeTeam.id) {
+      setErrorMsg('Mangler lag-tilknytning. Logg ut og inn igjen.');
       return;
     }
 
+    // 2) Validér club_id — hvis den er satt må den være UUID. Hvis
+    // den mangler aksepterer vi det og sender club_id: null (RLS for
+    // 'coordinator'-invitasjoner avhenger kun av team_id, ikke
+    // club_id).
+    let clubIdForInsert: string | null = null;
+    if (activeTeam.clubId) {
+      if (!isUuid(activeTeam.clubId)) {
+        setErrorMsg(
+          'Klubb-ID i nettleseren er ikke gyldig (sannsynligvis stale localStorage). ' +
+          'Logg ut og inn igjen for å hente fersk klubb-info.'
+        );
+        return;
+      }
+      clubIdForInsert = activeTeam.clubId;
+    }
+
+    // 3) E-post: ikke obligatorisk, men hvis fylt inn må den være
+    // gyldig format. invited_email er NOT NULL i DB, så vi sender
+    // en placeholder hvis brukeren lar feltet stå tomt.
+    const trimmedEmail = inviteEmail.trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setErrorMsg('E-postadressen ser ikke gyldig ut. La feltet stå tomt eller fyll inn en gyldig adresse.');
+      return;
+    }
+    const emailForInsert = trimmedEmail || '(ikke oppgitt)';
+
     setSubmitting(true);
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSubmitting(false); return; }
+    if (!user) {
+      setSubmitting(false);
+      setErrorMsg('Du er ikke innlogget lenger. Last siden på nytt.');
+      return;
+    }
+
+    const payload = {
+      team_id: activeTeam.id,
+      club_id: clubIdForInsert,
+      invite_type: 'coordinator' as const,
+      invited_by: user.id,
+      invited_email: emailForInsert,
+      invited_name: inviteName.trim() || null,
+    };
+
+    // Diagnostisk logging — gir neste debug-runde nøyaktig hva som
+    // sendes. Lar oss skille mellom RLS-blokade, type-feil og
+    // network-feil uten å måtte gjette.
+    // eslint-disable-next-line no-console
+    console.log('[coordinator_invites.insert] payload', payload);
 
     const { data: invite, error } = await supabase
       .from('coordinator_invites')
-      .insert({
-        team_id: activeTeam.id,
-        club_id: activeTeam.clubId,
-        invite_type: 'coordinator',
-        invited_by: user.id,
-        invited_email: inviteEmail.trim(),
-        invited_name: inviteName.trim() || null,
-      })
+      .insert(payload)
       .select('token')
       .single();
 
-    if (error || !invite) {
-      setErrorMsg('Kunne ikke opprette invitasjon: ' + (error?.message || 'ukjent feil'));
+    // eslint-disable-next-line no-console
+    console.log('[coordinator_invites.insert] response', { invite, error });
+
+    if (error) {
+      // Vis full server-feil — kode + melding + detaljer + hint —
+      // slik at vi kan diagnostisere RLS-blokader, FK-brudd, osv.
+      const parts: string[] = [];
+      if ((error as any).code) parts.push(`Kode ${(error as any).code}`);
+      if (error.message) parts.push(error.message);
+      if ((error as any).details) parts.push((error as any).details);
+      if ((error as any).hint) parts.push(`Tips: ${(error as any).hint}`);
+      setErrorMsg('Kunne ikke opprette invitasjon. ' + parts.join(' · '));
       setSubmitting(false);
       return;
     }
 
-    if (isTransfer) {
-      // Notér i role_changes via separat insert? Vi har ingen RLS-
-      // policy som tillater direkte INSERT i role_changes. Vi
-      // markerer i stedet i invitasjons-feltet — men siden vi ikke
-      // har et notes-felt der, holder vi audit-trailen ved status-
-      // endring i RPC ved aksept. For "transfer"-flagget inntil
-      // videre stoler vi på at brukeren følger to-steg-flyten.
+    if (!invite || !invite.token) {
+      // RLS kan returnere data: null uten error hvis insertet ble
+      // blokkert i visse Supabase-versjoner. Vis en konkret melding
+      // som peker brukeren mot mest sannsynlige årsak.
+      setErrorMsg(
+        'Invitasjonen ble ikke opprettet (tomt svar fra serveren). ' +
+        'Mest sannsynlig blokkert av sikkerhetsregler — sjekk at du har koordinator-rolle for dette laget.'
+      );
+      setSubmitting(false);
+      return;
     }
 
     setCreatedInviteUrl(buildInviteUrl(invite.token));
@@ -460,14 +521,15 @@ export const TeamCoordinatorsPage: React.FC = () => {
                     background: COLORS.successBg,
                     border: `1px solid ${COLORS.successBorder}`,
                     borderRadius: 10,
-                    padding: 14,
-                    fontSize: 13,
+                    padding: 16,
+                    fontSize: 14,
                     color: COLORS.primary,
                     marginBottom: 14,
-                    lineHeight: 1.5,
+                    lineHeight: 1.6,
+                    fontWeight: 500,
                   }}
                 >
-                  Invitasjon opprettet. Send denne lenken til {inviteName || inviteEmail} via e-post, SMS eller Spond.
+                  Invitasjonen er klar! Send denne lenken til {inviteName || inviteEmail || 'mottakeren'} via Spond, SMS eller e-post.
                   Lenken er gyldig i 7 dager.
                 </div>
 
@@ -476,11 +538,11 @@ export const TeamCoordinatorsPage: React.FC = () => {
                     background: '#f8f8f5',
                     border: `0.5px solid ${COLORS.border}`,
                     borderRadius: 8,
-                    padding: 10,
+                    padding: 12,
                     fontSize: 12,
                     fontFamily: 'monospace',
                     wordBreak: 'break-all',
-                    marginBottom: 12,
+                    marginBottom: 14,
                   }}
                 >
                   {createdInviteUrl}
@@ -489,18 +551,18 @@ export const TeamCoordinatorsPage: React.FC = () => {
                 <button
                   onClick={handleCopyLink}
                   style={{
+                    width: '100%',
                     background: COLORS.primary,
                     color: '#fff',
                     border: 'none',
                     borderRadius: 10,
-                    padding: '10px 16px',
-                    fontSize: 14,
-                    fontWeight: 600,
+                    padding: '14px 18px',
+                    fontSize: 15,
+                    fontWeight: 700,
                     cursor: 'pointer',
-                    marginRight: 8,
                   }}
                 >
-                  {linkCopied ? '✓ Kopiert' : 'Kopier lenke'}
+                  {linkCopied ? '✓ Kopiert' : '📋 Kopier lenke'}
                 </button>
 
                 {createdForTransfer && (
@@ -528,33 +590,17 @@ export const TeamCoordinatorsPage: React.FC = () => {
               </>
             ) : (
               <>
+                <p style={{ fontSize: 13, color: COLORS.secondary, lineHeight: 1.6, margin: '0 0 14px' }}>
+                  Vi sender ingen e-post automatisk — du får en lenke du selv kan dele via Spond, SMS eller e-post.
+                  Feltene under brukes kun til å huske hvem du har invitert.
+                </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 500, color: COLORS.secondary, display: 'block', marginBottom: 4 }}>
-                      E-post *
+                      Navn
                     </label>
                     <input
                       autoFocus
-                      type="email"
-                      value={inviteEmail}
-                      onChange={e => setInviteEmail(e.target.value)}
-                      placeholder="ola@example.com"
-                      style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        border: `0.5px solid ${COLORS.border}`,
-                        borderRadius: 10,
-                        padding: 12,
-                        fontSize: 14,
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: COLORS.secondary, display: 'block', marginBottom: 4 }}>
-                      Navn (valgfritt)
-                    </label>
-                    <input
                       type="text"
                       value={inviteName}
                       onChange={e => setInviteName(e.target.value)}
@@ -569,6 +615,29 @@ export const TeamCoordinatorsPage: React.FC = () => {
                         outline: 'none',
                       }}
                     />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: COLORS.secondary, display: 'block', marginBottom: 4 }}>
+                      E-post (valgfritt)
+                    </label>
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={e => setInviteEmail(e.target.value)}
+                      placeholder="ola@example.com"
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        border: `0.5px solid ${COLORS.border}`,
+                        borderRadius: 10,
+                        padding: 12,
+                        fontSize: 14,
+                        outline: 'none',
+                      }}
+                    />
+                    <p style={{ fontSize: 11, color: COLORS.muted, margin: '4px 0 0' }}>
+                      Brukes kun for sporing. Vi sender ingen e-post.
+                    </p>
                   </div>
                 </div>
 
@@ -608,7 +677,7 @@ export const TeamCoordinatorsPage: React.FC = () => {
                       opacity: submitting ? 0.7 : 1,
                     }}
                   >
-                    {submitting ? 'Sender...' : (showTransferModal ? 'Send overdragelsesinvitasjon' : 'Send invitasjon')}
+                    {submitting ? 'Lager lenke...' : (showTransferModal ? 'Lag overdragelseslenke' : 'Lag invitasjonslenke')}
                   </button>
                 </div>
               </>
