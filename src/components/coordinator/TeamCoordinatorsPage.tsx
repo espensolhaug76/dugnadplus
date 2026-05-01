@@ -174,35 +174,59 @@ export const TeamCoordinatorsPage: React.FC = () => {
 
     setActiveTeam(resolvedTeam);
 
-    // Hent koordinator-rader for det valgte laget
-    const { data: members, error: teamMemErr } = await supabase
-      .from('team_members')
-      .select('id, auth_user_id, role, created_at')
-      .eq('team_id', resolvedTeam.id)
-      .in('role', ['coordinator', 'club_admin']);
+    // Hent koordinator-rader for det valgte laget via SECURITY
+    // DEFINER-RPC. Direkte SELECT mot team_members er begrenset av
+    // RLS-policyen `team_members_select_own` til auth.uid()-rader,
+    // så uten RPC ville vi kun sett oss selv. RPC-en list_team_
+    // coordinators sjekker at caller er coordinator for laget før
+    // den returnerer alle medlemmer joined med auth.users (e-post +
+    // navn).
+    const { data: rpcMembers, error: rpcErr } = await supabase
+      .rpc('list_team_coordinators', { p_team_id: resolvedTeam.id });
 
-    if (teamMemErr) {
-      setErrorMsg('Kunne ikke laste koordinatorer: ' + teamMemErr.message);
-      setLoading(false);
-      return;
+    if (rpcErr) {
+      // Fallback: hvis RPC mangler i DB (migrasjon ikke kjørt) eller
+      // feiler av annen grunn, vis i det minste innlogget bruker
+      // basert på direkte SELECT (RLS gir oss kun egen rad).
+      // eslint-disable-next-line no-console
+      console.warn('[team-coordinators] list_team_coordinators RPC failed, falling back to self-only view:', rpcErr);
+      const { data: fallbackMembers } = await supabase
+        .from('team_members')
+        .select('id, auth_user_id, role, created_at')
+        .eq('team_id', resolvedTeam.id)
+        .in('role', ['coordinator', 'club_admin']);
+
+      const memberRows: CoordinatorRow[] = (fallbackMembers || []).map(m => ({
+        team_member_id: m.id,
+        auth_user_id: m.auth_user_id,
+        email: m.auth_user_id === user.id ? (user.email || '') : '',
+        display_name: m.auth_user_id === user.id
+          ? (user.user_metadata?.full_name || user.email || 'Du')
+          : `Bruker ${m.auth_user_id.slice(0, 8)}`,
+        joined_at: m.created_at,
+        is_self: m.auth_user_id === user.id,
+      }));
+      setCoordinators(memberRows);
+      setErrorMsg('Listen viser kun deg selv — kjør den nye SQL-migrasjonen (list_team_coordinators) for å se alle koordinatorer.');
+    } else {
+      const memberRows: CoordinatorRow[] = ((rpcMembers as any[]) || []).map(m => ({
+        team_member_id: m.team_member_id,
+        auth_user_id: m.auth_user_id,
+        email: m.email || '',
+        display_name: m.auth_user_id === user.id
+          ? (m.display_name || user.email || 'Du')
+          : (m.display_name || m.email || `Bruker ${String(m.auth_user_id).slice(0, 8)}`),
+        joined_at: m.joined_at,
+        is_self: m.auth_user_id === user.id,
+      }));
+      setCoordinators(memberRows);
     }
 
-    const memberRows: CoordinatorRow[] = (members || []).map(m => ({
-      team_member_id: m.id,
-      auth_user_id: m.auth_user_id,
-      email: m.auth_user_id === user.id ? (user.email || '') : '',
-      display_name: m.auth_user_id === user.id
-        ? (user.user_metadata?.full_name || user.email || 'Du')
-        : `Bruker ${m.auth_user_id.slice(0, 8)}`,
-      joined_at: m.created_at,
-      is_self: m.auth_user_id === user.id,
-    }));
-    setCoordinators(memberRows);
-
-    // Hent pending invitasjoner for dette laget
+    // Hent pending invitasjoner for dette laget. Filtreres på status
+    // og expires_at slik at aksepterte/utløpte ikke vises.
     const { data: invites } = await supabase
       .from('coordinator_invites')
-      .select('id, token, invited_email, invited_name, created_at, expires_at')
+      .select('id, token, invited_email, invited_name, created_at, expires_at, status')
       .eq('team_id', resolvedTeam.id)
       .eq('status', 'pending')
       .gt('expires_at', new Date().toISOString())
