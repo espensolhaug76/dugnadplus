@@ -155,32 +155,28 @@ export const ImportFamilies: React.FC = () => {
       const results: ImportedFamilyResult[] = [];
       let skipped = 0;
 
+      // Hent aktivt lag-ID én gang og scope all duplikat-sjekking
+      // til DETTE laget. Tidligere sjekket vi på family_members.name +
+      // role + birth_year uten team_id, hvilket flagget familier som
+      // duplikater hvis de fantes i en HVILKEN SOM HELST annen klubb/
+      // lag — f.eks. håndball-familier i Vålerenga ble flagget som
+      // duplikater fordi de var registrert i Kongsvinger.
+      const activeTeamId = localStorage.getItem('dugnad_active_team_filter') || '';
+
+      // Hent alle eksisterende familienavn for dette laget i én batch.
+      const { data: existingFamilies } = await supabase
+          .from('families')
+          .select('name')
+          .eq('team_id', activeTeamId);
+      const existingNames = new Set(
+        ((existingFamilies as { name: string }[] | null) || [])
+          .map(f => (f.name || '').toLowerCase().trim())
+      );
+
       for (const tempId in familiesMap) {
         const famData = familiesMap[tempId];
-        
-        let exists = false;
-        for (const child of famData.children) {
-            const birthYear = child.birthDate ? new Date(child.birthDate).getFullYear() : 2016;
-            const { data: existingChild } = await supabase
-                .from('family_members')
-                .select('id')
-                .eq('name', child.name)
-                .eq('role', 'child')
-                .eq('birth_year', birthYear)
-                .maybeSingle();
-            
-            if (existingChild) {
-                exists = true;
-                break;
-            }
-        }
 
-        if (exists) {
-            skipped++;
-            continue;
-        }
-
-        // Bruk barnets etternavn som familienavn
+        // Bruk barnets etternavn som familienavn (samme logikk som før)
         let familyName = 'Ukjent';
         if (famData.children.length > 0) {
            familyName = famData.children[0].name.split(' ').pop() || 'Ukjent';
@@ -188,10 +184,19 @@ export const ImportFamilies: React.FC = () => {
            familyName = famData.parents[0].split(' ').pop() || 'Ukjent';
         }
 
-        const importCode = generateImportCode();
+        // Duplikat = (familyName, activeTeamId) finnes fra før i
+        // families-tabellen. En familie som finnes i et annet lag
+        // er IKKE duplikat — vi oppretter en ny rad for dette laget.
+        if (existingNames.has(familyName.toLowerCase().trim())) {
+            skipped++;
+            continue;
+        }
+        // Markér navnet som tatt slik at duplikater inne i samme
+        // import-batch også fanges (f.eks. to "Hansen"-familier
+        // begge under import).
+        existingNames.add(familyName.toLowerCase().trim());
 
-        // Hent aktivt lag-ID
-        const activeTeamId = localStorage.getItem('dugnad_active_team_filter') || '';
+        const importCode = generateImportCode();
 
         const { data: insertedFamily, error: famError } = await supabase
           .from('families')
