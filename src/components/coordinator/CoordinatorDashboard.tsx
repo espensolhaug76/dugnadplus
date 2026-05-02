@@ -35,20 +35,35 @@ export const CoordinatorDashboard: React.FC = () => {
     fetchSupabaseData();
   }, []);
 
-  // State-aware guide-trigger for V2 'coordinator-dashboard-populated':
-  // hvis alle 4 onboarding-steg er fullført, marker V1 som seen så
-  // CoordinatorLayout's path-baserte trigger ikke kjører V1 i tillegg,
-  // og kjør V2.
+  // State-aware guide-trigger.
+  //
+  // Pilot 2. mai: V1-guiden ('coordinator-dashboard') trigget aldri
+  // for nye brukere fordi CoordinatorLayout fyrte runGuide 800 ms
+  // etter auth-gate, mens dashbordet fortsatt sto i `loading`-state
+  // og bare rendret "Laster data fra skyen…". data-guide-selektorene
+  // fantes ikke i DOM-en ennå, så driver.js advarte stille og avsluttet.
+  //
+  // Vi tar derfor ansvaret for trigging her, etter at loading=false:
+  // - alle 4 steg fullført (onboardingDone) → kjør V2
+  //   ('coordinator-dashboard-populated'), og marker V1 som seen så
+  //   den ikke trigger neste gang dashbordet er tomt igjen.
+  // - ellers → kjør V1 (intro-guiden) for nye brukere.
   useEffect(() => {
     if (loading) return;
     const onboardingDone =
       families.length > 0 &&
       allEvents.length > 0 &&
       stats.assignedShifts > 0;
-    if (!onboardingDone) return;
-    markGuideSeen('coordinator-dashboard');
-    if (hasSeenGuide('coordinator-dashboard-populated')) return;
-    const t = window.setTimeout(() => runGuide('coordinator-dashboard-populated'), 800);
+
+    if (onboardingDone) {
+      markGuideSeen('coordinator-dashboard');
+      if (hasSeenGuide('coordinator-dashboard-populated')) return;
+      const t = window.setTimeout(() => runGuide('coordinator-dashboard-populated'), 800);
+      return () => window.clearTimeout(t);
+    }
+
+    if (hasSeenGuide('coordinator-dashboard')) return;
+    const t = window.setTimeout(() => runGuide('coordinator-dashboard'), 800);
     return () => window.clearTimeout(t);
   }, [loading, families.length, allEvents.length, stats.assignedShifts]);
 

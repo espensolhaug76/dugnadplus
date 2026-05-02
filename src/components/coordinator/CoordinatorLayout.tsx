@@ -6,8 +6,11 @@ import { runGuide, hasSeenGuide, resetAllGuides } from '../../utils/guides';
 import { displayTeamName } from '../../utils/teamSlug';
 import './CoordinatorLayout.css';
 
+// Path-basert auto-trigger for guider. /coordinator-dashboard er
+// IKKE i denne listen — dashbordet fyrer V1/V2 selv basert på
+// loading-state, så data-guide-elementene faktisk er i DOM-en når
+// driver.js prøver å peke på dem (race ble observert i pilot 2. mai).
 const PATH_TO_GUIDE_ID: Record<string, string> = {
-  '/coordinator-dashboard': 'coordinator-dashboard',
   '/manage-families': 'manage-families',
   '/lottery-admin': 'lottery-admin',
   '/kiosk-admin': 'kiosk-admin',
