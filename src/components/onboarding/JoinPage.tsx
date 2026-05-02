@@ -51,6 +51,7 @@ export const JoinPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
+  const [consentError, setConsentError] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -130,6 +131,7 @@ export const JoinPage: React.FC = () => {
 
   const handleSubmit = async () => {
     setSubmitError('');
+    setConsentError(false);
     if (matchedChildren.length === 0) return;
 
     // Obligatoriske felt — alle fire kreves for nye foreldre
@@ -150,6 +152,10 @@ export const JoinPage: React.FC = () => {
       return;
     }
     if (!consentGiven) {
+      // Pilot 2. mai: knappen var disabled før samtykke ble huket av,
+      // så foresatte fikk ingen tilbakemelding på hvorfor "Fullfør
+      // registrering" ikke reagerte. Vi viser nå melding + rød ramme.
+      setConsentError(true);
       setSubmitError('Du må godta personvernerklæringen og vilkårene for å fortsette.');
       return;
     }
@@ -661,10 +667,10 @@ export const JoinPage: React.FC = () => {
             gap: 10,
             alignItems: 'flex-start',
             background: '#fff',
-            border: `0.5px solid ${COLORS.border}`,
+            border: `1px solid ${consentError ? '#ef4444' : COLORS.border}`,
             borderRadius: 10,
             padding: 12,
-            marginBottom: 14,
+            marginBottom: consentError ? 4 : 14,
             fontSize: 13,
             color: COLORS.text,
             cursor: 'pointer',
@@ -673,7 +679,10 @@ export const JoinPage: React.FC = () => {
           <input
             type="checkbox"
             checked={consentGiven}
-            onChange={e => setConsentGiven(e.target.checked)}
+            onChange={e => {
+              setConsentGiven(e.target.checked);
+              if (e.target.checked) setConsentError(false);
+            }}
             style={{ marginTop: 2, flexShrink: 0 }}
           />
           <span style={{ lineHeight: 1.5 }}>
@@ -688,6 +697,11 @@ export const JoinPage: React.FC = () => {
             .
           </span>
         </label>
+        {consentError && (
+          <p style={{ color: '#ef4444', fontSize: 12, marginBottom: 14 }}>
+            Du må godta personvernerklæringen og vilkårene for å fortsette.
+          </p>
+        )}
 
         {submitError && (
           <p style={{ color: COLORS.warning, fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
@@ -697,8 +711,8 @@ export const JoinPage: React.FC = () => {
 
         <button
           onClick={handleSubmit}
-          disabled={submitting || !consentGiven}
-          style={{ ...primaryBtnStyle, opacity: (submitting || !consentGiven) ? 0.6 : 1 }}
+          disabled={submitting}
+          style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }}
         >
           {submitting ? 'Registrerer...' : 'Fullfør registrering'}
         </button>

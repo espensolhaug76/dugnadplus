@@ -28,6 +28,7 @@ export const RegisterPage: React.FC = () => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
+  const [consentError, setConsentError] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance | null>(null);
 
@@ -41,6 +42,7 @@ export const RegisterPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setConsentError(false);
 
     // Validering før vi kaller Supabase
     if (!formData.fullName.trim()) {
@@ -60,6 +62,10 @@ export const RegisterPage: React.FC = () => {
       return;
     }
     if (!consentGiven) {
+      // Pilot 2. mai: knappen var disabled før samtykke ble huket av,
+      // så brukere skjønte ikke hvorfor "Opprett konto" ikke reagerte.
+      // Nå viser vi feilmelding + rød ramme rundt samtykke-feltet.
+      setConsentError(true);
       setError('Du må godta personvernerklæringen og vilkårene for å fortsette.');
       return;
     }
@@ -211,39 +217,50 @@ export const RegisterPage: React.FC = () => {
               />
             </div>
 
-            <label
-              style={{
-                display: 'flex',
-                gap: '10px',
-                alignItems: 'flex-start',
-                background: 'var(--bg-secondary, #f8fafc)',
-                borderRadius: '10px',
-                padding: '12px',
-                fontSize: '13px',
-                cursor: 'pointer',
-                lineHeight: 1.5,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={consentGiven}
-                onChange={e => setConsentGiven(e.target.checked)}
-                style={{ marginTop: '3px', flexShrink: 0 }}
-              />
-              <span>
-                Jeg har lest og godtar{' '}
-                <a href="/personvern" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
-                  personvernerklæringen
-                </a>
-                {' '}og{' '}
-                <a href="/vilkar" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
-                  vilkårene
-                </a>
-                .
-              </span>
-            </label>
+            <div>
+              <label
+                style={{
+                  display: 'flex',
+                  gap: '10px',
+                  alignItems: 'flex-start',
+                  background: 'var(--bg-secondary, #f8fafc)',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  lineHeight: 1.5,
+                  border: consentError ? '1px solid #ef4444' : '1px solid transparent',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={e => {
+                    setConsentGiven(e.target.checked);
+                    if (e.target.checked) setConsentError(false);
+                  }}
+                  style={{ marginTop: '3px', flexShrink: 0 }}
+                />
+                <span>
+                  Jeg har lest og godtar{' '}
+                  <a href="/personvern" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
+                    personvernerklæringen
+                  </a>
+                  {' '}og{' '}
+                  <a href="/vilkar" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
+                    vilkårene
+                  </a>
+                  .
+                </span>
+              </label>
+              {consentError && (
+                <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>
+                  Du må godta personvernerklæringen og vilkårene for å fortsette.
+                </p>
+              )}
+            </div>
 
-            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading || !consentGiven}>
+            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: '8px' }} disabled={loading}>
               {loading ? 'Oppretter...' : 'Opprett konto'}
             </button>
           </form>
