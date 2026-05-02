@@ -62,19 +62,62 @@ export const TeamSetupPage: React.FC = () => {
       return;
     }
 
-    // Kanonisk team_id via slug — deterministisk, URL-safe, matcher
-    // families/events/lotteries/etc.team_id på tvers av hele DB-en.
-    // For Dans (customName) brukes fritekst-navnet som slug-komponent,
-    // ellers bygges slug-en av {sport}-{gender}-{birthYear}.
-    const teamSlug = generateTeamSlug(
+    // Foreslått team_id via slug. RPC-en kan returnere en suffix-et
+    // variant hvis sluggen kolliderer med en annen klubb (multi-tenant
+    // collision — pilot 2026-05-02). Vi bruker derfor RETUR-verdien
+    // fra RPC-en som autoritativ team_id, ikke den foreslåtte.
+    const proposedTeamSlug = generateTeamSlug(
       formData.sport,
       formData.sport === 'dance' ? undefined : formData.gender,
       formData.sport === 'dance' ? undefined : yearToSave,
       formData.sport === 'dance' ? formData.customTeamName : undefined
     );
 
+    // Bootstrap første koordinator. RPC-en (SECURITY DEFINER):
+    //  - oppretter team_members-rad med role='coordinator' for
+    //    auth.uid() — RLS hindrer normalt INSERT uten eksisterende
+    //    rolle, så vi må gå via DB-funksjon for første binding.
+    //  - oppdager kollisjon mot annen klubb og legger til 8-tegns
+    //    hex-suffix derivert fra club_id slik at sluggen blir unik
+    //    globalt selv om visningsnavnet er likt på tvers av klubber.
+    //  - returnerer JSONB { team_id, collision_resolved, ... }.
+    let resolvedTeamId: string;
+    let collisionResolved = false;
+    try {
+        const { data: rpcData, error: bootstrapError } = await supabase.rpc('bootstrap_first_coordinator', {
+            p_team_id: proposedTeamSlug,
+            p_club_id: club.id,
+        });
+        if (bootstrapError) {
+            if (/Team already exists in this club/i.test(bootstrapError.message || '')) {
+                alert('Du har allerede et lag med dette navnet i klubben din. Velg et annet kjønn, årgang eller navn.');
+                return;
+            }
+            if (/Slug collision could not be resolved/i.test(bootstrapError.message || '')) {
+                alert('Klarte ikke å generere unik lag-ID. Prøv et annet navn.');
+                return;
+            }
+            console.error('bootstrap_first_coordinator feilet:', bootstrapError);
+            alert('Kunne ikke fullføre lagoppsettet: ' + bootstrapError.message);
+            return;
+        }
+        resolvedTeamId = (rpcData as any)?.team_id || proposedTeamSlug;
+        collisionResolved = !!(rpcData as any)?.collision_resolved;
+    } catch (e: any) {
+        console.error('bootstrap_first_coordinator kall feilet:', e);
+        alert('Kunne ikke fullføre lagoppsettet: ' + (e?.message || 'ukjent feil'));
+        return;
+    }
+
+    if (collisionResolved) {
+        console.log(
+          '[setup-team] team_id ble suffix-et pga kollisjon mot annen klubb:',
+          { proposed: proposedTeamSlug, resolved: resolvedTeamId }
+        );
+    }
+
     const team = {
-      id: teamSlug,
+      id: resolvedTeamId,
       clubId: club.id,
       sport: formData.sport,
       gender: formData.sport === 'dance' ? 'mixed' : formData.gender,
@@ -83,50 +126,16 @@ export const TeamSetupPage: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    // Sjekk om laget allerede finnes. Siden slug-en er deterministisk
-    // er en id-match ekvivalent med "samme sport + samme gender/år (eller
-    // samme custom-navn)" — mer presist enn den gamle name+sport-sjekken.
+    // Skriv til localStorage ETTER at RPC-en har bekreftet sluggen,
+    // slik at cachen aldri inneholder en team_id som ikke finnes i DB.
     const existingTeams = localStorage.getItem('dugnad_teams');
     const teams = existingTeams ? JSON.parse(existingTeams) : [];
-
-    const duplicate = teams.find((t: any) => t.id === team.id);
-    if (duplicate) {
-      alert(`Laget "${team.name}" (${formData.sport}) finnes allerede.`);
-      return;
-    }
-
     teams.push(team);
     localStorage.setItem('dugnad_teams', JSON.stringify(teams));
 
-    // VIKTIG: Sett dette som aktivt lag slik at dashboardet viser det
+    // Sett som aktivt lag slik at dashboardet viser det
     localStorage.setItem('dugnad_current_team', JSON.stringify(team));
     localStorage.setItem('dugnad_active_team_filter', team.id);
-
-    // Bootstrap første koordinator: oppretter team_members-rad med
-    // role='coordinator' for innloggede bruker. RLS hindrer normalt
-    // INSERT for brukere uten eksisterende rolle, så vi går via
-    // SECURITY DEFINER-RPC. Hvis laget allerede har en koordinator
-    // (sjelden — krever kollisjon på slug), kastes feilen til UI.
-    try {
-        const { error: bootstrapError } = await supabase.rpc('bootstrap_first_coordinator', {
-            p_team_id: team.id,
-            p_club_id: club.id,
-        });
-        if (bootstrapError) {
-            if (/Team already has at least one coordinator/i.test(bootstrapError.message || '')) {
-                alert('Dette laget finnes allerede med en annen koordinator. Velg et annet navn.');
-                window.location.href = '/create-club';
-                return;
-            }
-            console.error('bootstrap_first_coordinator feilet:', bootstrapError);
-            alert('Kunne ikke fullføre lagoppsettet: ' + bootstrapError.message);
-            return;
-        }
-    } catch (e: any) {
-        console.error('bootstrap_first_coordinator kall feilet:', e);
-        alert('Kunne ikke fullføre lagoppsettet: ' + (e?.message || 'ukjent feil'));
-        return;
-    }
 
     // Synk klubb+lag til Supabase user_metadata (overlever innlogging fra ny enhet)
     try {
