@@ -3,6 +3,7 @@ import { supabase } from '../../services/supabaseClient';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { Footer } from '../common/Footer';
 import { runGuide, hasSeenGuide, resetAllGuides } from '../../utils/guides';
+import { displayTeamName } from '../../utils/teamSlug';
 import './CoordinatorLayout.css';
 
 const PATH_TO_GUIDE_ID: Record<string, string> = {
@@ -131,13 +132,17 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
   };
 
   // Lag leses fra team_members-tabellen (DB) som er kanonisk etter
-  // RLS Steg A. localStorage brukes kun som CACHE for team-metadata
-  // (navn, sport, birthYear) — team-eierskap valideres alltid mot
-  // team_members først.
+  // RLS Steg A. Visningsmetadata (sport/gender/birthYear/name) er
+  // utledet fra team_id-slug-en via displayTeamName, IKKE fra
+  // localStorage. Det betyr at gamle test-sesjoner med stale cache
+  // ikke kan lekke inn (f.eks. tidligere "handball-gutter-2016"
+  // forblir ikke i sidebaren etter at brukeren har opprettet et
+  // fotball-lag i en ny klubb).
   //
-  // Hvis en legacy timestamp-basert team_id ligger igjen i
-  // localStorage (fra før team_id-normaliseringsrunden), blir den
-  // filtrert bort her siden ingen team_members-rad matcher den.
+  // localStorage["dugnad_teams"] OPPDATERES med ferske verdier
+  // etter hvert vellykket DB-kall — andre komponenter (f.eks.
+  // CoordinatorDashboard.header) som leser cachen, får da også
+  // riktige data.
   const loadTeams = async () => {
     try {
       // 1. Hent brukerens kanoniske team-medlemskap fra DB
@@ -150,7 +155,7 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
 
       const { data: memberships, error } = await supabase
         .from('team_members')
-        .select('team_id, role')
+        .select('team_id, club_id, role')
         .eq('auth_user_id', authUser.id)
         .in('role', ['coordinator', 'club_admin']);
 
@@ -161,33 +166,55 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
         return;
       }
 
-      const myTeamIds = new Set((memberships || []).map(m => m.team_id));
+      // Filtrer bort syntetiske 'club:'-rader (klubb-skopede
+      // club_admin-bindinger uten reelt lag).
+      const teamRows = (memberships || []).filter(
+        m => m.team_id && !m.team_id.startsWith('club:')
+      );
+      const myTeamIds = new Set(teamRows.map(m => m.team_id));
 
-      // 2. Berik med team-metadata fra localStorage-cachen. Bruker
-      //    bare team-rader som faktisk matcher team_members — ingen
-      //    fantom-team.
-      const storedTeams = localStorage.getItem('dugnad_teams');
-      const cachedTeams: StoredTeam[] = storedTeams ? JSON.parse(storedTeams) : [];
-      const validTeams = cachedTeams.filter(t => myTeamIds.has(t.id));
+      // 2. Bygg StoredTeam-objekter med metadata utledet fra slug.
+      //    displayTeamName parser "{sport}-{gender}-{year}" eller
+      //    "{sport}-{custom}". Vi parser også sport/gender/year
+      //    direkte for å bevare strukturert data i cachen.
+      const validTeams: StoredTeam[] = teamRows.map(m => {
+        const slug = m.team_id;
+        const parts = slug.split('-').filter(Boolean);
+        const sportPart = parts[0] || 'other';
+        // Normaliser legacy 'fotball'/'dans' til kanoniske keys
+        const sportKey =
+          sportPart === 'fotball' ? 'football'
+          : sportPart === 'dans' ? 'dance'
+          : sportPart;
 
-      // 3. Hvis cachen er ufullstendig (mangler team-metadata for
-      //    noen av medlemskapene våre), lag minimalistiske team-
-      //    oppføringer fra bare team_id-slug-en. De kan parses
-      //    for sport/kjønn/år via displayTeamName senere.
-      const cachedIds = new Set(validTeams.map(t => t.id));
-      myTeamIds.forEach(tid => {
-        if (!cachedIds.has(tid)) {
-          validTeams.push({
-            id: tid,
-            clubId: '',
-            sport: tid.split('-')[0] || 'other',
-            gender: '',
-            birthYear: 0,
-            name: tid,
-            createdAt: new Date().toISOString(),
-          });
-        }
+        const isStandardLayout =
+          parts.length >= 3 && ['gutter', 'jenter', 'mixed'].includes(parts[1]);
+
+        const gender = isStandardLayout ? parts[1] : '';
+        const birthYear = isStandardLayout ? Number(parts[2]) || 0 : 0;
+        const displayName = isStandardLayout
+          ? `${gender === 'gutter' ? 'Gutter' : gender === 'jenter' ? 'Jenter' : 'Mixed'} ${birthYear}`
+          : displayTeamName(slug).replace(/^[^\s]+\s/, ''); // strip sport-prefix for custom-name
+
+        return {
+          id: slug,
+          clubId: m.club_id || '',
+          sport: sportKey,
+          gender,
+          birthYear,
+          name: displayName,
+          createdAt: new Date().toISOString(),
+        };
       });
+
+      // 3. Skriv tilbake til localStorage (selv-helbredende cache).
+      //    Andre komponenter som leser dugnad_teams får da samme
+      //    DB-validerte data uten egen DB-spørring.
+      try {
+        localStorage.setItem('dugnad_teams', JSON.stringify(validTeams));
+      } catch {
+        // Best effort — ignorer hvis localStorage er disabled.
+      }
 
       const groups: Record<string, StoredTeam[]> = {};
       validTeams.forEach(team => {
@@ -248,7 +275,25 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
   const handleLogout = async () => {
       if(confirm('Vil du logge ut?')) {
           await supabase.auth.signOut();
-          localStorage.removeItem('dugnad_user');
+          // Tøm alle team-/klubb-skopede cacher slik at neste pålogging
+          // ikke arver stale data fra forrige bruker (cross-session
+          // lekkasje observert i pilot-test 2. mai).
+          try {
+            localStorage.removeItem('dugnad_user');
+            localStorage.removeItem('dugnad_teams');
+            localStorage.removeItem('dugnad_club');
+            localStorage.removeItem('dugnad_active_team_filter');
+            localStorage.removeItem('dugnad_current_team');
+            // Bruker-spesifikke "siste lag"-nøkler — fjern alle.
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith('dugnad_last_team_')) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+          } catch {}
           window.location.href = '/';
       }
   };
