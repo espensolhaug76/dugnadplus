@@ -113,23 +113,6 @@ export const ClaimFamilyPage: React.FC = () => {
       if (!user) throw new Error('Du må være logget inn.');
 
       if (mode === 'initial') {
-        // Sjekk for duplikat først: er brukeren allerede parent i
-        // samme familie?
-        const { data: existing } = await supabase
-          .from('family_members')
-          .select('id')
-          .eq('family_id', matchedChild.family_id)
-          .eq('auth_user_id', user.id)
-          .eq('role', 'parent')
-          .maybeSingle();
-
-        if (existing) {
-          setMessage({ type: 'success', text: 'Du er allerede koblet til denne familien. Sender deg til dashbordet...' });
-          setPhase('success');
-          setTimeout(() => { window.location.href = '/family-dashboard'; }, 1500);
-          return;
-        }
-
         // Hent navn/telefon fra auth-metadata som fallback til
         // e-postens lokale del, så parent-raden får et meningsfylt
         // navn uansett hvordan bruker registrerte seg.
@@ -139,21 +122,50 @@ export const ClaimFamilyPage: React.FC = () => {
           || (user.email ? user.email.split('@')[0] : null)
           || 'Forelder';
 
-        const { error: insertError } = await supabase
-          .from('family_members')
-          .insert({
-            family_id: matchedChild.family_id,
-            name: proposedName,
-            role: 'parent',
-            email: user.email,
-            phone: metaPhone || null,
-            auth_user_id: user.id,
-            team_id: matchedChild.ghost_family_team_id,
-          });
+        // SECURITY DEFINER-RPC. Direkte INSERT mot family_members
+        // feiler på family_members_insert_parent-policyen
+        // (auth_user_family_id() returnerer NULL før første parent-
+        // rad finnes — chicken-and-egg). RPC-en oppretter
+        // team_members + family_members i én transaksjon og
+        // returnerer family_id/team_id slik at vi kan oppdatere
+        // localStorage. Idempotent: already_claimed=true om brukeren
+        // allerede er parent i samme familie.
+        const { data: rpcData, error: rpcError } = await supabase.rpc('claim_family_via_code', {
+          p_code: code,
+          p_parent_name: proposedName,
+          p_parent_email: user.email || '',
+          p_parent_phone: metaPhone || '',
+        });
 
-        if (insertError) throw insertError;
+        if (rpcError) {
+          // Server-side normalisering av kjente feilmeldinger.
+          const msg = (rpcError.message || '').toLowerCase();
+          if (msg.includes('ugyldig kode')) {
+            throw new Error('Koden er ikke gyldig. Sjekk at du har skrevet riktig.');
+          }
+          if (msg.includes('innlogget') || msg.includes('authenticated')) {
+            throw new Error('Du må være innlogget for å koble til familie.');
+          }
+          throw rpcError;
+        }
 
-        setMessage({ type: 'success', text: `Suksess! Du er nå koblet til ${matchedChild.ghost_family_name}.` });
+        if (!rpcData || !rpcData.success) {
+          throw new Error('Kunne ikke koble til familie. Prøv igjen.');
+        }
+
+        // Lagre fersk team_id i localStorage så ParentDashboard og
+        // andre komponenter som leser fra cache får riktige data
+        // umiddelbart etter redirect.
+        try {
+          if (rpcData.team_id) {
+            localStorage.setItem('dugnad_active_team_filter', rpcData.team_id);
+          }
+        } catch {}
+
+        const successText = rpcData.already_claimed
+          ? `Du er allerede koblet til ${matchedChild.ghost_family_name}. Sender deg til dashbordet...`
+          : `Suksess! Du er nå koblet til ${matchedChild.ghost_family_name}.`;
+        setMessage({ type: 'success', text: successText });
         setPhase('success');
         setTimeout(() => { window.location.href = '/family-dashboard'; }, 1800);
       } else {
