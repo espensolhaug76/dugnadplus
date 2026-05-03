@@ -57,15 +57,39 @@ export const ClaimFamilyPage: React.FC = () => {
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateChoice>(null);
 
   useEffect(() => {
+    // Defensiv reset av all transient state ved mount. Pilot 3. mai:
+    // en bruker (A) gjennomførte claim med preview-skjerm, logget ut,
+    // og en ny bruker (B) registrerte seg + claimet i samme fane —
+    // preview-skjermen ble da hoppet over for B. Hard-reload via
+    // window.location.href skulle remounte komponenten med fersk
+    // state, men vi resetter eksplisitt her som backup hvis routing-
+    // path en dag endres til SPA-navigation.
+    setCode('');
+    setPhase('code');
+    setMatchedChild(null);
+    setMessage(null);
+    setCandidates([]);
+    setCandidatesMessage(null);
+    setSelectedCandidate(null);
+
     const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'add') setMode('add');
+    setMode(params.get('mode') === 'add' ? 'add' : 'initial');
 
     // Autoritativ auth-sjekk FØR vi rendrer skjemaet. Uten denne
     // kan uinnloggede brukere taste inn vilkårlige koder og
     // utføre queryer direkte mot Supabase (anonym nøkkel), og
     // /claim-family blir en åpen kode-probing-endpoint. Samme
     // mønster som ParentSwapPage-fiksen i commit 50b568a.
+    //
+    // I tillegg: tving refreshSession() før getUser(). Pilot 3. mai
+    // viste at supabase-SDK-en kan returnere stale user_metadata
+    // (forrige brukers full_name) i samme browser-session etter
+    // logout+ny-login — selv om auth.uid() er korrekt. RPC-en ble
+    // da kalt med feil p_parent_name → find_matching_parent_candidates
+    // søkte etter feil navn → 0 kandidater → preview ble hoppet over.
     (async () => {
+      try { await supabase.auth.refreshSession(); } catch {}
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setAuthState('unauth');
@@ -77,6 +101,29 @@ export const ClaimFamilyPage: React.FC = () => {
       setAuthState('ok');
     })();
   }, []);
+
+  // Hent forelders navn med beste tilgjengelige kilde, men bare hvis
+  // den autentiserte brukerens ID matcher kilden — dvs. unngå at
+  // dugnad_user fra forrige session lekker. Returnerer fallback
+  // basert på email om ingen kilde stemmer.
+  const resolveParentName = (user: any): string => {
+    // Primær: user.user_metadata.full_name (fersk fra refreshSession).
+    const metaFullName = (user.user_metadata as any)?.full_name;
+    if (metaFullName && typeof metaFullName === 'string' && metaFullName.trim()) {
+      return metaFullName.trim();
+    }
+    // Sekundær: dugnad_user, men bare hvis user.id matcher
+    // (cachen kan tilhøre forrige bruker).
+    try {
+      const cached = JSON.parse(localStorage.getItem('dugnad_user') || '{}');
+      if (cached.id === user.id) {
+        const name = cached.fullName || cached.name;
+        if (name && typeof name === 'string' && name.trim()) return name.trim();
+      }
+    } catch {}
+    // Fallback: e-postens lokale del.
+    return (user.email ? user.email.split('@')[0] : null) || 'Forelder';
+  };
 
   const handleLookup = async () => {
     const normalized = normalizeJoinCode(code);
@@ -181,14 +228,10 @@ export const ClaimFamilyPage: React.FC = () => {
       if (!user) throw new Error('Du må være logget inn.');
 
       if (mode === 'initial') {
-        // Hent navn/telefon fra auth-metadata som fallback til
-        // e-postens lokale del, så parent-raden får et meningsfylt
-        // navn uansett hvordan bruker registrerte seg.
-        const metaFullName = (user.user_metadata as any)?.full_name;
-        const metaPhone = (user.user_metadata as any)?.phone;
-        const proposedName = metaFullName
-          || (user.email ? user.email.split('@')[0] : null)
-          || 'Forelder';
+        // Hent navn fra resolveParentName (sikrer at vi ikke bruker
+        // forrige brukers cached metadata) og telefon fra auth-meta.
+        const proposedName = resolveParentName(user);
+        const metaPhone = (user.user_metadata as any)?.phone || '';
 
         // SECURITY DEFINER-RPC. Direkte INSERT mot family_members
         // feiler på family_members_insert_parent-policyen
@@ -198,7 +241,7 @@ export const ClaimFamilyPage: React.FC = () => {
         const { data: rpcData, error: rpcError } = await callClaimRpc(
           proposedName,
           user.email || '',
-          metaPhone || ''
+          metaPhone
         );
 
         if (rpcError) throw normalizeRpcError(rpcError);
@@ -289,16 +332,13 @@ export const ClaimFamilyPage: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Du må være logget inn.');
 
-      const metaFullName = (user.user_metadata as any)?.full_name;
-      const metaPhone = (user.user_metadata as any)?.phone;
-      const proposedName = metaFullName
-        || (user.email ? user.email.split('@')[0] : null)
-        || 'Forelder';
+      const proposedName = resolveParentName(user);
+      const metaPhone = (user.user_metadata as any)?.phone || '';
 
       const { data: rpcData, error: rpcError } = await callClaimRpc(
         proposedName,
         user.email || '',
-        metaPhone || '',
+        metaPhone,
         choice
       );
 
