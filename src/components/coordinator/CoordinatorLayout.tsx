@@ -116,13 +116,62 @@ export const CoordinatorLayout: React.FC<CoordinatorLayoutProps> = ({ children }
     return () => window.clearTimeout(t);
   }, [authGate]);
 
-  const loadClubInfo = () => {
-      const storedClub = localStorage.getItem('dugnad_club');
-      if (storedClub) {
-          try {
-              const club = JSON.parse(storedClub);
-              if (club.name) setClubName(club.name);
-          } catch (e) {}
+  // Klubb-navn utledes fra DB (team_members → clubs), ikke fra
+  // localStorage. Tidligere stolte vi blindt på dugnad_club —
+  // pilot 3. mai viste at en stale verdi fra forrige test-økt
+  // (Kongsvinger IL fra mars) ble vist for en bruker som
+  // egentlig tilhørte TestGol. Sidebarens lag-liste kom fra DB
+  // (loadTeams) og var korrekt, mens klubb-navnet var stale —
+  // klassisk DB/cache-divergens.
+  //
+  // Self-healing: vi skriver tilbake til localStorage etter et
+  // suksessfullt DB-kall slik at andre komponenter som fortsatt
+  // leser cachen (utils/joinCode, KioskAdmin, CreateEvent etc.)
+  // får ferske data. localStorage beholdes som FALLBACK kun for
+  // edge case der DB-kallet feiler (offline, tilkoblingsfeil).
+  const loadClubInfo = async () => {
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const { data: tm } = await supabase
+              .from('team_members')
+              .select('club_id, clubs(id, name, short_name, county, municipality, sport_primary, logo_url)')
+              .eq('auth_user_id', user.id)
+              .not('club_id', 'is', null)
+              .limit(1)
+              .maybeSingle();
+
+          const club: any = tm?.clubs;
+          if (club && club.name) {
+              setClubName(club.name);
+              // Self-heal cache for resten av appen
+              try {
+                  localStorage.setItem('dugnad_club', JSON.stringify(club));
+              } catch {}
+              return;
+          }
+
+          // DB hadde ingen klubb-binding — fall back til cache slik
+          // at vi ikke regresserer for eksisterende brukere uten
+          // team_members.club_id.
+          const storedClub = localStorage.getItem('dugnad_club');
+          if (storedClub) {
+              try {
+                  const cached = JSON.parse(storedClub);
+                  if (cached.name) setClubName(cached.name);
+              } catch {}
+          }
+      } catch (e) {
+          // Tilkoblingsfeil: fall tilbake til cache for å ikke
+          // crashe sidebaren.
+          const storedClub = localStorage.getItem('dugnad_club');
+          if (storedClub) {
+              try {
+                  const cached = JSON.parse(storedClub);
+                  if (cached.name) setClubName(cached.name);
+              } catch {}
+          }
       }
   };
 

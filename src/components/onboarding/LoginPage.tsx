@@ -72,13 +72,17 @@ export const LoginPage: React.FC = () => {
       };
       localStorage.setItem('dugnad_user', JSON.stringify(localUser));
 
-      // 4. Gjenopprett klubb/lag fra metadata hvis localStorage mangler
-      const existingClub = localStorage.getItem('dugnad_club');
-      const existingTeams = localStorage.getItem('dugnad_teams');
-      if (userMeta.club && !existingClub) {
+      // 4. Gjenopprett klubb/lag fra metadata. Vi OVERSKRIVER
+      //    eventuelle eksisterende verdier — pilot 3. mai viste at
+      //    !existingClub-gaten lot stale verdier fra forrige test-
+      //    økt (f.eks. Kongsvinger IL fra mars-data) overleve
+      //    bytte til en ny bruker uten clean logout. CoordinatorLayout
+      //    self-healer fra DB uansett, men vi rydder opp her også
+      //    så cachen er konsistent fra første render.
+      if (userMeta.club) {
         localStorage.setItem('dugnad_club', JSON.stringify(userMeta.club));
       }
-      if (userMeta.teams && !existingTeams) {
+      if (userMeta.teams) {
         localStorage.setItem('dugnad_teams', JSON.stringify(userMeta.teams));
       }
 
