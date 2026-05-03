@@ -80,6 +80,17 @@ interface Transaction {
   amount: number;
   payment_method: string;
   sellerName: string;
+  status: 'pending_confirmation' | 'paid' | 'cancelled';
+}
+
+interface PendingSale {
+  id: string;
+  created_at: string;
+  buyer_name: string;
+  buyer_phone: string | null;
+  tickets: number;
+  amount: number;
+  sellerName: string;
 }
 
 interface Buyer {
@@ -108,6 +119,13 @@ export const LotteryAdmin: React.FC = () => {
 
   // Kjøpere
   const [buyers, setBuyers] = useState<Buyer[]>([]);
+
+  // Pending Vipps-betalinger som DA må bekrefte mot Vipps-historikk.
+  // Pilot 3. mai: Vipps deep link gir ingen automatisk callback,
+  // så lodd telles først som 'paid' når DA bekrefter mot historikken.
+  const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(new Set());
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
 
   // Kontantsalg modal
   const [showCashModal, setShowCashModal] = useState(false);
@@ -212,28 +230,22 @@ export const LotteryAdmin: React.FC = () => {
             };
             setLottery(mappedLottery);
 
-            // 2. Hent salgsstatistikk
-            const { data: salesData } = await supabase
-                .from('lottery_sales')
-                .select('tickets, amount')
-                .eq('lottery_id', lotteryData.id);
-
-            if (salesData) {
-                const totalSold = salesData.reduce((sum: number, row: any) => sum + (row.tickets || 0), 0);
-                const totalRevenue = salesData.reduce((sum: number, row: any) => sum + (row.amount || 0), 0);
-                setStats({ totalSold, totalRevenue });
-            }
-
-            // Hent alle salg med detaljer
+            // Hent alle salg med detaljer (status-aware). Vi gjør én
+            // spørring og deler i 'paid' (telles) og 'pending_confirmation'
+            // (vises i egen seksjon for DA-bekreftelse). Cancelled-rader
+            // hoppes over fra UI som default.
             const { data: sellerSales } = await supabase
                 .from('lottery_sales')
-                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, seller_family_id, families(name, family_members(name, role))')
+                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, status, seller_family_id, families(name, family_members(name, role))')
                 .eq('lottery_id', lotteryData.id)
                 .order('created_at', { ascending: false });
 
             if (sellerSales) {
                 const bySellerMap: Record<string, { name: string; tickets: number; amount: number }> = {};
                 const txList: Transaction[] = [];
+                const pendingList: PendingSale[] = [];
+                let totalSold = 0;
+                let totalRevenue = 0;
 
                 sellerSales.forEach((s: any) => {
                     const id = s.seller_family_id || '__direct__';
@@ -242,31 +254,60 @@ export const LotteryAdmin: React.FC = () => {
                         const children = s.families.family_members?.filter((m: any) => m.role === 'child') || [];
                         sName = children.length > 0 ? children.map((c: any) => c.name).join(' & ') : s.families.name;
                     }
-                    if (!bySellerMap[id]) bySellerMap[id] = { name: sName, tickets: 0, amount: 0 };
-                    bySellerMap[id].tickets += s.tickets || 0;
-                    bySellerMap[id].amount += s.amount || 0;
+                    const status = (s.status || 'paid') as Transaction['status'];
 
-                    txList.push({
-                        id: s.id,
-                        created_at: s.created_at,
-                        buyer_name: s.buyer_name,
-                        buyer_phone: s.buyer_phone,
-                        tickets: s.tickets,
-                        amount: s.amount,
-                        payment_method: s.payment_method || 'vipps',
-                        sellerName: sName
-                    });
+                    // KUN 'paid' teller i innsamlet/lodd-statistikk og
+                    // selger-toppliste. Pending er "venter på DA",
+                    // cancelled er "rensket".
+                    if (status === 'paid') {
+                        if (!bySellerMap[id]) bySellerMap[id] = { name: sName, tickets: 0, amount: 0 };
+                        bySellerMap[id].tickets += s.tickets || 0;
+                        bySellerMap[id].amount += s.amount || 0;
+                        totalSold += s.tickets || 0;
+                        totalRevenue += s.amount || 0;
+                    }
+
+                    if (status === 'pending_confirmation') {
+                        pendingList.push({
+                            id: s.id,
+                            created_at: s.created_at,
+                            buyer_name: s.buyer_name,
+                            buyer_phone: s.buyer_phone,
+                            tickets: s.tickets,
+                            amount: s.amount,
+                            sellerName: sName,
+                        });
+                    }
+
+                    if (status !== 'cancelled') {
+                        txList.push({
+                            id: s.id,
+                            created_at: s.created_at,
+                            buyer_name: s.buyer_name,
+                            buyer_phone: s.buyer_phone,
+                            tickets: s.tickets,
+                            amount: s.amount,
+                            payment_method: s.payment_method || 'vipps',
+                            sellerName: sName,
+                            status,
+                        });
+                    }
                 });
+
+                setStats({ totalSold, totalRevenue });
                 setSellerStats(Object.values(bySellerMap).sort((a, b) => b.tickets - a.tickets));
                 setTransactions(txList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+                setPendingSales(pendingList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+                setSelectedPendingIds(new Set());
 
-                // Kjøperliste
+                // Kjøperliste — kun PAID for å unngå at en bruker som
+                // har avbrutt i Vipps fremstår som kjøper i listen.
                 const winnerNames = new Set((lotteryData.prizes || []).filter((p: any) => p.winner_name).map((p: any) => p.winner_name));
                 const winnerPrizeMap: Record<string, string> = {};
                 (lotteryData.prizes || []).forEach((p: any) => { if (p.winner_name) winnerPrizeMap[p.winner_name] = p.name; });
 
                 const buyerMap: Record<string, Buyer> = {};
-                txList.forEach(tx => {
+                txList.filter(tx => tx.status === 'paid').forEach(tx => {
                     const key = `${tx.buyer_name}||${tx.buyer_phone}`;
                     if (!buyerMap[key]) buyerMap[key] = { name: tx.buyer_name, phone: tx.buyer_phone, totalTickets: 0, totalAmount: 0, isWinner: winnerNames.has(tx.buyer_name), wonPrize: winnerPrizeMap[tx.buyer_name] };
                     buyerMap[key].totalTickets += tx.tickets;
@@ -309,15 +350,19 @@ export const LotteryAdmin: React.FC = () => {
     setDrawing(true);
 
     try {
-        // 1. Hent ALLE salg (lodd)
+        // 1. Hent BEKREFTEDE salg (kun status='paid'). Lodd som
+        //    venter på Vipps-bekreftelse er IKKE trekkbare —
+        //    forretningskravet er at vinnere skal trekkes fra
+        //    avstemte betalinger, ikke fra kjøps-forsøk.
         const { data: sales, error } = await supabase
             .from('lottery_sales')
             .select('buyer_name, buyer_phone, tickets')
-            .eq('lottery_id', lottery.id);
+            .eq('lottery_id', lottery.id)
+            .eq('status', 'paid');
 
         if (error) throw error;
         if (!sales || sales.length === 0) {
-            alert('Ingen lodd er solgt ennå!');
+            alert('Ingen bekreftede lodd ennå.\n\nBekreft minst én Vipps-betaling i "Venter på bekreftelse"-seksjonen før du trekker vinnere.');
             setDrawing(false);
             return;
         }
@@ -477,6 +522,9 @@ export const LotteryAdmin: React.FC = () => {
   const handleCashSale = async () => {
     if (!lottery || !cashBuyerName) { alert('Fyll inn kjøpernavn.'); return; }
     const amount = cashTickets * lottery.ticketPrice;
+    // Kontantsalg registreres av DA etter mottatt cash → status='paid'
+    // direkte (ikke pending). Forelder-Vipps-flyten setter
+    // 'pending_confirmation' og krever DA-bekreftelse.
     const { error } = await supabase.from('lottery_sales').insert({
         lottery_id: lottery.id,
         seller_family_id: cashSellerId || null,
@@ -484,13 +532,85 @@ export const LotteryAdmin: React.FC = () => {
         buyer_phone: cashBuyerPhone,
         tickets: cashTickets,
         amount,
-        payment_method: 'cash'
+        payment_method: 'cash',
+        status: 'paid'
     });
     if (error) { alert('Feil: ' + error.message); return; }
     setShowCashModal(false);
     setCashBuyerName(''); setCashBuyerPhone(''); setCashTickets(10); setCashSellerId('');
     fetchActiveLottery();
     alert(`💵 Kontantsalg registrert: ${cashTickets} lodd (${amount} kr)`);
+  };
+
+  // Pending-handlere: bulk og enkelt-rad. Begge går via SECURITY
+  // DEFINER-RPC slik at autorisasjon (coordinator/club_admin på
+  // lotteriets team) håndheves server-side, og rader som har skiftet
+  // status mellom listing og klikk hoppes over (idempotent).
+  const togglePendingSelection = (saleId: string) => {
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(saleId)) next.delete(saleId);
+      else next.add(saleId);
+      return next;
+    });
+  };
+
+  const togglePendingSelectAll = () => {
+    if (selectedPendingIds.size === pendingSales.length) {
+      setSelectedPendingIds(new Set());
+    } else {
+      setSelectedPendingIds(new Set(pendingSales.map(p => p.id)));
+    }
+  };
+
+  const handleConfirmSale = async (saleIds: string[]) => {
+    if (saleIds.length === 0) return;
+    setConfirmingBulk(true);
+    try {
+      const { data, error } = await supabase.rpc('bulk_confirm_lottery_sales', {
+        p_sale_ids: saleIds,
+      });
+      if (error) throw error;
+      const confirmed = data?.confirmed_count ?? 0;
+      const skipped = data?.skipped_count ?? 0;
+      const unauthorized = data?.unauthorized_count ?? 0;
+      let msg = `✅ ${confirmed} lodd-kjøp bekreftet.`;
+      if (skipped > 0) msg += `\n${skipped} hoppet over (allerede behandlet).`;
+      if (unauthorized > 0) msg += `\n⚠️ ${unauthorized} avvist (ikke autorisert).`;
+      alert(msg);
+      await fetchActiveLottery();
+    } catch (e: any) {
+      alert('Feil ved bekreftelse: ' + (e?.message || 'ukjent'));
+    } finally {
+      setConfirmingBulk(false);
+    }
+  };
+
+  const handleCancelSale = async (saleIds: string[]) => {
+    if (saleIds.length === 0) return;
+    const confirmText = saleIds.length === 1
+      ? 'Avvise dette lodd-kjøpet? Loddene fjernes og inkluderes ikke i trekningen.'
+      : `Avvise ${saleIds.length} lodd-kjøp? Loddene fjernes og inkluderes ikke i trekningen.`;
+    if (!confirm(confirmText)) return;
+    setConfirmingBulk(true);
+    try {
+      const { data, error } = await supabase.rpc('bulk_cancel_lottery_sales', {
+        p_sale_ids: saleIds,
+      });
+      if (error) throw error;
+      const cancelled = data?.cancelled_count ?? 0;
+      const skipped = data?.skipped_count ?? 0;
+      const unauthorized = data?.unauthorized_count ?? 0;
+      let msg = `↩️ ${cancelled} lodd-kjøp avvist.`;
+      if (skipped > 0) msg += `\n${skipped} hoppet over (allerede behandlet).`;
+      if (unauthorized > 0) msg += `\n⚠️ ${unauthorized} avvist (ikke autorisert).`;
+      alert(msg);
+      await fetchActiveLottery();
+    } catch (e: any) {
+      alert('Feil ved avvising: ' + (e?.message || 'ukjent'));
+    } finally {
+      setConfirmingBulk(false);
+    }
   };
 
   const exportBuyersCsv = () => {
@@ -518,20 +638,26 @@ export const LotteryAdmin: React.FC = () => {
 
   const fetchArchivedLotteries = async () => {
     const teamId = getActiveTeamId();
-    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount)').eq('is_active', false);
+    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, status)').eq('is_active', false);
     if (teamId) query = query.eq('team_id', teamId);
     const { data } = await query.order('created_at', { ascending: false });
     if (data) {
-      setArchivedLotteries(data.map((l: any) => ({
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        ticketPrice: l.ticket_price,
-        totalSold: l.lottery_sales?.reduce((s: number, r: any) => s + (r.tickets || 0), 0) || 0,
-        totalRevenue: l.lottery_sales?.reduce((s: number, r: any) => s + (r.amount || 0), 0) || 0,
-        prizeCount: l.prizes?.length || 0,
-        winnersDrawn: l.prizes?.filter((p: any) => p.winner_name).length || 0
-      })));
+      setArchivedLotteries(data.map((l: any) => {
+        // Kun 'paid'-rader teller i historikk-summer (samme prinsipp
+        // som aktiv-lotteri-stats). Pending som aldri ble bekreftet
+        // skal ikke vises som inntekt i ettertid.
+        const paidRows = (l.lottery_sales || []).filter((r: any) => (r.status || 'paid') === 'paid');
+        return {
+          id: l.id,
+          name: l.name,
+          description: l.description,
+          ticketPrice: l.ticket_price,
+          totalSold: paidRows.reduce((s: number, r: any) => s + (r.tickets || 0), 0),
+          totalRevenue: paidRows.reduce((s: number, r: any) => s + (r.amount || 0), 0),
+          prizeCount: l.prizes?.length || 0,
+          winnersDrawn: l.prizes?.filter((p: any) => p.winner_name).length || 0
+        };
+      }));
     }
   };
 
@@ -817,6 +943,105 @@ export const LotteryAdmin: React.FC = () => {
             {/* === OVERSIKT === */}
             {activeView === 'oversikt' && (
                 <>
+                    {/* Venter på bekreftelse — Vipps-kjøp som ikke er
+                        avstemt mot historikken ennå. Vises bare hvis
+                        det finnes pending rader. */}
+                    {pendingSales.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#854f0b', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '8px' }}>
+                          Venter på bekreftelse ({pendingSales.length})
+                        </div>
+                        <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px' }}>
+                          <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#854f0b', lineHeight: '1.5' }}>
+                            Sjekk Vipps-historikken din og bekreft hvilke kjøp du har mottatt betaling for. Loddene telles først som solgt etter bekreftelse.
+                          </p>
+
+                          {/* Bulk-toolbar */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1a2e1f', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={selectedPendingIds.size === pendingSales.length && pendingSales.length > 0}
+                                onChange={togglePendingSelectAll}
+                              />
+                              Velg alle
+                            </label>
+                            <div style={{ flex: 1 }} />
+                            <button
+                              onClick={() => handleConfirmSale(Array.from(selectedPendingIds))}
+                              disabled={selectedPendingIds.size === 0 || confirmingBulk}
+                              style={{
+                                fontSize: '12px', padding: '6px 14px', borderRadius: '6px',
+                                border: 'none',
+                                background: selectedPendingIds.size > 0 ? '#2d6a4f' : '#e8e0d0',
+                                color: selectedPendingIds.size > 0 ? '#fff' : '#6b7f70',
+                                cursor: selectedPendingIds.size > 0 && !confirmingBulk ? 'pointer' : 'not-allowed',
+                                fontWeight: '500'
+                              }}
+                            >
+                              ✓ Bekreft markerte ({selectedPendingIds.size})
+                            </button>
+                            <button
+                              onClick={() => handleCancelSale(Array.from(selectedPendingIds))}
+                              disabled={selectedPendingIds.size === 0 || confirmingBulk}
+                              style={{
+                                fontSize: '12px', padding: '6px 14px', borderRadius: '6px',
+                                border: '1px solid #fecaca',
+                                background: selectedPendingIds.size > 0 ? '#fff5f5' : '#fff',
+                                color: selectedPendingIds.size > 0 ? '#ef4444' : '#bbb',
+                                cursor: selectedPendingIds.size > 0 && !confirmingBulk ? 'pointer' : 'not-allowed',
+                                fontWeight: '500'
+                              }}
+                            >
+                              ✕ Avvis markerte ({selectedPendingIds.size})
+                            </button>
+                          </div>
+
+                          {/* Liste */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {pendingSales.map(p => (
+                              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: '#fff', borderRadius: '6px', border: '0.5px solid #fac775' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPendingIds.has(p.id)}
+                                  onChange={() => togglePendingSelection(p.id)}
+                                  style={{ flexShrink: 0 }}
+                                />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '500', color: '#1a2e1f' }}>{p.buyer_name}</div>
+                                  <div style={{ fontSize: '11px', color: '#4a5e50' }}>
+                                    {p.buyer_phone || 'Ingen telefon'} · {new Date(p.created_at).toLocaleString('nb-NO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                    {p.sellerName && p.sellerName !== 'Direktesalg' && ` · for ${p.sellerName}`}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#2d6a4f', whiteSpace: 'nowrap' }}>
+                                  {p.tickets} lodd<br/>{p.amount} kr
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                  <button
+                                    onClick={() => handleConfirmSale([p.id])}
+                                    disabled={confirmingBulk}
+                                    title="Bekreft"
+                                    style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: 'none', background: '#2d6a4f', color: '#fff', cursor: confirmingBulk ? 'wait' : 'pointer', fontWeight: '500' }}
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    onClick={() => handleCancelSale([p.id])}
+                                    disabled={confirmingBulk}
+                                    title="Avvis"
+                                    style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', border: '1px solid #fecaca', background: '#fff5f5', color: '#ef4444', cursor: confirmingBulk ? 'wait' : 'pointer', fontWeight: '500' }}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     {/* Topp selgere */}
                     {sellerStats.length > 0 && (
                       <>
@@ -921,6 +1146,11 @@ export const LotteryAdmin: React.FC = () => {
                                                 <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '6px', background: tx.payment_method === 'cash' ? '#fff8e6' : '#e8f5ef', color: tx.payment_method === 'cash' ? '#854f0b' : '#2d6a4f', fontWeight: '500' }}>
                                                     {tx.payment_method === 'cash' ? '💵 Kontant' : '📱 Vipps'}
                                                 </span>
+                                                {tx.status === 'pending_confirmation' && (
+                                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '6px', background: '#fff8e6', color: '#854f0b', fontWeight: '500', marginLeft: '4px' }} title="Venter på bekreftelse fra koordinator">
+                                                        ⏳ Venter
+                                                    </span>
+                                                )}
                                             </td>
                                             <td style={{ padding: '8px 6px', fontSize: '11px', color: '#6b7f70' }}>{tx.sellerName}</td>
                                         </tr>
