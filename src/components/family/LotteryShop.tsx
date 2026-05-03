@@ -18,13 +18,19 @@ const TICKET_PACKAGES = [
     { count: 100, label: 'Gullsjansen' }
 ];
 
-// To-stegs Vipps-flyt:
+// To-stegs Vipps-flyt (tillit-basert):
 //   'shop'      → kjøpsskjema (default)
-//   'awaiting'  → "Fullfører du betalingen i Vipps?" — vises etter
-//                 at salget er INSERTet med status='pending_confirmation'
-//                 og Vipps deep link er åpnet.
-//   'pending'   → "Venter på bekreftelse fra koordinator"-skjerm.
-//   'cancelled' → "Avbrutt"-skjerm.
+//   'awaiting'  → "Fullførte du betalingen i Vipps?" — vises etter
+//                 at Vipps deep link er åpnet. INGEN DB-INSERT
+//                 ennå — vi venter på forelders bekreftelse.
+//   'pending'   → "Takk for støtten!"-skjerm. INSERT skjedde nå.
+//   'cancelled' → "Kjøpet er avbrutt"-skjerm. Ingen INSERT.
+//
+// Pilot 3. mai-revert: Tidligere A-løsning insertet med
+// status='pending_confirmation' før Vipps-link, og DA bekreftet
+// senere i admin-flyten. Vi gikk bort fra det — Dugnad+ holder
+// ikke per-kjøp status. Avstemming skjer mot Vipps-konto ved
+// sesongslutt (papirloddbok-prinsipp).
 type Phase = 'shop' | 'awaiting' | 'pending' | 'cancelled';
 
 export const LotteryShop: React.FC = () => {
@@ -37,7 +43,9 @@ export const LotteryShop: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
   const [phase, setPhase] = useState<Phase>('shop');
-  const [pendingSaleId, setPendingSaleId] = useState<string | null>(null);
+  // Snapshot av kjøps-intensjon, brukt for å vise riktig beløp/antall
+  // i awaiting/pending/cancelled-skjermene selv om brukeren skulle
+  // endre antallet i shop-skjemaet etterpå.
   const [pendingTicketCount, setPendingTicketCount] = useState(0);
   const [pendingAmount, setPendingAmount] = useState(0);
 
@@ -93,7 +101,10 @@ export const LotteryShop: React.FC = () => {
     fetchData();
   }, []);
 
-  const handlePurchase = async () => {
+  // Steg 1: åpne Vipps. Vi INSERTer IKKE ennå — først etter at
+  // forelder eksplisitt bekrefter "Ja, jeg har betalt". På den
+  // måten lager vi ikke rader for kjøp som blir avbrutt i Vipps.
+  const handlePurchase = () => {
     if (!lottery) return;
     if (!buyerName || !buyerPhone) {
         alert('Vennligst fyll inn navn og telefonnummer.');
@@ -101,93 +112,57 @@ export const LotteryShop: React.FC = () => {
     }
 
     const totalAmount = ticketCount * lottery.ticketPrice;
+    setPendingTicketCount(ticketCount);
+    setPendingAmount(totalAmount);
 
+    // Åpne Vipps via deep link. På mobil hopper appen ut til Vipps;
+    // på desktop skjer ingenting (forventet — Vipps har ikke
+    // desktop-app for forbrukere).
+    const message = `Lodd ${sellerName}`;
+    window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
+
+    setPhase('awaiting');
+  };
+
+  // Steg 2a: forelder sier "Ja, jeg har betalt". NÅ inserter vi
+  // raden. Vi har ingen måte å verifisere betalingen automatisk
+  // (Vipps tilbyr ikke callback for deep links), så vi stoler på
+  // forelderens svar. DA avstemmer mot Vipps-konto ved sesongslutt.
+  const handleConfirmPaid = async () => {
+    if (!lottery) return;
     setPurchasing(true);
     try {
-        // Opprett salget umiddelbart med status='pending_confirmation'.
-        // Vi venter MED å åpne Vipps til vi har et sale_id i hånda
-        // slik at "Avbryt"-knappen senere kan referere til riktig rad.
-        // Pilot 3. mai: tidligere implementasjon insertet med status
-        // implisitt = 'paid' (uten kolonnen) og åpnet Vipps i samme
-        // kall — det betydde at avbrutte/uunformuløe Vipps-betalinger
-        // ble talt som solgte lodd. Nå venter vi på DA-bekreftelse.
-        const { data: insertedRow, error } = await supabase
-            .from('lottery_sales')
-            .insert({
-                lottery_id: lottery.id,
-                seller_family_id: sellerId || null,
-                buyer_name: buyerName,
-                buyer_phone: buyerPhone,
-                tickets: ticketCount,
-                amount: totalAmount,
-                status: 'pending_confirmation',
-            })
-            .select('id')
-            .single();
-
-        if (error || !insertedRow) {
-            throw error || new Error('Kunne ikke registrere salg');
-        }
-
-        setPendingSaleId(insertedRow.id);
-        setPendingTicketCount(ticketCount);
-        setPendingAmount(totalAmount);
-
-        // Åpne Vipps med deep link. På mobil hopper appen ut til
-        // Vipps; på desktop skjer ingenting (forventet — Vipps har
-        // ikke desktop-app for forbrukere).
-        const message = `Lodd ${sellerName}`;
-        window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
-
-        // Bytt til "Fullfører du betalingen?"-skjermen mens forelder
-        // er i Vipps-appen. Når de kommer tilbake må de eksplisitt
-        // bekrefte eller avbryte — ingen automatisk "ferdig".
-        setPhase('awaiting');
+      const { error } = await supabase
+        .from('lottery_sales')
+        .insert({
+          lottery_id: lottery.id,
+          seller_family_id: sellerId || null,
+          buyer_name: buyerName,
+          buyer_phone: buyerPhone,
+          tickets: pendingTicketCount,
+          amount: pendingAmount,
+        });
+      if (error) throw error;
+      setPhase('pending');
     } catch (error: any) {
-        console.error('Kjøp feilet:', error);
-        alert('Beklager, noe gikk galt med registreringen: ' + (error?.message || 'ukjent feil'));
+      console.error('Kjøp feilet:', error);
+      alert('Beklager, noe gikk galt med registreringen: ' + (error?.message || 'ukjent feil'));
+      // Bli i awaiting-fasen så forelder kan prøve igjen.
     } finally {
-        setPurchasing(false);
+      setPurchasing(false);
     }
   };
 
-  // "Ja, jeg har betalt" — status forblir pending_confirmation. DA
-  // bekrefter mot Vipps-historikken senere. Vi setter IKKE status
-  // til 'paid' her — kjøperen kan ikke selv-bekrefte sin betaling.
-  const handleConfirmPaid = () => {
-    setPhase('pending');
-  };
-
-  // "Nei, avbryt" — kall RPC for å sette status='cancelled'. Hvis
-  // RPC feiler (f.eks. nettverksfeil) lar vi forelderen prøve igjen
-  // eller bare lukke siden — DA vil uansett ikke se Vipps-betaling
-  // for et avbrutt forsøk.
-  const handleCancel = async () => {
-    if (!pendingSaleId) {
-      setPhase('cancelled');
-      return;
-    }
-    try {
-      const { data, error } = await supabase.rpc('cancel_pending_lottery_sale', {
-        p_sale_id: pendingSaleId,
-      });
-      if (error) {
-        console.warn('cancel_pending_lottery_sale RPC feilet:', error);
-      } else if (data && !data.success) {
-        console.warn('cancel_pending_lottery_sale ikke fullført:', data);
-      }
-    } catch (e) {
-      console.warn('cancel_pending_lottery_sale unntak:', e);
-    } finally {
-      setPhase('cancelled');
-    }
+  // Steg 2b: forelder sier "Nei, avbryt". Ingen DB-handling —
+  // raden ble aldri opprettet. Bare nullstill og vis bekreftelse.
+  const handleCancel = () => {
+    setPhase('cancelled');
   };
 
   const resetForNewPurchase = () => {
     setBuyerName('');
     setBuyerPhone('');
     setTicketCount(10);
-    setPendingSaleId(null);
     setPendingTicketCount(0);
     setPendingAmount(0);
     setPhase('shop');
@@ -209,7 +184,7 @@ export const LotteryShop: React.FC = () => {
         <div style={{ maxWidth: '500px', width: '100%', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '32px 24px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <div style={{ fontSize: '48px', marginBottom: '8px' }}>📱</div>
-            <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Fullfører du betalingen i Vipps?</h2>
+            <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Fullførte du betalingen i Vipps?</h2>
             <p style={{ marginTop: '12px', fontSize: '14px', color: '#4a5e50' }}>
               Vi har åpnet Vipps med <strong>{pendingAmount} kr</strong> til <strong>{lottery.vippsNumber}</strong> for {pendingTicketCount} lodd. Bekreft her når du er ferdig.
             </p>
@@ -217,13 +192,15 @@ export const LotteryShop: React.FC = () => {
 
           <button
             onClick={handleConfirmPaid}
-            style={{ width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', boxShadow: '0 4px 12px rgba(45, 106, 79, 0.3)', cursor: 'pointer', marginBottom: '12px' }}
+            disabled={purchasing}
+            style={{ width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', boxShadow: '0 4px 12px rgba(45, 106, 79, 0.3)', cursor: purchasing ? 'wait' : 'pointer', marginBottom: '12px', opacity: purchasing ? 0.7 : 1 }}
           >
-            Ja, jeg har betalt
+            {purchasing ? 'Registrerer...' : 'Ja, jeg har betalt'}
           </button>
           <button
             onClick={handleCancel}
-            style={{ width: '100%', background: '#fff', color: '#6b7f70', border: '0.5px solid #dedddd', fontSize: '14px', padding: '12px', borderRadius: '10px', fontWeight: '500', cursor: 'pointer' }}
+            disabled={purchasing}
+            style={{ width: '100%', background: '#fff', color: '#6b7f70', border: '0.5px solid #dedddd', fontSize: '14px', padding: '12px', borderRadius: '10px', fontWeight: '500', cursor: purchasing ? 'wait' : 'pointer' }}
           >
             Nei, avbryt
           </button>
@@ -241,10 +218,10 @@ export const LotteryShop: React.FC = () => {
     return (
       <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', justifyContent: 'center', padding: '20px 10px' }}>
         <div style={{ maxWidth: '500px', width: '100%', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '32px 24px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '8px' }}>⏳</div>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎉</div>
           <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Takk for støtten!</h2>
           <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
-            Loddene dine ({pendingTicketCount} stk for {pendingAmount} kr) venter på bekreftelse fra koordinator. De blir gyldige så snart koordinator har sjekket Vipps-historikken og bekreftet betalingen.
+            Loddene ({pendingTicketCount} stk for {pendingAmount} kr) er registrert under ditt navn. Bekreftelse på betalingen kommer i Vipps-appen.
           </p>
           <button
             onClick={resetForNewPurchase}
@@ -360,13 +337,11 @@ export const LotteryShop: React.FC = () => {
                         padding: '16px',
                         borderRadius: '10px',
                         fontWeight: '700',
-                        opacity: purchasing ? 0.7 : 1,
                         boxShadow: '0 4px 12px rgba(45, 106, 79, 0.3)',
                         cursor: 'pointer'
                     }}
-                    disabled={purchasing}
                 >
-                    {purchasing ? 'Åpner Vipps...' : `Betal ${ticketCount * lottery.ticketPrice} kr med Vipps`}
+                    Betal {ticketCount * lottery.ticketPrice} kr med Vipps
                 </button>
             </div>
 
