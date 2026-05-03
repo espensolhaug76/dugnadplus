@@ -20,6 +20,8 @@ import { displayTeamName, formatChildDisplayName } from '../../utils/teamSlug';
 // UI-faser:
 //   - 'code': input-felt + "Koble til"-knapp
 //   - 'confirm': "Du kobler til {barn}, {lag}. Stemmer dette?"
+//   - 'candidates': dedup-skjerm — RPC fant matchende ghost-rad(er)
+//                   for forelderen, vi spør "Er dette deg?"
 //   - 'submitting': spinner
 //   - 'success': grønn bekreftelse, redirect til /family-dashboard
 
@@ -31,9 +33,17 @@ interface MatchedChild {
   ghost_family_team_id: string | null;
 }
 
-type Phase = 'code' | 'confirm' | 'submitting' | 'success';
+interface ParentCandidate {
+  family_member_id: string;
+  name: string;
+  match_strength: number;
+}
+
+type Phase = 'code' | 'confirm' | 'candidates' | 'submitting' | 'success';
 type Mode = 'initial' | 'add';
 type AuthState = 'checking' | 'unauth' | 'ok';
+// 'NONE' betyr "Nei, jeg er ny foresatt" (force_create i RPC).
+type CandidateChoice = string | 'NONE' | null;
 
 export const ClaimFamilyPage: React.FC = () => {
   const [code, setCode] = useState('');
@@ -42,6 +52,9 @@ export const ClaimFamilyPage: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mode, setMode] = useState<Mode>('initial');
   const [authState, setAuthState] = useState<AuthState>('checking');
+  const [candidates, setCandidates] = useState<ParentCandidate[]>([]);
+  const [candidatesMessage, setCandidatesMessage] = useState<'auto_match_suggested' | 'select_or_create_new' | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateChoice>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -103,6 +116,61 @@ export const ClaimFamilyPage: React.FC = () => {
     setPhase('confirm');
   };
 
+  // Felles RPC-kaller — brukes både fra første "Ja, det stemmer"-
+  // klikk og fra kandidat-bekreftelses-knappene. linkToId styrer
+  // RPC-modusen:
+  //   undefined → preview-mode (RPC sjekker for matches)
+  //   string    → link-mode (UPDATE ghost-rad med denne ID-en)
+  //   'NONE'    → create-mode (force_create=true, INSERT ny rad)
+  const callClaimRpc = async (
+    parentName: string,
+    parentEmail: string,
+    parentPhone: string,
+    linkToId?: CandidateChoice
+  ) => {
+    return supabase.rpc('claim_family_via_code', {
+      p_code: code,
+      p_parent_name: parentName,
+      p_parent_email: parentEmail,
+      p_parent_phone: parentPhone,
+      p_link_to_existing_id: linkToId && linkToId !== 'NONE' ? linkToId : null,
+      p_force_create: linkToId === 'NONE',
+    });
+  };
+
+  // Mappe RPC-feil til brukervennlige meldinger.
+  const normalizeRpcError = (rpcError: any): Error => {
+    const msg = (rpcError?.message || '').toLowerCase();
+    if (msg.includes('ugyldig kode')) {
+      return new Error('Koden er ikke gyldig. Sjekk at du har skrevet riktig.');
+    }
+    if (msg.includes('innlogget') || msg.includes('authenticated')) {
+      return new Error('Du må være innlogget for å koble til familie.');
+    }
+    if (msg.includes('invalid candidate')) {
+      return new Error('Det har skjedd noe feil — kandidaten er ikke lenger tilgjengelig. Gå tilbake og forsøk på nytt.');
+    }
+    return new Error(rpcError?.message || 'Noe gikk galt. Prøv igjen.');
+  };
+
+  const finishSuccess = (rpcData: any, ghostFamilyName: string) => {
+    // Lagre fersk team_id i localStorage så ParentDashboard og
+    // andre komponenter som leser fra cache får riktige data
+    // umiddelbart etter redirect.
+    try {
+      if (rpcData.team_id) {
+        localStorage.setItem('dugnad_active_team_filter', rpcData.team_id);
+      }
+    } catch {}
+
+    const successText = rpcData.already_claimed
+      ? `Du er allerede koblet til ${ghostFamilyName}. Sender deg til dashbordet...`
+      : `Suksess! Du er nå koblet til ${ghostFamilyName}.`;
+    setMessage({ type: 'success', text: successText });
+    setPhase('success');
+    setTimeout(() => { window.location.href = '/family-dashboard'; }, 1800);
+  };
+
   const handleConfirm = async () => {
     if (!matchedChild) return;
     setPhase('submitting');
@@ -124,50 +192,32 @@ export const ClaimFamilyPage: React.FC = () => {
 
         // SECURITY DEFINER-RPC. Direkte INSERT mot family_members
         // feiler på family_members_insert_parent-policyen
-        // (auth_user_family_id() returnerer NULL før første parent-
-        // rad finnes — chicken-and-egg). RPC-en oppretter
-        // team_members + family_members i én transaksjon og
-        // returnerer family_id/team_id slik at vi kan oppdatere
-        // localStorage. Idempotent: already_claimed=true om brukeren
-        // allerede er parent i samme familie.
-        const { data: rpcData, error: rpcError } = await supabase.rpc('claim_family_via_code', {
-          p_code: code,
-          p_parent_name: proposedName,
-          p_parent_email: user.email || '',
-          p_parent_phone: metaPhone || '',
-        });
+        // (chicken-and-egg). RPC-en sjekker også for matchende
+        // ghost-rader og kan returnere mode='preview' for å la
+        // forelder bekrefte før vi linker.
+        const { data: rpcData, error: rpcError } = await callClaimRpc(
+          proposedName,
+          user.email || '',
+          metaPhone || ''
+        );
 
-        if (rpcError) {
-          // Server-side normalisering av kjente feilmeldinger.
-          const msg = (rpcError.message || '').toLowerCase();
-          if (msg.includes('ugyldig kode')) {
-            throw new Error('Koden er ikke gyldig. Sjekk at du har skrevet riktig.');
-          }
-          if (msg.includes('innlogget') || msg.includes('authenticated')) {
-            throw new Error('Du må være innlogget for å koble til familie.');
-          }
-          throw rpcError;
-        }
-
+        if (rpcError) throw normalizeRpcError(rpcError);
         if (!rpcData || !rpcData.success) {
           throw new Error('Kunne ikke koble til familie. Prøv igjen.');
         }
 
-        // Lagre fersk team_id i localStorage så ParentDashboard og
-        // andre komponenter som leser fra cache får riktige data
-        // umiddelbart etter redirect.
-        try {
-          if (rpcData.team_id) {
-            localStorage.setItem('dugnad_active_team_filter', rpcData.team_id);
-          }
-        } catch {}
+        if (rpcData.mode === 'preview') {
+          // Dedup: vi har en eller flere matchende ghost-rader.
+          // Bytt til kandidat-skjerm istedenfor å fullføre claim.
+          setCandidates(rpcData.candidates || []);
+          setCandidatesMessage(rpcData.message || 'select_or_create_new');
+          setSelectedCandidate(null);
+          setPhase('candidates');
+          return;
+        }
 
-        const successText = rpcData.already_claimed
-          ? `Du er allerede koblet til ${matchedChild.ghost_family_name}. Sender deg til dashbordet...`
-          : `Suksess! Du er nå koblet til ${matchedChild.ghost_family_name}.`;
-        setMessage({ type: 'success', text: successText });
-        setPhase('success');
-        setTimeout(() => { window.location.href = '/family-dashboard'; }, 1800);
+        // mode === 'created' eller 'already_claimed' — vi er ferdige.
+        finishSuccess(rpcData, matchedChild.ghost_family_name);
       } else {
         // mode === 'add' — flytt barnet til brukerens eksisterende
         // familie og slett ghost-familien hvis den blir tom.
@@ -228,10 +278,50 @@ export const ClaimFamilyPage: React.FC = () => {
     }
   };
 
+  // Kalt fra kandidat-skjermen. choice === 'NONE' betyr "ny foresatt"
+  // (force_create), ellers er det family_member_id på ghost-raden.
+  const handleCandidateChoice = async (choice: CandidateChoice) => {
+    if (!matchedChild || !choice) return;
+    setPhase('submitting');
+    setMessage(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Du må være logget inn.');
+
+      const metaFullName = (user.user_metadata as any)?.full_name;
+      const metaPhone = (user.user_metadata as any)?.phone;
+      const proposedName = metaFullName
+        || (user.email ? user.email.split('@')[0] : null)
+        || 'Forelder';
+
+      const { data: rpcData, error: rpcError } = await callClaimRpc(
+        proposedName,
+        user.email || '',
+        metaPhone || '',
+        choice
+      );
+
+      if (rpcError) throw normalizeRpcError(rpcError);
+      if (!rpcData || !rpcData.success) {
+        throw new Error('Kunne ikke koble til familie. Prøv igjen.');
+      }
+
+      finishSuccess(rpcData, matchedChild.ghost_family_name);
+    } catch (error: any) {
+      console.error('Feil ved kandidat-valg:', error);
+      setMessage({ type: 'error', text: error.message || 'Noe gikk galt. Prøv igjen.' });
+      setPhase('candidates');
+    }
+  };
+
   const handleCancelConfirm = () => {
     setMatchedChild(null);
     setCode('');
     setMessage(null);
+    setCandidates([]);
+    setCandidatesMessage(null);
+    setSelectedCandidate(null);
     setPhase('code');
   };
 
@@ -287,6 +377,140 @@ export const ClaimFamilyPage: React.FC = () => {
           </h1>
           {message && (
             <p style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>{message.text}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ===== PHASE: CANDIDATES (dedup-bekreftelse) =====
+  if (phase === 'candidates') {
+    const isAutoMatch = candidatesMessage === 'auto_match_suggested' && candidates.length === 1;
+    const singleCandidate = isAutoMatch ? candidates[0] : null;
+
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--background)', padding: '20px' }}>
+        <div style={{ maxWidth: '500px', margin: '0 auto', paddingTop: '60px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+              {isAutoMatch ? 'Er dette deg?' : 'Hvilken er deg?'}
+            </h1>
+            <p style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>
+              Vi fant {candidates.length === 1 ? 'en eksisterende foresatt' : `${candidates.length} mulige foresatte`} i familien <strong>{matchedChild?.ghost_family_name}</strong>.
+            </p>
+          </div>
+
+          {message && message.type === 'error' && (
+            <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', background: '#fee2e2', color: '#991b1b', textAlign: 'center' }}>
+              {message.text}
+            </div>
+          )}
+
+          {isAutoMatch && singleCandidate ? (
+            // Enkel Ja/Nei-skjerm for auto-match (én eksakt match).
+            <>
+              <div className="card" style={{ padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '22px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                  {singleCandidate.name}
+                </div>
+                <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  Foresatt i familien {matchedChild?.ghost_family_name}
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleCandidateChoice(singleCandidate.family_member_id)}
+                className="btn btn-primary btn-large"
+                style={{ width: '100%', marginBottom: '12px' }}
+              >
+                Ja, det er meg
+              </button>
+              <button
+                onClick={() => handleCandidateChoice('NONE')}
+                className="btn btn-secondary"
+                style={{ width: '100%', marginBottom: '12px' }}
+              >
+                Nei, jeg er ny foresatt
+              </button>
+              <button
+                onClick={handleCancelConfirm}
+                className="btn"
+                style={{ width: '100%', color: 'var(--text-secondary)' }}
+              >
+                ← Tilbake
+              </button>
+            </>
+          ) : (
+            // Radio-liste for flere kandidater eller bare strength=1.
+            <>
+              <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
+                {candidates.map(c => (
+                  <label
+                    key={c.family_member_id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 8px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      background: selectedCandidate === c.family_member_id ? 'var(--bg-secondary, #f0f9ff)' : 'transparent',
+                      borderBottom: '1px solid var(--border-color, #e5e7eb)',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="candidate"
+                      checked={selectedCandidate === c.family_member_id}
+                      onChange={() => setSelectedCandidate(c.family_member_id)}
+                      style={{ flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: '16px', color: 'var(--text-primary)' }}>
+                      {c.name}
+                    </span>
+                  </label>
+                ))}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 8px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: selectedCandidate === 'NONE' ? 'var(--bg-secondary, #f0f9ff)' : 'transparent',
+                    marginTop: '4px',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="candidate"
+                    checked={selectedCandidate === 'NONE'}
+                    onChange={() => setSelectedCandidate('NONE')}
+                    style={{ flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: '16px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                    Ingen — jeg er ny foresatt
+                  </span>
+                </label>
+              </div>
+
+              <button
+                onClick={() => handleCandidateChoice(selectedCandidate)}
+                className="btn btn-primary btn-large"
+                style={{ width: '100%', marginBottom: '12px' }}
+                disabled={!selectedCandidate}
+              >
+                Bekreft
+              </button>
+              <button
+                onClick={handleCancelConfirm}
+                className="btn"
+                style={{ width: '100%', color: 'var(--text-secondary)' }}
+              >
+                ← Tilbake
+              </button>
+            </>
           )}
         </div>
       </div>
