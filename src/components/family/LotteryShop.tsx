@@ -118,8 +118,18 @@ export const LotteryShop: React.FC = () => {
     // Åpne Vipps via deep link. På mobil hopper appen ut til Vipps;
     // på desktop skjer ingenting (forventet — Vipps har ikke
     // desktop-app for forbrukere).
+    //
+    // phone-parameteren MÅ inkluderes — uten den får brukeren
+    // "Sorry we don't recognize this QR" i Vipps. Strip alt som
+    // ikke er siffer (vipps_number i DB kan ha mellomrom som
+    // "12 30 56" eller +47-prefiks som ikke skal med i deep link).
+    const recipientNumber = (lottery.vippsNumber || '').replace(/\D/g, '');
+    if (!recipientNumber) {
+      alert('Lotteriet mangler Vipps-nummer. Kontakt koordinator.');
+      return;
+    }
     const message = `Lodd ${sellerName}`;
-    window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
+    window.location.href = `vipps://?phone=${recipientNumber}&amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
 
     setPhase('awaiting');
   };
