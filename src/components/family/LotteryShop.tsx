@@ -48,6 +48,7 @@ export const LotteryShop: React.FC = () => {
   // endre antallet i shop-skjemaet etterpå.
   const [pendingTicketCount, setPendingTicketCount] = useState(0);
   const [pendingAmount, setPendingAmount] = useState(0);
+  const [pendingMessage, setPendingMessage] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -111,25 +112,33 @@ export const LotteryShop: React.FC = () => {
         return;
     }
 
-    const totalAmount = ticketCount * lottery.ticketPrice;
-    setPendingTicketCount(ticketCount);
-    setPendingAmount(totalAmount);
+    const totalAmount = Number(ticketCount) * Number(lottery.ticketPrice);
+    const message = `Lodd ${sellerName}`.trim();
 
-    // Åpne Vipps via deep link. På mobil hopper appen ut til Vipps;
-    // på desktop skjer ingenting (forventet — Vipps har ikke
-    // desktop-app for forbrukere).
-    //
-    // phone-parameteren MÅ inkluderes — uten den får brukeren
-    // "Sorry we don't recognize this QR" i Vipps. Strip alt som
-    // ikke er siffer (vipps_number i DB kan ha mellomrom som
-    // "12 30 56" eller +47-prefiks som ikke skal med i deep link).
-    const recipientNumber = (lottery.vippsNumber || '').replace(/\D/g, '');
-    if (!recipientNumber) {
-      alert('Lotteriet mangler Vipps-nummer. Kontakt koordinator.');
+    // Defensiv validering før vi åpner Vipps. NaN/0/negativ amt
+    // gir Vipps-feil, og tom msg ville gitt en meningsløs betaling
+    // som DA ikke kan avstemme mot ved sesongslutt.
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      alert('Beløpet er ugyldig. Velg antall lodd og prøv igjen.');
       return;
     }
-    const message = `Lodd ${sellerName}`;
-    window.location.href = `vipps://?phone=${recipientNumber}&amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
+    if (!message) {
+      alert('Mangler selgerinfo. Last siden på nytt og prøv igjen.');
+      return;
+    }
+
+    setPendingTicketCount(ticketCount);
+    setPendingAmount(totalAmount);
+    setPendingMessage(message);
+
+    // Åpne Vipps via deep link — samme format som KioskShop.tsx og
+    // CampaignShop.tsx (som er bekreftet fungerende i prod). Vipps
+    // støtter ikke phone-parameter for privat/alias-numre i deep
+    // links, så forelder må skrive mottakernummeret selv i Vipps —
+    // det vises tydelig på "Fullførte du betalingen?"-skjermen.
+    // På mobil hopper appen ut til Vipps; på desktop skjer
+    // ingenting (forventet — Vipps har ikke desktop-app).
+    window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
 
     setPhase('awaiting');
   };
@@ -175,6 +184,7 @@ export const LotteryShop: React.FC = () => {
     setTicketCount(10);
     setPendingTicketCount(0);
     setPendingAmount(0);
+    setPendingMessage('');
     setPhase('shop');
   };
 
@@ -195,8 +205,8 @@ export const LotteryShop: React.FC = () => {
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <div style={{ fontSize: '48px', marginBottom: '8px' }}>📱</div>
             <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Fullførte du betalingen i Vipps?</h2>
-            <p style={{ marginTop: '12px', fontSize: '14px', color: '#4a5e50' }}>
-              Vi har åpnet Vipps med <strong>{pendingAmount} kr</strong> til <strong>{lottery.vippsNumber}</strong> for {pendingTicketCount} lodd. Bekreft her når du er ferdig.
+            <p style={{ marginTop: '12px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+              Vipps åpner. Send <strong>{pendingAmount} kr</strong> til <strong>{lottery.vippsNumber}</strong> med melding <strong>{pendingMessage}</strong> ({pendingTicketCount} lodd).
             </p>
           </div>
 
