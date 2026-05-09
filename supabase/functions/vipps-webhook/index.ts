@@ -65,6 +65,16 @@ function mapVippsEvent(eventName: string): string | null {
 
 interface SigResult { valid: boolean; reason?: string; }
 
+// Vipps signerer mot den EKSTERNE URL-en webhooken ble registrert med:
+//   https://<ref>.functions.supabase.co/vipps-webhook
+// dvs. path = "/vipps-webhook" (uten /functions/v1-prefiks).
+//
+// Inni Edge Function kan req.url returnere enten den interne formen
+// (/functions/v1/vipps-webhook) eller eksterne (/vipps-webhook)
+// avhengig av hvordan Supabase' gateway proxy-er. Vi prøver derfor
+// EXPECTED_PATH først, og req.url-pathen som fallback.
+const EXPECTED_PATH = '/vipps-webhook';
+
 async function sha256Base64(input: Uint8Array | string): Promise<string> {
   const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   const hash = await crypto.subtle.digest('SHA-256', data);
@@ -120,27 +130,42 @@ async function verifyVippsSignature(
     return { valid: false, reason: 'content_hash_mismatch' };
   }
 
-  // Vipps signerer mot den eksterne URL-en webhooken ble registrert med.
-  // Supabase Edge Runtime setter `host` til intern verdi — bruk
-  // x-forwarded-host hvis tilgjengelig.
+  // Host: behold preferering x-forwarded-host > host > url.host.
+  // Skal IKKE hardkodes — kommer fra request-headerne så koden
+  // overlever URL-/prosjekt-flytting.
   const url = new URL(req.url);
   const host = req.headers.get('x-forwarded-host')
             || req.headers.get('host')
             || url.host;
-  const pathAndQuery = url.pathname + url.search;
 
-  const signatureText = `POST\n${pathAndQuery}\n${date};${host};${contentHashHeader}`;
-  const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
+  // Prøv EXPECTED_PATH først (det Vipps registrerte mot), deretter
+  // req.url-pathen som fallback. Tar med search hvis req.url har det.
+  const reqPath = url.pathname + url.search;
+  const candidatePaths = [EXPECTED_PATH];
+  if (reqPath !== EXPECTED_PATH) candidatePaths.push(reqPath);
 
-  if (!constantTimeEqual(expected, providedSig)) {
-    console.error('[webhook] signature mismatch', {
-      pathAndQuery, host, date,
-      expected_len: expected.length, provided_len: providedSig.length,
-    });
-    return { valid: false, reason: 'signature_mismatch' };
+  let lastExpected = '';
+  for (const path of candidatePaths) {
+    const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
+    const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
+    lastExpected = expected;
+    if (constantTimeEqual(expected, providedSig)) {
+      console.log(`[webhook] signature OK using path="${path}" host="${host}"`);
+      return { valid: true };
+    }
   }
 
-  return { valid: true };
+  // Ingen path matchet. Logg alt vi har for første-runde-debugging.
+  const trunc = (s: string) => s.slice(0, 16);
+  const debug =
+    `signature_mismatch:expected=${trunc(lastExpected)}:received=${trunc(providedSig)}` +
+    `:path=${reqPath}:host=${host}:date=${date}`;
+  console.error('[webhook]', debug, {
+    tried_paths: candidatePaths,
+    expected_len: lastExpected.length,
+    provided_len: providedSig.length,
+  });
+  return { valid: false, reason: debug };
 }
 
 async function autoCapture(
