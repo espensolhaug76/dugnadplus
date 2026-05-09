@@ -69,6 +69,8 @@ interface Lottery {
   goal: number;
   isActive: boolean;
   vippsNumber: string;
+  vippsValidationFailedAt: string | null;
+  vippsValidationError: string | null;
 }
 
 interface Transaction {
@@ -80,7 +82,23 @@ interface Transaction {
   amount: number;
   payment_method: string;
   sellerName: string;
+  status: string;
 }
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
+
+// Statusene som teller som "lodd er solgt og betalt".
+// AUTHORIZED inkluderes fordi auto-capture er fire-and-forget — hvis
+// captura feiler teknisk, beholder vi AUTHORIZED og må telle den.
+// 'cash' (kontantsalg) lagres uten Vipps-status; vi inkluderer alle
+// rader hvor payment_method='cash' uavhengig av status-feltet.
+const PAID_STATUSES = new Set(['AUTHORIZED', 'CAPTURED']);
+const isPaid = (s: any) => PAID_STATUSES.has(s.status) || s.payment_method === 'cash';
+const isPending = (s: any) =>
+  s.status === 'CREATED' && s.payment_method !== 'cash' &&
+  Date.now() - new Date(s.created_at).getTime() < 10 * 60 * 1000;
 
 interface Buyer {
   name: string;
@@ -95,7 +113,13 @@ export const LotteryAdmin: React.FC = () => {
   const [lottery, setLottery] = useState<Lottery | null>(null);
   const [loading, setLoading] = useState(true);
   const [drawing, setDrawing] = useState(false);
-  const [stats, setStats] = useState({ totalRevenue: 0, totalSold: 0 });
+  const [stats, setStats] = useState({ totalRevenue: 0, totalSold: 0, pendingCount: 0 });
+
+  // Vipps-validering (format-only) for create-modal
+  type VnvState = 'idle' | 'validating' | 'valid_format' | 'invalid_format';
+  const [vippsValidation, setVippsValidation] = useState<VnvState>('idle');
+  const [vippsValidationMessage, setVippsValidationMessage] = useState('');
+  const [showVippsHelpModal, setShowVippsHelpModal] = useState(false);
   const [sellerStats, setSellerStats] = useState<{ name: string; tickets: number; amount: number }[]>([]);
 
   // Faner
@@ -208,16 +232,20 @@ export const LotteryAdmin: React.FC = () => {
                 goal: lotteryData.goal,
                 vippsNumber: lotteryData.vipps_number,
                 isActive: lotteryData.is_active,
+                vippsValidationFailedAt: lotteryData.vipps_validation_failed_at || null,
+                vippsValidationError: lotteryData.vipps_validation_error || null,
                 prizes: (lotteryData.prizes || []).sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
             };
             setLottery(mappedLottery);
 
-            // Hent alle salg med detaljer. Tillit-basert modell:
-            // alle rader teller i statistikk. Avstemming mot faktiske
-            // Vipps-innbetalinger skjer i Vipps-kontoen ved sesongslutt.
+            // Hent alle salg med detaljer. Status-basert modell (Vipps
+            // ePayment): kun rader med status AUTHORIZED/CAPTURED telles
+            // som solgt. Kontantsalg (payment_method='cash') telles
+            // uavhengig av status. CREATED-rader < 10 min gamle vises
+            // som "Venter".
             const { data: sellerSales } = await supabase
                 .from('lottery_sales')
-                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, seller_family_id, families(name, family_members(name, role))')
+                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, status, seller_family_id, families(name, family_members(name, role))')
                 .eq('lottery_id', lotteryData.id)
                 .order('created_at', { ascending: false });
 
@@ -226,6 +254,7 @@ export const LotteryAdmin: React.FC = () => {
                 const txList: Transaction[] = [];
                 let totalSold = 0;
                 let totalRevenue = 0;
+                let pendingCount = 0;
 
                 sellerSales.forEach((s: any) => {
                     const id = s.seller_family_id || '__direct__';
@@ -235,11 +264,17 @@ export const LotteryAdmin: React.FC = () => {
                         sName = children.length > 0 ? children.map((c: any) => c.name).join(' & ') : s.families.name;
                     }
 
-                    if (!bySellerMap[id]) bySellerMap[id] = { name: sName, tickets: 0, amount: 0 };
-                    bySellerMap[id].tickets += s.tickets || 0;
-                    bySellerMap[id].amount += s.amount || 0;
-                    totalSold += s.tickets || 0;
-                    totalRevenue += s.amount || 0;
+                    const counts = isPaid(s);
+
+                    if (counts) {
+                      if (!bySellerMap[id]) bySellerMap[id] = { name: sName, tickets: 0, amount: 0 };
+                      bySellerMap[id].tickets += s.tickets || 0;
+                      bySellerMap[id].amount += s.amount || 0;
+                      totalSold += s.tickets || 0;
+                      totalRevenue += s.amount || 0;
+                    } else if (isPending(s)) {
+                      pendingCount += 1;
+                    }
 
                     txList.push({
                         id: s.id,
@@ -249,11 +284,12 @@ export const LotteryAdmin: React.FC = () => {
                         tickets: s.tickets,
                         amount: s.amount,
                         payment_method: s.payment_method || 'vipps',
+                        status: s.status || 'CREATED',
                         sellerName: sName,
                     });
                 });
 
-                setStats({ totalSold, totalRevenue });
+                setStats({ totalSold, totalRevenue, pendingCount });
                 setSellerStats(Object.values(bySellerMap).sort((a, b) => b.tickets - a.tickets));
                 setTransactions(txList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
 
@@ -263,6 +299,9 @@ export const LotteryAdmin: React.FC = () => {
 
                 const buyerMap: Record<string, Buyer> = {};
                 txList.forEach(tx => {
+                    // Bare betalte/bekreftede salg teller mot kjøpers totaler.
+                    // CREATED/CANCELLED/FAILED er forsøk, ikke kjøp.
+                    if (!isPaid(tx)) return;
                     const key = `${tx.buyer_name}||${tx.buyer_phone}`;
                     if (!buyerMap[key]) buyerMap[key] = { name: tx.buyer_name, phone: tx.buyer_phone, totalTickets: 0, totalAmount: 0, isWinner: winnerNames.has(tx.buyer_name), wonPrize: winnerPrizeMap[tx.buyer_name] };
                     buyerMap[key].totalTickets += tx.tickets;
@@ -305,17 +344,18 @@ export const LotteryAdmin: React.FC = () => {
     setDrawing(true);
 
     try {
-        // 1. Hent ALLE salg (lodd). Tillit-basert modell — alle
-        //    registrerte lodd er trekkbare. DA avstemmer mot
-        //    Vipps-konto separat ved sesongslutt.
-        const { data: sales, error } = await supabase
+        // 1. Hent kun BETALTE lodd (Vipps-bekreftet eller kontant).
+        //    CREATED/CANCELLED/FAILED er forsøk, ikke kjøp, og kan ikke
+        //    være med i trekningen.
+        const { data: rawSales, error } = await supabase
             .from('lottery_sales')
-            .select('buyer_name, buyer_phone, tickets')
+            .select('buyer_name, buyer_phone, tickets, status, payment_method')
             .eq('lottery_id', lottery.id);
 
         if (error) throw error;
-        if (!sales || sales.length === 0) {
-            alert('Ingen lodd er solgt ennå!');
+        const sales = (rawSales || []).filter(isPaid);
+        if (sales.length === 0) {
+            alert('Ingen bekreftede betalinger ennå — trekning åpnes etter første betalte lodd.');
             setDrawing(false);
             return;
         }
@@ -397,6 +437,42 @@ export const LotteryAdmin: React.FC = () => {
     const oldIndex = prizes.findIndex((p: any) => p._tempId === active.id);
     const newIndex = prizes.findIndex((p: any) => p._tempId === over.id);
     setPrizes(arrayMove(prizes, oldIndex, newIndex));
+  };
+
+  // Validér Vipps-nummer-format mot Edge Function. Format-only —
+  // ekte MSN-validering krever Partner Program (ikke i scope for pilot).
+  // Fail-fast skjer ved første betalingsforsøk i vipps-initiate-payment.
+  const validateVippsFormat = async (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setVippsValidation('idle');
+      setVippsValidationMessage('');
+      return;
+    }
+    setVippsValidation('validating');
+    setVippsValidationMessage('Sjekker format…');
+    try {
+      const resp = await fetch(VALIDATE_FN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ vipps_number: trimmed }),
+      });
+      const data = await resp.json();
+      if (data?.valid) {
+        setVippsValidation('valid_format');
+        setVippsValidationMessage('Format er gyldig. Vipps-nummeret kontrolleres ved første betaling.');
+      } else {
+        setVippsValidation('invalid_format');
+        setVippsValidationMessage(data?.message || 'Ugyldig Vipps-nummer.');
+      }
+    } catch {
+      setVippsValidation('invalid_format');
+      setVippsValidationMessage('Kunne ikke kontakte server. Prøv igjen.');
+    }
   };
 
   const saveLottery = async () => {
@@ -516,20 +592,23 @@ export const LotteryAdmin: React.FC = () => {
 
   const fetchArchivedLotteries = async () => {
     const teamId = getActiveTeamId();
-    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount)').eq('is_active', false);
+    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, status, payment_method)').eq('is_active', false);
     if (teamId) query = query.eq('team_id', teamId);
     const { data } = await query.order('created_at', { ascending: false });
     if (data) {
-      setArchivedLotteries(data.map((l: any) => ({
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        ticketPrice: l.ticket_price,
-        totalSold: l.lottery_sales?.reduce((s: number, r: any) => s + (r.tickets || 0), 0) || 0,
-        totalRevenue: l.lottery_sales?.reduce((s: number, r: any) => s + (r.amount || 0), 0) || 0,
-        prizeCount: l.prizes?.length || 0,
-        winnersDrawn: l.prizes?.filter((p: any) => p.winner_name).length || 0
-      })));
+      setArchivedLotteries(data.map((l: any) => {
+        const paidSales = (l.lottery_sales || []).filter(isPaid);
+        return {
+          id: l.id,
+          name: l.name,
+          description: l.description,
+          ticketPrice: l.ticket_price,
+          totalSold: paidSales.reduce((s: number, r: any) => s + (r.tickets || 0), 0),
+          totalRevenue: paidSales.reduce((s: number, r: any) => s + (r.amount || 0), 0),
+          prizeCount: l.prizes?.length || 0,
+          winnersDrawn: l.prizes?.filter((p: any) => p.winner_name).length || 0
+        };
+      }));
     }
   };
 
@@ -600,10 +679,17 @@ export const LotteryAdmin: React.FC = () => {
             <div style={{ fontSize: '17px', fontWeight: '500', color: '#1a2e1f' }}>{stats.totalSold}</div>
             <div style={{ fontSize: '10px', color: '#4a5e50', marginTop: '2px' }}>Lodd solgt</div>
           </div>
-          <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '17px', fontWeight: '500', color: '#1a2e1f' }}>{buyers.length}</div>
-            <div style={{ fontSize: '10px', color: '#4a5e50', marginTop: '2px' }}>Kjøpere</div>
-          </div>
+          {stats.pendingCount > 0 ? (
+            <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '17px', fontWeight: '500', color: '#854f0b' }}>{stats.pendingCount}</div>
+              <div style={{ fontSize: '10px', color: '#854f0b', marginTop: '2px' }}>Venter</div>
+            </div>
+          ) : (
+            <div style={{ background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '17px', fontWeight: '500', color: '#1a2e1f' }}>{buyers.length}</div>
+              <div style={{ fontSize: '10px', color: '#4a5e50', marginTop: '2px' }}>Kjøpere</div>
+            </div>
+          )}
           <div style={{ background: prizesLeft > 0 ? '#fff8e6' : '#fff', border: prizesLeft > 0 ? '1px solid #fac775' : '0.5px solid #dedddd', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
             <div style={{ fontSize: '17px', fontWeight: '500', color: prizesLeft > 0 ? '#854f0b' : '#1a2e1f' }}>{lottery.prizes.length - prizesLeft}/{lottery.prizes.length}</div>
             <div style={{ fontSize: '10px', color: prizesLeft > 0 ? '#854f0b' : '#4a5e50', marginTop: '2px' }}>Trukket</div>
@@ -785,12 +871,40 @@ export const LotteryAdmin: React.FC = () => {
                 )}
             </div>
 
+            {/* Fail-fast-banner: ugyldig Vipps-nummer */}
+            {lottery.vippsValidationFailedAt && (
+              <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#b91c1c', marginBottom: '6px' }}>
+                  ⚠️ Vipps-nummeret fungerer ikke
+                </div>
+                <div style={{ fontSize: '12px', color: '#991b1b', lineHeight: '1.6', marginBottom: '10px' }}>
+                  En forelder forsøkte å betale, men Vipps avviste mottakernummeret <strong>{lottery.vippsNumber}</strong>. Lotteriet er midlertidig skjult for kjøpere.
+                  Sjekk at det er riktig 5–7-sifret Salgssted-nummer med Payment Integration aktivert.
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Aktivere lotteriet på nytt? Sørg for at Vipps-nummeret nå er korrekt.')) return;
+                    await supabase.from('lotteries').update({
+                      vipps_validation_failed_at: null,
+                      vipps_validation_error: null,
+                    }).eq('id', lottery.id);
+                    fetchActiveLottery();
+                  }}
+                  style={{ fontSize: '12px', padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#b91c1c', color: '#fff', cursor: 'pointer', fontWeight: '600' }}
+                >
+                  Aktiver på nytt
+                </button>
+              </div>
+            )}
+
             {/* Stat Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
                 {[
                   { value: `${stats.totalRevenue} kr`, label: 'Innsamlet' },
                   { value: stats.totalSold, label: 'Lodd solgt' },
-                  { value: buyers.length, label: 'Kjøpere' },
+                  stats.pendingCount > 0
+                    ? { value: stats.pendingCount, label: 'Venter', warn: true }
+                    : { value: buyers.length, label: 'Kjøpere' },
                   { value: `${lottery.prizes.length - prizesLeft}/${lottery.prizes.length}`, label: 'Trukket', warn: prizesLeft > 0 },
                 ].map((item, i) => (
                   <div key={i} style={{ background: item.warn ? '#fff8e6' : '#fff', border: item.warn ? '1px solid #fac775' : '0.5px solid #dedddd', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
@@ -815,12 +929,12 @@ export const LotteryAdmin: React.FC = () => {
             {/* === OVERSIKT === */}
             {activeView === 'oversikt' && (
                 <>
-                    {/* Avstemmings-info: tellingene under er
-                        intensjons-tellinger basert på foreldrenes
-                        bekreftelse i kjøpsflyten. Faktiske
-                        innbetalinger må sjekkes i Vipps. */}
-                    <div style={{ background: '#f3f4f6', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px 12px', marginBottom: '16px', fontSize: '12px', color: '#4a5e50', lineHeight: '1.5' }}>
-                      💡 <strong>Tips:</strong> Loddene under registreres når foreldre bekrefter at de har betalt i Vipps. For å se faktiske innbetalinger, sjekk Vipps-kontoen din. Avvik avstemmes ved lotteriets slutt.
+                    {/* Status-info: tellingene speiler nå ekte
+                        Vipps-status (via webhook). Kun AUTHORIZED/CAPTURED
+                        teller. Avstemming mot Vipps-konto er valgfri
+                        sanity-check, ikke nødvendig for sluttoppgjør. */}
+                    <div style={{ background: '#e8f5ef', border: '0.5px solid #b8dfc9', borderRadius: '8px', padding: '10px 12px', marginBottom: '16px', fontSize: '12px', color: '#1a2e1f', lineHeight: '1.5' }}>
+                      ✓ <strong>Tellingene over er ekte:</strong> Hver lodd telles først når Vipps har bekreftet betalingen. Mislykkede eller avbrutte forsøk telles ikke.
                     </div>
 
                     {/* Topp selgere */}
@@ -912,11 +1026,27 @@ export const LotteryAdmin: React.FC = () => {
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Lodd</th>
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Beløp</th>
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Betaling</th>
+                                        <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Status</th>
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Selger</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredTx.map(tx => (
+                                    {filteredTx.map(tx => {
+                                      const statusBadge = (() => {
+                                        if (tx.payment_method === 'cash') return { label: 'Betalt', bg: '#e8f5ef', fg: '#2d6a4f' };
+                                        switch (tx.status) {
+                                          case 'CAPTURED': return { label: 'Betalt', bg: '#e8f5ef', fg: '#2d6a4f' };
+                                          case 'AUTHORIZED': return { label: 'Bekreftet', bg: '#fff8e6', fg: '#854f0b' };
+                                          case 'CREATED': return { label: 'Venter', bg: '#f3f4f6', fg: '#6b7f70' };
+                                          case 'CANCELLED':
+                                          case 'TERMINATED': return { label: 'Avbrutt', bg: '#fff5f5', fg: '#b91c1c' };
+                                          case 'EXPIRED': return { label: 'Utløpt', bg: '#fff5f5', fg: '#b91c1c' };
+                                          case 'FAILED': return { label: 'Mislyktes', bg: '#fff5f5', fg: '#b91c1c' };
+                                          case 'REFUNDED': return { label: 'Refundert', bg: '#f3f4f6', fg: '#6b7f70' };
+                                          default: return { label: tx.status, bg: '#f3f4f6', fg: '#6b7f70' };
+                                        }
+                                      })();
+                                      return (
                                         <tr key={tx.id} style={{ borderBottom: '0.5px solid #eee' }}>
                                             <td style={{ padding: '8px 6px', whiteSpace: 'nowrap', color: '#4a5e50' }}>{new Date(tx.created_at).toLocaleDateString('nb-NO')} {new Date(tx.created_at).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}</td>
                                             <td style={{ padding: '8px 6px', fontWeight: '500', color: '#1a2e1f' }}>{tx.buyer_name}</td>
@@ -928,9 +1058,15 @@ export const LotteryAdmin: React.FC = () => {
                                                     {tx.payment_method === 'cash' ? '💵 Kontant' : '📱 Vipps'}
                                                 </span>
                                             </td>
+                                            <td style={{ padding: '8px 6px' }}>
+                                                <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '6px', background: statusBadge.bg, color: statusBadge.fg, fontWeight: '500' }}>
+                                                    {statusBadge.label}
+                                                </span>
+                                            </td>
                                             <td style={{ padding: '8px 6px', fontSize: '11px', color: '#6b7f70' }}>{tx.sellerName}</td>
                                         </tr>
-                                    ))}
+                                      );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -1142,11 +1278,36 @@ export const LotteryAdmin: React.FC = () => {
                                     ref={el => { createFieldRefs.current.vippsNumber = el; }}
                                     className="input"
                                     value={vippsNumber}
-                                    onChange={e => { setVippsNumber(e.target.value); clearCreateError('vippsNumber'); }}
+                                    onChange={e => {
+                                      setVippsNumber(e.target.value);
+                                      clearCreateError('vippsNumber');
+                                      // Endring → tilbake til idle, må valideres på nytt ved blur
+                                      if (vippsValidation !== 'idle') setVippsValidation('idle');
+                                    }}
+                                    onBlur={e => validateVippsFormat(e.target.value)}
                                     placeholder="12345"
-                                    style={errorBorder(!!createErrors.vippsNumber)}
+                                    style={{
+                                      ...errorBorder(!!createErrors.vippsNumber || vippsValidation === 'invalid_format'),
+                                      ...(vippsValidation === 'valid_format' ? { border: '1px solid #2d6a4f' } : {}),
+                                    }}
                                 />
                                 {createErrors.vippsNumber && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.vippsNumber}</p>}
+                                {vippsValidation === 'validating' && (
+                                  <p style={{ color: '#6b7f70', fontSize: '12px', margin: '6px 0 0 0' }}>{vippsValidationMessage}</p>
+                                )}
+                                {vippsValidation === 'valid_format' && (
+                                  <p style={{ color: '#2d6a4f', fontSize: '12px', margin: '6px 0 0 0' }}>✓ {vippsValidationMessage}</p>
+                                )}
+                                {vippsValidation === 'invalid_format' && (
+                                  <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>✗ {vippsValidationMessage}</p>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowVippsHelpModal(true)}
+                                  style={{ background: 'none', border: 'none', padding: 0, marginTop: '6px', color: '#2d6a4f', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+                                >
+                                  ⓘ Hvor finner jeg Vipps-nummeret?
+                                </button>
                             </div>
                         </div>
 
@@ -1177,13 +1338,79 @@ export const LotteryAdmin: React.FC = () => {
 
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '8px' }}>
                             <button onClick={() => setShowCreateModal(false)} className="btn">Avbryt</button>
-                            <button onClick={() => saveLottery()} className="btn btn-primary" style={{ padding: '12px 32px' }}>
+                            <button
+                              onClick={() => saveLottery()}
+                              disabled={vippsValidation !== 'valid_format' || loading}
+                              className="btn btn-primary"
+                              style={{
+                                padding: '12px 32px',
+                                opacity: (vippsValidation !== 'valid_format' || loading) ? 0.5 : 1,
+                                cursor: (vippsValidation !== 'valid_format' || loading) ? 'not-allowed' : 'pointer',
+                              }}
+                              title={vippsValidation !== 'valid_format' ? 'Skriv inn et gyldig Vipps-nummer først' : ''}
+                            >
                                 {loading ? 'Lagrer...' : '🚀 Start lotteriet'}
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
+        )}
+
+        {/* INFO-MODAL: Hvor finner jeg Vipps-nummeret? */}
+        {showVippsHelpModal && (
+          <div
+            onClick={() => setShowVippsHelpModal(false)}
+            onKeyDown={e => { if (e.key === 'Escape') setShowVippsHelpModal(false); }}
+            tabIndex={-1}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '20px' }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: '#fff', borderRadius: '12px', padding: '28px', maxWidth: '520px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1a2e1f' }}>Hvor finner du lagets Vipps-nummer</h3>
+                <button onClick={() => setShowVippsHelpModal(false)} aria-label="Lukk" style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#6b7f70', padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#4a5e50', lineHeight: '1.7' }}>
+                <p style={{ marginTop: 0 }}>
+                  Lagets Vipps-nummer er det 5–7-sifrede nummeret som er knyttet til lagets Vipps Salgssted. Det er ikke et privat Vipps-nummer.
+                </p>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Hvordan finne det:</p>
+                <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                  <li>Logg inn på <strong>business.vipps.no</strong> med BankID</li>
+                  <li>Velg laget i øverste meny (hvis du administrerer flere)</li>
+                  <li>Klikk <strong>«Salgssteder»</strong> i venstre meny</li>
+                  <li>Vipps-nummeret står øverst på Salgsstedet — eks: <code>123456</code></li>
+                </ol>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Vippsen må ha «Payment Integration» aktivert.</p>
+                <p style={{ marginTop: 0 }}>
+                  Hvis Salgsstedet kun har «Cash register integration» (for kiosk-bruk), må noen i klubben aktivere Payment Integration:
+                </p>
+                <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                  <li>Gå til <strong>business.vipps.no</strong></li>
+                  <li>Bestill produkt → <strong>«Payment Integration»</strong></li>
+                  <li>Aktivering tar normalt 1–2 dager</li>
+                  <li>Kom tilbake hit når dere har bekreftelse fra Vipps</li>
+                </ol>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Har laget ikke Salgssted ennå?</p>
+                <p>Da må klubbens kasserer eller styre bestille det først. Kontakt Vipps via <strong>business.vipps.no</strong>.</p>
+
+                <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '8px', padding: '12px', fontSize: '12px', color: '#854f0b', marginTop: '16px' }}>
+                  💡 <strong>Vipps-nummeret kontrolleres ved første betaling.</strong> Hvis nummeret er feil, ser dere det da og kan rette opp.
+                </div>
+
+                <p style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70' }}>
+                  Trenger du hjelp? Klubbens kasserer eller styre kan hjelpe.
+                </p>
+              </div>
+            </div>
+          </div>
         )}
     </div>
   );
