@@ -61,7 +61,7 @@ async function notifyCoordinatorOfFailure(teamId: string | null, lotteryName: st
   try {
     const { data: members } = await supabase
       .from('team_members')
-      .select('user_id, family_id')
+      .select('auth_user_id, family_id')
       .eq('team_id', teamId)
       .in('role', ['coordinator', 'club_admin']);
 

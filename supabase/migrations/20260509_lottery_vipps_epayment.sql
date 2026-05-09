@@ -82,7 +82,7 @@ CREATE POLICY vipps_webhook_events_select_coord
   USING (
     EXISTS (
       SELECT 1 FROM team_members tm
-      WHERE tm.user_id = auth.uid()
+      WHERE tm.auth_user_id = auth.uid()
         AND tm.role IN ('coordinator', 'club_admin')
     )
   );
