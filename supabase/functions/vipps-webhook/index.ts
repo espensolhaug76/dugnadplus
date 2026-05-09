@@ -52,30 +52,95 @@ function mapVippsEvent(eventName: string): string | null {
   }
 }
 
-// HMAC-SHA256 verifisering. Vipps signerer body med shared secret.
-async function verifyHmacSignature(rawBody: string, signature: string): Promise<boolean> {
-  if (!WEBHOOK_SECRET || !signature) return false;
-  try {
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(WEBHOOK_SECRET),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
-    const expected = btoa(String.fromCharCode(...new Uint8Array(sig)));
-    // Constant-time-ish sammenligning
-    if (expected.length !== signature.length) return false;
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) {
-      diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-    }
-    return diff === 0;
-  } catch (e) {
-    console.error('[webhook] HMAC verify error:', e);
-    return false;
+// HMAC-SHA256 verifisering per Vipps Webhooks v1 spec.
+// Vipps signerer ikke rå body, men en konstruert signatureText:
+//   POST\n{pathAndQuery}\n{x-ms-date};{host};{contentHash}
+// hvor contentHash = base64(SHA-256(rawBody)).
+//
+// Selve signaturen kommer i Authorization-headeren, ikke X-Ms-Signature
+// (som ikke finnes). Format: "HMAC-SHA256 SignedHeaders=...&Signature={base64}"
+//
+// Returnerer { valid, reason } så vi kan logge konkret feilårsak
+// (debugging på tvers av pilot-test-runder).
+
+interface SigResult { valid: boolean; reason?: string; }
+
+async function sha256Base64(input: Uint8Array | string): Promise<string> {
+  const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(hash)));
+}
+
+async function hmacSha256Base64(secret: string, data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+// Constant-time string compare for å unngå timing-leakage på secret.
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Trekk ut Signature={base64} fra "HMAC-SHA256 SignedHeaders=...&Signature=XYZ"
+function extractSignatureFromAuth(auth: string): string | null {
+  const m = auth.match(/Signature=([A-Za-z0-9+/=]+)/);
+  return m ? m[1] : null;
+}
+
+async function verifyVippsSignature(
+  req: Request,
+  rawBody: string
+): Promise<SigResult> {
+  if (!WEBHOOK_SECRET) return { valid: false, reason: 'no_secret_configured' };
+
+  const date = req.headers.get('x-ms-date');
+  const contentHashHeader = req.headers.get('x-ms-content-sha256');
+  const auth = req.headers.get('authorization');
+  if (!date || !contentHashHeader || !auth) {
+    return { valid: false, reason: 'missing_headers' };
   }
+
+  const providedSig = extractSignatureFromAuth(auth);
+  if (!providedSig) return { valid: false, reason: 'malformed_authorization' };
+
+  // Verifiser at contentHash matcher body
+  const computedHash = await sha256Base64(rawBody);
+  if (!constantTimeEqual(computedHash, contentHashHeader)) {
+    console.error('[webhook] content hash mismatch', { computedHash, header: contentHashHeader });
+    return { valid: false, reason: 'content_hash_mismatch' };
+  }
+
+  // Vipps signerer mot den eksterne URL-en webhooken ble registrert med.
+  // Supabase Edge Runtime setter `host` til intern verdi — bruk
+  // x-forwarded-host hvis tilgjengelig.
+  const url = new URL(req.url);
+  const host = req.headers.get('x-forwarded-host')
+            || req.headers.get('host')
+            || url.host;
+  const pathAndQuery = url.pathname + url.search;
+
+  const signatureText = `POST\n${pathAndQuery}\n${date};${host};${contentHashHeader}`;
+  const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
+
+  if (!constantTimeEqual(expected, providedSig)) {
+    console.error('[webhook] signature mismatch', {
+      pathAndQuery, host, date,
+      expected_len: expected.length, provided_len: providedSig.length,
+    });
+    return { valid: false, reason: 'signature_mismatch' };
+  }
+
+  return { valid: true };
 }
 
 async function autoCapture(
@@ -105,7 +170,9 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return corsResponse({ error: 'Method not allowed' }, 405);
 
   const rawBody = await req.text();
-  const signature = req.headers.get('X-Ms-Signature') || req.headers.get('x-ms-signature') || '';
+  // Logg hele Authorization-headeren (inneholder SignedHeaders + Signature)
+  // for debugging. Se verifyVippsSignature for hvordan den parses.
+  const authHeader = req.headers.get('authorization') || '';
 
   let payload: any = null;
   try {
@@ -116,7 +183,7 @@ Deno.serve(async (req) => {
       vipps_reference: 'unknown',
       event_name: 'parse_error',
       payload: { raw: rawBody.slice(0, 1000) },
-      signature,
+      signature: authHeader,
       signature_valid: false,
       result: 'invalid_json',
     });
@@ -127,7 +194,7 @@ Deno.serve(async (req) => {
   const eventName: string = payload?.name || payload?.eventName || 'unknown';
 
   // Verifisér signatur. Logg uansett (også ved invalid).
-  const sigValid = await verifyHmacSignature(rawBody, signature);
+  const sigCheck = await verifyVippsSignature(req, rawBody);
 
   // Logg eventet før vi prosesserer (for debugging selv ved feil)
   const { data: eventLog } = await supabase
@@ -136,8 +203,8 @@ Deno.serve(async (req) => {
       vipps_reference: reference,
       event_name: eventName,
       payload,
-      signature,
-      signature_valid: sigValid,
+      signature: authHeader,
+      signature_valid: sigCheck.valid,
       result: 'pending',
     })
     .select('id')
@@ -148,9 +215,10 @@ Deno.serve(async (req) => {
       ? supabase.from('vipps_webhook_events').update({ result }).eq('id', eventLog.id)
       : Promise.resolve();
 
-  if (!sigValid) {
-    await updateLog('invalid_signature');
-    return corsResponse({ error: 'Invalid signature' }, 401);
+  if (!sigCheck.valid) {
+    // Konkret årsak istedenfor generisk 'invalid_signature'
+    await updateLog(sigCheck.reason || 'invalid_signature');
+    return corsResponse({ error: 'Invalid signature', reason: sigCheck.reason }, 401);
   }
 
   const newStatus = mapVippsEvent(eventName);
