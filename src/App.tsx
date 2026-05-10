@@ -81,7 +81,7 @@ import { VilkarPage } from './components/legal/VilkarPage';
 // Profil
 import { ProfilePage } from './components/family/ProfilePage';
 
-const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium', '/personvern', '/vilkar', '/coordinator-invite', '/club-admin-dashboard'];
+const FULL_BLEED_PATHS = ['/', '/login', '/register', '/join', '/campaign-shop', '/kiosk', '/kiosk-shop', '/lottery-shop', '/sponsors', '/parent-dashboard', '/parent-swap', '/premium', '/personvern', '/vilkar', '/coordinator-invite', '/club-admin-dashboard'];
 
 function AppContent() {
   const location = useLocation();
@@ -146,6 +146,8 @@ function AppContent() {
           {/* Kiosk */}
           <Route path="/kiosk-admin" element={<CoordinatorLayout><KioskAdmin /></CoordinatorLayout>} />
           <Route path="/kiosk" element={<KioskShop />} />
+          {/* Vipps ePayment-retur peker hit (FRONTEND_BASE_URL/kiosk-shop) */}
+          <Route path="/kiosk-shop" element={<KioskShop />} />
 
           {/* Markedsplass */}
           <Route path="/marketplace" element={<CoordinatorLayout><MarketplacePage /></CoordinatorLayout>} />

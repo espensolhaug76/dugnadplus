@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 interface KioskItem {
@@ -13,40 +13,156 @@ interface CartEntry {
   qty: number;
 }
 
+interface KioskSettings {
+  vippsNumber: string;
+  vippsValidationFailedAt: string | null;
+}
+
+interface ResultItem {
+  name: string;
+  emoji: string;
+  price: number;
+  qty: number;
+}
+
+// Phase-modell for Vipps ePayment-integrasjon (2026-05-10 — kiosk
+// migrert til samme arkitektur som lottery):
+//   shop        — meny + handlekurv + kjøperinfo (default)
+//   initiating  — POST /vipps-initiate-payment, vis spinner
+//   redirecting — fikk redirectUrl, sender brukeren til Vipps
+//   returning   — kommet tilbake fra Vipps, polling status
+//   success     — CAPTURED eller AUTHORIZED — kjøp registrert
+//   cancelled   — CANCELLED/TERMINATED
+//   failed      — FAILED/EXPIRED eller teknisk feil
+type Phase = 'shop' | 'initiating' | 'redirecting' | 'returning' | 'success' | 'cancelled' | 'failed';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const FN = (name: string) => `${SUPABASE_URL}/functions/v1/${name}`;
+
+const LS_REF_KEY = 'dugnad_kiosk_pending_reference';
+
 export const KioskShop: React.FC = () => {
   const [items, setItems] = useState<KioskItem[]>([]);
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [loading, setLoading] = useState(true);
   const [clubName, setClubName] = useState('');
-  const [vippsNumber, setVippsNumber] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [teamId, setTeamId] = useState('');
+  const [settings, setSettings] = useState<KioskSettings | null>(null);
+
+  const [phase, setPhase] = useState<Phase>('shop');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerPhone, setBuyerPhone] = useState('');
+
+  // Snapshot for kvitteringsskjermen — settes ved initiering så vi
+  // har data å vise selv etter cart er tømt ved retur fra Vipps.
+  // Tom array hvis brukeren reloadet siden under retur-flyten
+  // (da viser vi kun totalbeløp).
+  const [resultItems, setResultItems] = useState<ResultItem[]>([]);
+  const [resultTotal, setResultTotal] = useState(0);
+
+  const pollAbortRef = useRef(false);
 
   useEffect(() => {
-    loadShop();
+    const fetchData = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tid = params.get('team') || '';
+        const reference = params.get('reference');
+
+        setTeamId(tid);
+
+        try {
+          const club = JSON.parse(localStorage.getItem('dugnad_club') || '{}');
+          setClubName(club.name || '');
+        } catch { /* noop */ }
+
+        if (tid) {
+          const [itemsRes, settingsRes] = await Promise.all([
+            supabase
+              .from('kiosk_items')
+              .select('*')
+              .eq('team_id', tid)
+              .eq('is_active', true)
+              .order('name'),
+            supabase
+              .from('kiosk_settings')
+              .select('vipps_number, vipps_validation_failed_at')
+              .eq('team_id', tid)
+              .maybeSingle(),
+          ]);
+          if (itemsRes.data) setItems(itemsRes.data);
+          setSettings({
+            vippsNumber: settingsRes.data?.vipps_number || '',
+            vippsValidationFailedAt: settingsRes.data?.vipps_validation_failed_at || null,
+          });
+        }
+
+        // Retur fra Vipps?
+        if (reference) {
+          setPhase('returning');
+          // Fjern reference fra URL så reload ikke trigger ny poll
+          const cleanUrl = window.location.pathname + (tid ? `?team=${encodeURIComponent(tid)}` : '');
+          window.history.replaceState({}, '', cleanUrl);
+          pollStatus(reference);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+    return () => { pollAbortRef.current = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadShop = async () => {
-    const params = new URLSearchParams(window.location.search);
-    const teamId = params.get('team') || '';
+  // Poll vipps-poll-status: prøv inntil 4 ganger over ~6 sek.
+  // Webhook er sannhetskilde, men kan være litt forsinket.
+  const pollStatus = async (reference: string) => {
+    const delays = [0, 1500, 1500, 1500];
+    for (let i = 0; i < delays.length; i++) {
+      if (pollAbortRef.current) return;
+      if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
+      try {
+        const resp = await fetch(`${FN('vipps-poll-status')}?reference=${encodeURIComponent(reference)}`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        });
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        setResultTotal(data.amount || 0);
 
-    // Hent varer
-    const query = supabase.from('kiosk_items').select('*').eq('is_active', true);
-    if (teamId) query.eq('team_id', teamId);
-    const { data } = await query.order('name');
-    if (data) setItems(data);
-
-    // Klubbnavn
-    try {
-      const club = JSON.parse(localStorage.getItem('dugnad_club') || '{}');
-      setClubName(club.name || '');
-    } catch {}
-
-    // Vipps-nummer
-    const storedVipps = localStorage.getItem('dugnad_kiosk_vipps');
-    if (storedVipps) setVippsNumber(storedVipps);
-
-    setLoading(false);
+        if (data.status === 'CAPTURED' || data.status === 'AUTHORIZED') {
+          localStorage.removeItem(LS_REF_KEY);
+          setPhase('success');
+          return;
+        }
+        if (data.status === 'CANCELLED' || data.status === 'TERMINATED') {
+          localStorage.removeItem(LS_REF_KEY);
+          setPhase('cancelled');
+          return;
+        }
+        if (data.status === 'EXPIRED') {
+          localStorage.removeItem(LS_REF_KEY);
+          setErrorMessage('Betalingen tok for lang tid og ble avbrutt av Vipps.');
+          setPhase('failed');
+          return;
+        }
+        if (data.status === 'FAILED') {
+          localStorage.removeItem(LS_REF_KEY);
+          setErrorMessage(data.failure_reason || 'Vipps avviste betalingen.');
+          setPhase('failed');
+          return;
+        }
+        // CREATED — fortsett å polle
+      } catch (e) {
+        console.error('[poll]', e);
+      }
+    }
+    // Etter alle forsøk: anta at webhook kommer senere
+    localStorage.removeItem(LS_REF_KEY);
+    setPhase('success');
   };
 
   const addToCart = (item: KioskItem) => {
@@ -71,138 +187,364 @@ export const KioskShop: React.FC = () => {
   const cartEntries = Object.values(cart).filter(e => e.qty > 0);
   const total = cartEntries.reduce((sum, e) => sum + e.item.price * e.qty, 0);
 
-  const handlePay = () => {
-    if (total <= 0) return;
-    const message = `Kiosk ${clubName || 'lag'}`;
-    const vippsUrl = `vipps://?amt=${total}&msg=${encodeURIComponent(message)}`;
+  // Steg 1: kall vipps-initiate-payment, send brukeren til Vipps.
+  const handlePurchase = async () => {
+    if (!teamId || cartEntries.length === 0) return;
+    if (!buyerName.trim() || !buyerPhone.trim()) {
+      alert('Vennligst fyll inn navn og mobilnummer.');
+      return;
+    }
+    const phoneClean = buyerPhone.replace(/\D/g, '');
+    if (!/^\d{8}$/.test(phoneClean)) {
+      alert('Mobilnummer må være 8 sifre.');
+      return;
+    }
 
-    // Prøv å åpne Vipps
-    window.location.href = vippsUrl;
+    setErrorMessage('');
 
-    // Vis bekreftelsesside etter kort delay
-    setTimeout(() => setConfirmed(true), 1000);
+    // Snapshot for kvitteringen — cart kan endres/tømmes etterpå
+    const itemsSnapshot: ResultItem[] = cartEntries.map(e => ({
+      name: e.item.name,
+      emoji: e.item.emoji,
+      price: e.item.price,
+      qty: e.qty,
+    }));
+    setResultItems(itemsSnapshot);
+    setResultTotal(total);
+    setPhase('initiating');
+
+    try {
+      const resp = await fetch(FN('vipps-initiate-payment'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          source: 'kiosk',
+          team_id: teamId,
+          items: itemsSnapshot,
+          buyer_name: buyerName.trim(),
+          buyer_phone: phoneClean,
+          amount_nok: total,
+        }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        if (data?.reason === 'merchant_invalid') {
+          setErrorMessage('Kiosken er midlertidig utilgjengelig. Klubben er varslet og fikser saken.');
+        } else {
+          setErrorMessage(data?.error || 'Kunne ikke starte Vipps-betaling. Prøv igjen om litt.');
+        }
+        setPhase('failed');
+        return;
+      }
+
+      const { redirectUrl, vipps_reference } = data;
+      if (!redirectUrl) {
+        setErrorMessage('Vipps returnerte ingen URL. Prøv igjen.');
+        setPhase('failed');
+        return;
+      }
+
+      try { localStorage.setItem(LS_REF_KEY, vipps_reference); } catch { /* noop */ }
+      setPhase('redirecting');
+      window.location.href = redirectUrl;
+    } catch (e) {
+      console.error('[initiate]', e);
+      setErrorMessage('Nettverksfeil. Sjekk forbindelsen og prøv igjen.');
+      setPhase('failed');
+    }
   };
 
-  const handleConfirmSale = async () => {
-    setSaving(true);
-    const saleItems = cartEntries.map(e => ({ name: e.item.name, emoji: e.item.emoji, price: e.item.price, qty: e.qty }));
-
-    await supabase.from('kiosk_sales').insert({
-      items: saleItems,
-      total_amount: total,
-      vipps_number: vippsNumber,
-      event_id: null
-    });
-
-    setSaving(false);
+  const resetForNewPurchase = () => {
+    setBuyerName('');
+    setBuyerPhone('');
     setCart({});
-    setConfirmed(false);
-    alert('Takk for handelen!');
+    setErrorMessage('');
+    setResultItems([]);
+    setResultTotal(0);
+    setPhase('shop');
   };
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Laster kiosk...</div>;
+  if (loading) {
+    return <div style={{ padding: '40px', textAlign: 'center', background: '#faf8f4', color: '#1a2e1f' }}>Laster kiosk…</div>;
+  }
 
-  // Bekreftelsesside
-  if (confirmed) {
+  // ===== Mangler team-parameter =====
+  if (!teamId) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-        <div style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>Betalt?</h1>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>Trykk bekreft etter at du har betalt i Vipps.</p>
-
-          <div style={{ background: 'var(--card-bg, white)', borderRadius: '12px', padding: '20px', marginBottom: '24px', border: '1px solid #bbf7d0' }}>
-            {cartEntries.map(e => (
-              <div key={e.item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '15px' }}>
-                <span>{e.item.emoji} {e.item.name} × {e.qty}</span>
-                <strong>{e.item.price * e.qty} kr</strong>
-              </div>
-            ))}
-            <div style={{ borderTop: '2px solid #e5e7eb', marginTop: '12px', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: '800', color: 'var(--color-primary)' }}>
-              <span>Totalt</span><span>{total} kr</span>
-            </div>
-          </div>
-
-          <button onClick={handleConfirmSale} disabled={saving} style={{ width: '100%', padding: '16px', fontSize: '18px', fontWeight: '700', background: '#10b981', color: 'white', border: 'none', borderRadius: '30px', cursor: 'pointer' }}>
-            {saving ? 'Registrerer...' : 'Bekreft betaling'}
-          </button>
-          <button onClick={() => setConfirmed(false)} style={{ marginTop: '12px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '14px' }}>
-            Tilbake til kiosken
-          </button>
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🔗</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Kiosk-lenken mangler</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            Skann QR-koden ved kiosken eller bruk lenken laget har delt.
+          </p>
         </div>
-      </div>
+      </CenteredCard>
     );
   }
 
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-secondary)' }}>
-      {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)', padding: '24px 20px', color: 'white', textAlign: 'center' }}>
-        <div style={{ fontSize: '32px', marginBottom: '4px' }}>🛒</div>
-        <h1 style={{ fontSize: '22px', fontWeight: '700', margin: '0 0 4px' }}>{clubName || 'Kiosk'}</h1>
-        <p style={{ opacity: 0.9, fontSize: '14px', margin: 0 }}>Velg varer og betal med Vipps</p>
-      </div>
+  // ===== Kiosken er ikke åpen ennå (mangler vipps_number eller varer) =====
+  if (phase === 'shop' && (!settings?.vippsNumber || items.length === 0)) {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🛒</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Kiosken er ikke åpen ennå</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            Laget er ikke ferdig med å sette opp kiosken. Prøv igjen senere.
+          </p>
+        </div>
+      </CenteredCard>
+    );
+  }
 
-      {/* Meny */}
-      <div style={{ padding: '20px', maxWidth: '500px', margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
-          {items.map(item => {
-            const inCart = cart[item.id]?.qty || 0;
-            return (
-              <div key={item.id} onClick={() => addToCart(item)} style={{
-                padding: '20px 16px', borderRadius: '16px', textAlign: 'center', cursor: 'pointer',
-                background: inCart > 0 ? '#f0fdfa' : 'white',
-                border: inCart > 0 ? '2px solid #0d9488' : '2px solid #e5e7eb',
-                transition: 'all 0.15s', position: 'relative'
-              }}>
-                {inCart > 0 && (
-                  <div style={{ position: 'absolute', top: '-8px', right: '-8px', width: '28px', height: '28px', borderRadius: '50%', background: '#0d9488', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700' }}>{inCart}</div>
-                )}
-                <div style={{ fontSize: '40px', marginBottom: '8px' }}>{item.emoji}</div>
-                <div style={{ fontWeight: '600', fontSize: '16px', color: 'var(--text-primary)' }}>{item.name}</div>
-                <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-primary)', marginTop: '4px' }}>{item.price} kr</div>
+  // ===== Kiosken midlertidig utilgjengelig pga. ugyldig Vipps-nummer =====
+  if (phase === 'shop' && settings?.vippsValidationFailedAt) {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>⏸️</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Kiosken er midlertidig utilgjengelig</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            Klubben er varslet og fikser saken. Prøv igjen om litt.
+          </p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== INITIATING =====
+  if (phase === 'initiating') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>⏳</div>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '700', color: '#1a2e1f' }}>Forbereder Vipps-betaling…</h2>
+          <p style={{ marginTop: '12px', fontSize: '13px', color: '#4a5e50' }}>Et øyeblikk.</p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== REDIRECTING =====
+  if (phase === 'redirecting') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>📱</div>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '700', color: '#1a2e1f' }}>Sender deg til Vipps…</h2>
+          <p style={{ marginTop: '12px', fontSize: '13px', color: '#4a5e50' }}>
+            Hvis Vipps ikke åpner automatisk, sjekk om appen er installert eller lim inn lenken manuelt.
+          </p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== RETURNING =====
+  if (phase === 'returning') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🔄</div>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '700', color: '#1a2e1f' }}>Sjekker betalingsstatus…</h2>
+          <p style={{ marginTop: '12px', fontSize: '13px', color: '#4a5e50' }}>Et øyeblikk.</p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== SUCCESS =====
+  if (phase === 'success') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎉</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Takk for handelen!</h2>
+          {resultItems.length > 0 ? (
+            <div style={{ marginTop: '20px', textAlign: 'left', background: '#faf8f4', borderRadius: '10px', padding: '16px' }}>
+              {resultItems.map((it, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '14px', color: '#1a2e1f' }}>
+                  <span>{it.qty}× {it.emoji} {it.name}</span>
+                  <span style={{ color: '#4a5e50' }}>{it.price * it.qty} kr</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #dedddd', marginTop: '8px', paddingTop: '8px', fontSize: '16px', fontWeight: '700', color: '#2d6a4f' }}>
+                <span>Totalt</span>
+                <span>{resultTotal} kr</span>
               </div>
-            );
-          })}
+            </div>
+          ) : (
+            <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50' }}>
+              {resultTotal > 0 ? `Du har betalt ${resultTotal} kr.` : 'Betalingen er registrert.'}
+            </p>
+          )}
+          <p style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70' }}>Du finner kvittering i Vipps.</p>
+          <button
+            onClick={resetForNewPurchase}
+            style={{ marginTop: '24px', width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            Kjøp mer
+          </button>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== CANCELLED =====
+  if (phase === 'cancelled') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>↩️</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Betalingen er avbrutt</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            Ingen kjøp er registrert.
+          </p>
+          <button
+            onClick={resetForNewPurchase}
+            style={{ marginTop: '24px', width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            Prøv igjen
+          </button>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== FAILED =====
+  if (phase === 'failed') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>⚠️</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Noe gikk galt</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            {errorMessage || 'Vipps-betalingen kunne ikke fullføres.'}
+          </p>
+          <button
+            onClick={resetForNewPurchase}
+            style={{ marginTop: '24px', width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            Prøv igjen
+          </button>
+          <div style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70' }}>
+            Trenger du hjelp? Klubbens kasserer eller styre kan hjelpe.
+          </div>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== SHOP =====
+  return (
+    <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', justifyContent: 'center', padding: '20px 10px' }}>
+      <div style={{ maxWidth: '500px', width: '100%', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+        <div style={{ background: '#1e3a2f', padding: '32px 20px', color: 'white', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🛒</div>
+          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800' }}>{clubName || 'Kiosk'}</h1>
+          <p style={{ color: 'rgba(255,255,255,0.6)', marginTop: '8px', fontSize: '14px' }}>Velg varer og betal med Vipps</p>
         </div>
 
-        {/* Handlekurv */}
-        {cartEntries.length > 0 && (
-          <div style={{ background: 'var(--card-bg, white)', borderRadius: '16px', padding: '20px', border: '2px solid #0d9488', marginBottom: '20px' }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: '600' }}>Din bestilling</h3>
-            {cartEntries.map(e => (
-              <div key={e.item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span style={{ fontSize: '15px' }}>{e.item.emoji} {e.item.name}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button onClick={(ev) => { ev.stopPropagation(); removeFromCart(e.item.id); }} style={{ width: '30px', height: '30px', borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg, white)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>-</button>
-                  <span style={{ fontWeight: '700', minWidth: '20px', textAlign: 'center' }}>{e.qty}</span>
-                  <button onClick={(ev) => { ev.stopPropagation(); addToCart(e.item); }} style={{ width: '30px', height: '30px', borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg, white)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                  <span style={{ fontWeight: '700', minWidth: '60px', textAlign: 'right', color: 'var(--color-primary)' }}>{e.item.price * e.qty} kr</span>
+        <div style={{ padding: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            {items.map(item => {
+              const inCart = cart[item.id]?.qty || 0;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => addToCart(item)}
+                  style={{
+                    padding: '20px 16px', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
+                    background: inCart > 0 ? '#e8f5ef' : '#ffffff',
+                    border: inCart > 0 ? '2px solid #2d6a4f' : '0.5px solid #dedddd',
+                    transition: 'all 0.15s', position: 'relative',
+                  }}
+                >
+                  {inCart > 0 && (
+                    <div style={{ position: 'absolute', top: '-8px', right: '-8px', width: '28px', height: '28px', borderRadius: '50%', background: '#2d6a4f', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700' }}>{inCart}</div>
+                  )}
+                  <div style={{ fontSize: '40px', marginBottom: '8px' }}>{item.emoji}</div>
+                  <div style={{ fontWeight: '600', fontSize: '16px', color: '#1a2e1f' }}>{item.name}</div>
+                  <div style={{ fontSize: '18px', fontWeight: '700', color: '#2d6a4f', marginTop: '4px' }}>{item.price} kr</div>
                 </div>
-              </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '12px', marginTop: '8px', borderTop: '2px solid #e5e7eb', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
-              <span>Totalt</span><span>{total} kr</span>
-            </div>
+              );
+            })}
           </div>
-        )}
 
-        {/* Betal */}
-        {total > 0 && (
-          <button onClick={handlePay} style={{
-            width: '100%', padding: '18px', fontSize: '20px', fontWeight: '700',
-            background: 'linear-gradient(135deg, #0d9488, #0f766e)', color: 'white',
-            border: 'none', borderRadius: '30px', cursor: 'pointer',
-            boxShadow: '0 4px 14px rgba(13, 148, 136, 0.3)'
-          }}>
-            Betal {total} kr med Vipps
-          </button>
-        )}
+          {/* Handlekurv */}
+          {cartEntries.length > 0 && (
+            <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px', border: '0.5px solid #dedddd', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '700', color: '#1a2e1f' }}>Din bestilling</h3>
+              {cartEntries.map(e => (
+                <div key={e.item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                  <span style={{ fontSize: '14px', color: '#1a2e1f' }}>{e.item.emoji} {e.item.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      onClick={(ev) => { ev.stopPropagation(); removeFromCart(e.item.id); }}
+                      style={{ width: '28px', height: '28px', borderRadius: '50%', border: '0.5px solid #dedddd', background: '#ffffff', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a2e1f' }}
+                    >−</button>
+                    <span style={{ fontWeight: '700', minWidth: '20px', textAlign: 'center', color: '#1a2e1f' }}>{e.qty}</span>
+                    <button
+                      onClick={(ev) => { ev.stopPropagation(); addToCart(e.item); }}
+                      style={{ width: '28px', height: '28px', borderRadius: '50%', border: '0.5px solid #dedddd', background: '#ffffff', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a2e1f' }}
+                    >+</button>
+                    <span style={{ fontWeight: '700', minWidth: '60px', textAlign: 'right', color: '#2d6a4f' }}>{e.item.price * e.qty} kr</span>
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '12px', marginTop: '8px', borderTop: '1px solid #dedddd', fontSize: '18px', fontWeight: '800', color: '#2d6a4f' }}>
+                <span>Totalt</span><span>{total} kr</span>
+              </div>
+            </div>
+          )}
 
-        {total === 0 && (
-          <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px', marginTop: '20px' }}>Trykk på en vare for å legge til</p>
-        )}
+          {/* Kjøperinfo + betal */}
+          {cartEntries.length > 0 ? (
+            <>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px' }}>Ditt navn</label>
+                <input
+                  value={buyerName}
+                  onChange={e => setBuyerName(e.target.value)}
+                  placeholder="Ola Nordmann"
+                  style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }}
+                />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#1a2e1f', marginBottom: '6px', marginTop: '12px' }}>Mobilnummer (Vipps)</label>
+                <input
+                  type="tel"
+                  value={buyerPhone}
+                  onChange={e => setBuyerPhone(e.target.value)}
+                  placeholder="99 88 77 66"
+                  style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #dedddd', borderRadius: '8px', fontSize: '14px', color: '#1a2e1f', background: '#ffffff', boxSizing: 'border-box' }}
+                />
+              </div>
+              <button
+                onClick={handlePurchase}
+                style={{ width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '18px', padding: '16px', borderRadius: '10px', fontWeight: '700', boxShadow: '0 4px 12px rgba(45, 106, 79, 0.3)', cursor: 'pointer' }}
+              >
+                Betal {total} kr med Vipps
+              </button>
+            </>
+          ) : (
+            <p style={{ textAlign: 'center', color: '#6b7f70', fontSize: '14px', marginTop: '20px' }}>Trykk på en vare for å legge til</p>
+          )}
+        </div>
       </div>
     </div>
   );
 };
+
+const CenteredCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', justifyContent: 'center', padding: '20px 10px' }}>
+    <div style={{ maxWidth: '500px', width: '100%', height: 'fit-content', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '32px 24px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+      {children}
+    </div>
+  </div>
+);
