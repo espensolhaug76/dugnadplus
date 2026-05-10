@@ -63,7 +63,13 @@ function mapVippsEvent(eventName: string): string | null {
 // Returnerer { valid, reason } så vi kan logge konkret feilårsak
 // (debugging på tvers av pilot-test-runder).
 
-interface SigResult { valid: boolean; reason?: string; }
+interface SigResult {
+  valid: boolean;
+  reason?: string;
+  // Settes kun ved signature_mismatch — lagres i vipps_webhook_events.debug_data.
+  // Inneholder INGEN secret-bytes; secret-fingerprint er trygg (4+4 av ~44 = 8 chars).
+  debug?: Record<string, unknown>;
+}
 
 // Vipps signerer mot den EKSTERNE URL-en webhooken ble registrert med:
 //   https://<ref>.functions.supabase.co/vipps-webhook
@@ -183,11 +189,15 @@ async function verifyVippsSignature(
     i === 0 && candidateKeys.length > 1 ? `b64(${k.length})` : `utf8(${k.length})`
   );
 
+  // Lagre signatureText fra FØRSTE iterasjon (derivedHost + EXPECTED_PATH).
+  // De andre kombinasjonene varierer kun i host/path som logges separat.
+  let firstSignatureText = '';
   let lastExpected = '';
   for (let ki = 0; ki < candidateKeys.length; ki++) {
     for (const host of candidateHosts) {
       for (const path of candidatePaths) {
         const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
+        if (!firstSignatureText) firstSignatureText = signatureText;
         const expected = await hmacSha256Base64(candidateKeys[ki], signatureText);
         lastExpected = expected;
         if (constantTimeEqual(expected, providedSig)) {
@@ -198,18 +208,39 @@ async function verifyVippsSignature(
     }
   }
 
-  // Ingen kombinasjon matchet. Logg alt for debugging.
+  // Ingen kombinasjon matchet. Logg kort debug-streng i result + full
+  // diagnostikk i debug_data-kolonnen.
   const trunc = (s: string) => s.slice(0, 16);
-  const debug =
+  const reason =
     `signature_mismatch:expected=${trunc(lastExpected)}:received=${trunc(providedSig)}` +
     `:tried_keys=${keyLabels.join(',')}` +
     `:tried_hosts=${candidateHosts.join(',')}:tried_paths=${candidatePaths.join(',')}` +
     `:date=${date}`;
-  console.error('[webhook]', debug, {
+
+  // Secret-fingerprint: 4+4 av ~44 base64-tegn er trygt (36 chars
+  // ukjent = ~216 bits entropi gjenstår). Brukes til å sammenligne mot
+  // det Vipps utstedte ved webhook-registrering.
+  const secretFp = WEBHOOK_SECRET.length >= 8
+    ? `${WEBHOOK_SECRET.slice(0, 4)}…${WEBHOOK_SECRET.slice(-4)}`
+    : '<<too_short>>';
+
+  const debug = {
+    signature_text: firstSignatureText,
+    content_sha256_received: contentHashHeader,
+    content_sha256_computed: computedHash,
+    raw_body_length: rawBody.length,
+    raw_body_first_50: rawBody.slice(0, 50),
+    raw_body_last_50: rawBody.slice(-50),
+    secret_key_lengths: candidateKeys.map(k => k.length),
+    secret_fingerprint: secretFp,
+    secret_total_length: WEBHOOK_SECRET.length,
+  };
+
+  console.error('[webhook]', reason, {
     expected_len: lastExpected.length,
     provided_len: providedSig.length,
   });
-  return { valid: false, reason: debug };
+  return { valid: false, reason, debug };
 }
 
 async function autoCapture(
@@ -279,14 +310,18 @@ Deno.serve(async (req) => {
     .select('id')
     .single();
 
-  const updateLog = (result: string) =>
+  const updateLog = (result: string, extra: Record<string, unknown> = {}) =>
     eventLog?.id
-      ? supabase.from('vipps_webhook_events').update({ result }).eq('id', eventLog.id)
+      ? supabase.from('vipps_webhook_events')
+          .update({ result, ...extra })
+          .eq('id', eventLog.id)
       : Promise.resolve();
 
   if (!sigCheck.valid) {
-    // Konkret årsak istedenfor generisk 'invalid_signature'
-    await updateLog(sigCheck.reason || 'invalid_signature');
+    // Konkret årsak i result + full diagnostikk i debug_data ved
+    // signature_mismatch (verifyVippsSignature setter debug bare da).
+    const extra = sigCheck.debug ? { debug_data: sigCheck.debug } : {};
+    await updateLog(sigCheck.reason || 'invalid_signature', extra);
     return corsResponse({ error: 'Invalid signature', reason: sigCheck.reason }, 401);
   }
 
