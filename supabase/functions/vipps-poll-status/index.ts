@@ -9,6 +9,10 @@
 //     returnér fra DB.
 //   - Hvis status er CREATED og det har gått > 30 sek: spør Vipps
 //     direkte og oppdater DB.
+//
+// Source-routet siden 2026-05-10 (kiosk-migrering steg 4): ruter på
+// reference-prefiks (lottery-/kiosk-) og returnerer generisk shape
+// så frontend kan bruke samme polling-logikk uavhengig av kilde.
 // =============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -39,77 +43,145 @@ function vippsStateToStatus(vState: string): string {
   }
 }
 
+// =============================================================
+// Reference-prefix routing — speiler vipps-webhook-mønsteret.
+//   'lottery-<uuid>' → lottery_sales (amount, tickets, lotteries-FK)
+//   'kiosk-<uuid>'   → kiosk_sales (total_amount, separat oppslag
+//                      mot kiosk_settings for vipps_number)
+//   Ukjent prefiks   → null (gir 404 til frontend)
+// =============================================================
+
+interface SaleContext {
+  id: string;
+  status: string;
+  amount: number;             // normalisert: amount (lottery) / total_amount (kiosk)
+  tickets: number | null;     // kun lottery — kiosk har ikke "tickets"
+  created_at: string;
+  failure_reason: string | null;
+  msn: string | null;         // for direct Vipps-oppslag
+  table: 'lottery_sales' | 'kiosk_sales';
+}
+
+async function fetchSaleByReference(reference: string): Promise<SaleContext | null> {
+  if (reference.startsWith('lottery-')) {
+    const { data } = await supabase
+      .from('lottery_sales')
+      .select('id, status, amount, tickets, created_at, failure_reason, lottery_id, lotteries(vipps_number)')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      id: data.id,
+      status: data.status,
+      amount: data.amount,
+      tickets: data.tickets,
+      created_at: data.created_at,
+      failure_reason: data.failure_reason,
+      msn: (data as any).lotteries?.vipps_number ?? null,
+      table: 'lottery_sales',
+    };
+  }
+
+  if (reference.startsWith('kiosk-')) {
+    const { data: sale } = await supabase
+      .from('kiosk_sales')
+      .select('id, status, total_amount, created_at, failure_reason, team_id')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!sale) return null;
+
+    // Ingen FK fra kiosk_sales.team_id → kiosk_settings.team_id, så
+    // vi gjør et eksplisitt oppslag for å hente vipps_number.
+    let msn: string | null = null;
+    if (sale.team_id) {
+      const { data: settings } = await supabase
+        .from('kiosk_settings')
+        .select('vipps_number')
+        .eq('team_id', sale.team_id)
+        .maybeSingle();
+      msn = settings?.vipps_number ?? null;
+    }
+
+    return {
+      id: sale.id,
+      status: sale.status,
+      amount: sale.total_amount,
+      tickets: null,
+      created_at: sale.created_at,
+      failure_reason: sale.failure_reason,
+      msn,
+      table: 'kiosk_sales',
+    };
+  }
+
+  return null;
+}
+
+// Generisk respons-shape — frontend bruker samme polling-logikk for
+// begge kilder. tickets er valgfritt (kun lottery har det).
+function buildResponse(sale: SaleContext, reference: string, statusOverride?: string) {
+  const body: Record<string, unknown> = {
+    status: statusOverride ?? sale.status,
+    amount: sale.amount,
+    reference,
+  };
+  if (sale.tickets !== null) body.tickets = sale.tickets;
+  if (sale.failure_reason) body.failure_reason = sale.failure_reason;
+  return body;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'GET') return corsResponse({ error: 'Method not allowed' }, 405);
 
   const url = new URL(req.url);
   const reference = url.searchParams.get('reference');
-  if (!reference || !reference.startsWith('lottery-')) {
-    return corsResponse({ error: 'reference mangler eller er ugyldig' }, 400);
+  if (!reference) {
+    return corsResponse({ error: 'reference mangler' }, 400);
   }
 
-  const { data: sale, error } = await supabase
-    .from('lottery_sales')
-    .select('id, status, amount, tickets, created_at, failure_reason, lottery_id, lotteries(vipps_number)')
-    .eq('vipps_reference', reference)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[poll] DB error:', error);
+  let sale: SaleContext | null;
+  try {
+    sale = await fetchSaleByReference(reference);
+  } catch (e) {
+    console.error('[poll] DB error:', e);
     return corsResponse({ error: 'DB-feil' }, 500);
   }
   if (!sale) {
+    // Dekker både ukjent prefiks og kjent prefiks med slettet rad
     return corsResponse({ error: 'Ukjent reference' }, 404);
   }
 
   // Allerede endelig — returnér fra DB
   if (TERMINAL_STATUSES.has(sale.status)) {
-    return corsResponse({
-      status: sale.status,
-      amount: sale.amount,
-      tickets: sale.tickets,
-      reference,
-      failure_reason: sale.failure_reason,
-    });
+    return corsResponse(buildResponse(sale, reference));
   }
 
-  // CREATED og > 30 sek — spør Vipps direkte
+  // CREATED og > 30 sek — spør Vipps direkte for å unngå at frontend
+  // henger på "venter" hvis webhook har feilet.
   const ageMs = Date.now() - new Date(sale.created_at).getTime();
-  if (sale.status === 'CREATED' && ageMs > 30 * 1000) {
-    const msn = (sale as any).lotteries?.vipps_number;
-    if (msn) {
-      const resp = await vippsFetch(`/epayment/v1/payments/${reference}`, 'GET', { msn });
-      if (resp.ok && resp.data?.state) {
-        const mappedStatus = vippsStateToStatus(resp.data.state);
-        if (mappedStatus !== sale.status) {
-          const update: Record<string, any> = { status: mappedStatus };
-          const nowIso = new Date().toISOString();
-          if (mappedStatus === 'AUTHORIZED') update.authorized_at = nowIso;
-          if (mappedStatus === 'CAPTURED') update.captured_at = nowIso;
-          if (mappedStatus === 'CANCELLED' || mappedStatus === 'TERMINATED')
-            update.cancelled_at = nowIso;
-          if (resp.data.pspReference) update.vipps_psp_reference = resp.data.pspReference;
-          if (resp.data.paymentMethod?.type)
-            update.vipps_payment_method = resp.data.paymentMethod.type;
+  if (sale.status === 'CREATED' && ageMs > 30 * 1000 && sale.msn) {
+    const resp = await vippsFetch(`/epayment/v1/payments/${reference}`, 'GET', { msn: sale.msn });
+    if (resp.ok && resp.data?.state) {
+      const mappedStatus = vippsStateToStatus(resp.data.state);
+      if (mappedStatus !== sale.status) {
+        const update: Record<string, any> = { status: mappedStatus };
+        const nowIso = new Date().toISOString();
+        if (mappedStatus === 'AUTHORIZED') update.authorized_at = nowIso;
+        if (mappedStatus === 'CAPTURED') update.captured_at = nowIso;
+        if (mappedStatus === 'CANCELLED' || mappedStatus === 'TERMINATED')
+          update.cancelled_at = nowIso;
+        if (resp.data.pspReference) update.vipps_psp_reference = resp.data.pspReference;
+        if (resp.data.paymentMethod?.type)
+          update.vipps_payment_method = resp.data.paymentMethod.type;
 
-          await supabase.from('lottery_sales').update(update).eq('vipps_reference', reference);
-          return corsResponse({
-            status: mappedStatus,
-            amount: sale.amount,
-            tickets: sale.tickets,
-            reference,
-          });
-        }
+        // sale.table er typed union — trygt mot injection.
+        await supabase.from(sale.table).update(update).eq('vipps_reference', reference);
+        return corsResponse(buildResponse(sale, reference, mappedStatus));
       }
     }
   }
 
   // Ikke noe nytt
-  return corsResponse({
-    status: sale.status,
-    amount: sale.amount,
-    tickets: sale.tickets,
-    reference,
-  });
+  return corsResponse(buildResponse(sale, reference));
 });
