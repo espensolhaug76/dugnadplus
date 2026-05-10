@@ -30,6 +30,10 @@ const DEFAULT_ITEMS = [
   { name: 'Vann', price: 10, emoji: '💧' },
 ];
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
+
 export const KioskAdmin: React.FC = () => {
   const [items, setItems] = useState<KioskItem[]>([]);
   const [salesByEvent, setSalesByEvent] = useState<SalesSummary[]>([]);
@@ -38,6 +42,23 @@ export const KioskAdmin: React.FC = () => {
   const [vippsNumber, setVippsNumber] = useState('');
   const [teamId, setTeamId] = useState('');
   const [clubName, setClubName] = useState('');
+
+  // Vipps-validering (format-only) — speiler LotteryAdmin-mønsteret.
+  // Ekte MSN-validering skjer fail-fast ved første betalingsforsøk.
+  type VnvState = 'idle' | 'validating' | 'valid_format' | 'invalid_format';
+  const [vippsValidation, setVippsValidation] = useState<VnvState>('idle');
+  const [vippsValidationMessage, setVippsValidationMessage] = useState('');
+  const [showVippsHelpModal, setShowVippsHelpModal] = useState(false);
+  const [vippsValidationFailedAt, setVippsValidationFailedAt] = useState<string | null>(null);
+  const [vippsValidationError, setVippsValidationError] = useState<string | null>(null);
+  const [vippsSaving, setVippsSaving] = useState(false);
+
+  // Engangs-banner: vises hvis brukeren har et gammelt Vipps-nummer i
+  // localStorage (fra før kiosk_settings ble innført), men kiosk_settings
+  // er tom for dette team_id. Vi auto-migrerer ikke — DA må re-skrive inn
+  // nummeret slik at de får format-validering og legger merke til at
+  // lagring nå er server-side.
+  const [showLocalStorageBanner, setShowLocalStorageBanner] = useState(false);
 
   // Ny vare
   const [newName, setNewName] = useState('');
@@ -141,18 +162,114 @@ export const KioskAdmin: React.FC = () => {
       setSalesByEvent(summaries);
     }
 
-    // Vipps-nummer
+    // Vipps-nummer — leses fra kiosk_settings (server-side sannhet
+    // siden 2026-05-10). localStorage 'dugnad_kiosk_vipps' er deprecated;
+    // vi sjekker den kun for å vise engangs-banner til brukere som har
+    // gammelt nummer i localStorage men ikke i DB.
+    let dbHasVipps = false;
+    if (currentTeamId) {
+      const { data: settings } = await supabase
+        .from('kiosk_settings')
+        .select('vipps_number, vipps_validation_failed_at, vipps_validation_error')
+        .eq('team_id', currentTeamId)
+        .maybeSingle();
+      if (settings?.vipps_number) {
+        setVippsNumber(settings.vipps_number);
+        // Allerede lagret i DB → behandle som validert format
+        setVippsValidation('valid_format');
+        setVippsValidationMessage('Lagret.');
+        dbHasVipps = true;
+      }
+      setVippsValidationFailedAt(settings?.vipps_validation_failed_at ?? null);
+      setVippsValidationError(settings?.vipps_validation_error ?? null);
+    }
+
     try {
       const stored = localStorage.getItem('dugnad_kiosk_vipps');
-      if (stored) setVippsNumber(stored);
+      if (stored && !dbHasVipps) setShowLocalStorageBanner(true);
     } catch {}
 
     setLoading(false);
   };
 
-  const saveVipps = (val: string) => {
-    setVippsNumber(val);
-    localStorage.setItem('dugnad_kiosk_vipps', val);
+  // Validér Vipps-nummer-format mot Edge Function. Gjenbruker samme
+  // funksjon som LotteryAdmin. Format-only — ekte MSN-validering skjer
+  // ved første betalingsforsøk i vipps-initiate-payment.
+  const validateVippsFormat = async (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setVippsValidation('idle');
+      setVippsValidationMessage('');
+      return;
+    }
+    setVippsValidation('validating');
+    setVippsValidationMessage('Sjekker format…');
+    try {
+      const resp = await fetch(VALIDATE_FN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ vipps_number: trimmed }),
+      });
+      const data = await resp.json();
+      if (data?.valid) {
+        setVippsValidation('valid_format');
+        setVippsValidationMessage('Format er gyldig. Vipps-nummeret kontrolleres ved første betaling.');
+      } else {
+        setVippsValidation('invalid_format');
+        setVippsValidationMessage(data?.message || 'Ugyldig Vipps-nummer.');
+      }
+    } catch {
+      setVippsValidation('invalid_format');
+      setVippsValidationMessage('Kunne ikke kontakte server. Prøv igjen.');
+    }
+  };
+
+  // UPSERT til kiosk_settings. Krever at vippsValidation === 'valid_format'
+  // (knappen er disabled ellers, men vi sjekker også her som defense-in-depth).
+  const saveVipps = async () => {
+    if (!teamId) {
+      alert('Mangler team — last siden på nytt.');
+      return;
+    }
+    if (vippsValidation !== 'valid_format') return;
+    setVippsSaving(true);
+    const { error } = await supabase
+      .from('kiosk_settings')
+      .upsert({
+        team_id: teamId,
+        vipps_number: vippsNumber.trim(),
+        // Ny aktivering rydder eventuell tidligere fail-fast-tilstand
+        vipps_validation_failed_at: null,
+        vipps_validation_error: null,
+      }, { onConflict: 'team_id' });
+    setVippsSaving(false);
+    if (error) {
+      alert(`Kunne ikke lagre: ${error.message}`);
+      return;
+    }
+    setVippsValidationFailedAt(null);
+    setVippsValidationError(null);
+    setVippsValidationMessage('Lagret.');
+    // Rydd opp gammel localStorage-verdi og engangs-banneren
+    try { localStorage.removeItem('dugnad_kiosk_vipps'); } catch {}
+    setShowLocalStorageBanner(false);
+    clearItemError('vippsNumber');
+  };
+
+  const reactivateVipps = async () => {
+    if (!teamId) return;
+    if (!confirm('Aktivere kiosken på nytt? Sørg for at Vipps-nummeret nå er korrekt.')) return;
+    const { error } = await supabase
+      .from('kiosk_settings')
+      .update({ vipps_validation_failed_at: null, vipps_validation_error: null })
+      .eq('team_id', teamId);
+    if (error) { alert(error.message); return; }
+    setVippsValidationFailedAt(null);
+    setVippsValidationError(null);
   };
 
   const addItem = async () => {
@@ -361,6 +478,43 @@ export const KioskAdmin: React.FC = () => {
           <GuideButton guideId="kiosk-admin" />
         </div>
 
+        {/* Fail-fast-banner: Vipps avviste mottakernummeret */}
+        {vippsValidationFailedAt && (
+          <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: '#b91c1c', marginBottom: '6px' }}>
+              ⚠️ Vipps-nummeret fungerer ikke
+            </div>
+            <div style={{ fontSize: '12px', color: '#991b1b', lineHeight: '1.6', marginBottom: '10px' }}>
+              En kunde forsøkte å betale, men Vipps avviste mottakernummeret <strong>{vippsNumber}</strong>. Kiosken er midlertidig skjult for kjøpere.
+              Sjekk at det er riktig 5–7-sifret Salgssted-nummer med Payment Integration aktivert.
+              {vippsValidationError && (
+                <div style={{ marginTop: '6px', fontStyle: 'italic' }}>Vipps-feil: {vippsValidationError}</div>
+              )}
+            </div>
+            <button
+              onClick={reactivateVipps}
+              style={{ fontSize: '12px', padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#b91c1c', color: '#fff', cursor: 'pointer', fontWeight: '600' }}
+            >
+              Aktiver på nytt
+            </button>
+          </div>
+        )}
+
+        {/* Engangs-banner: gammelt Vipps-nummer i localStorage, må re-skrives.
+            Auto-migrering droppet med vilje slik at DA går gjennom format-
+            valideringen og legger merke til at lagring nå er server-side. */}
+        {showLocalStorageBanner && (
+          <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: '#854f0b', marginBottom: '6px' }}>
+              📌 Bekreft Vipps-nummeret på nytt
+            </div>
+            <div style={{ fontSize: '12px', color: '#854f0b', lineHeight: '1.6' }}>
+              Vipps-nummeret lagres nå sentralt slik at kioskens betalingsflyt fungerer på alle enheter.
+              Skriv inn nummeret i feltet under og trykk <strong>Lagre</strong>. Du gjør dette kun én gang.
+            </div>
+          </div>
+        )}
+
         {/* Active header bar */}
         <div data-guide="kiosk-setup-header" style={{ background: '#1e3a2f', borderRadius: '10px', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -411,14 +565,73 @@ export const KioskAdmin: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'end' }}>
               <div data-guide="kiosk-setup-vipps">
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Vipps-nummer</label>
-                <input
-                  ref={el => { itemFieldRefs.current.vippsNumber = el; }}
-                  value={vippsNumber}
-                  onChange={e => { saveVipps(e.target.value); clearItemError('vippsNumber'); }}
-                  placeholder="F.eks. 12345"
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '14px', border: itemErrors.vippsNumber ? `1px solid ${ERROR_COLOR}` : '0.5px solid #dedddd', borderRadius: '6px', background: '#ffffff', color: '#1a2e1f', outline: 'none', boxSizing: 'border-box' }}
-                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    ref={el => { itemFieldRefs.current.vippsNumber = el; }}
+                    value={vippsNumber}
+                    onChange={e => {
+                      setVippsNumber(e.target.value);
+                      clearItemError('vippsNumber');
+                      if (vippsValidation !== 'idle') {
+                        setVippsValidation('idle');
+                        setVippsValidationMessage('');
+                      }
+                    }}
+                    onBlur={e => validateVippsFormat(e.target.value)}
+                    placeholder="F.eks. 12345"
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      fontSize: '14px',
+                      border: itemErrors.vippsNumber || vippsValidation === 'invalid_format'
+                        ? `1px solid ${ERROR_COLOR}`
+                        : vippsValidation === 'valid_format'
+                          ? '1px solid #2d6a4f'
+                          : '0.5px solid #dedddd',
+                      borderRadius: '6px',
+                      background: '#ffffff',
+                      color: '#1a2e1f',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    onClick={saveVipps}
+                    disabled={vippsValidation !== 'valid_format' || vippsSaving}
+                    title={vippsValidation !== 'valid_format' ? 'Skriv inn et gyldig Vipps-nummer først' : ''}
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: '#2d6a4f',
+                      color: '#fff',
+                      cursor: (vippsValidation !== 'valid_format' || vippsSaving) ? 'not-allowed' : 'pointer',
+                      opacity: (vippsValidation !== 'valid_format' || vippsSaving) ? 0.5 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {vippsSaving ? 'Lagrer…' : 'Lagre'}
+                  </button>
+                </div>
                 {itemErrors.vippsNumber && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{itemErrors.vippsNumber}</p>}
+                {vippsValidation === 'validating' && (
+                  <p style={{ color: '#6b7f70', fontSize: '12px', margin: '6px 0 0 0' }}>{vippsValidationMessage}</p>
+                )}
+                {vippsValidation === 'valid_format' && vippsValidationMessage && (
+                  <p style={{ color: '#2d6a4f', fontSize: '12px', margin: '6px 0 0 0' }}>✓ {vippsValidationMessage}</p>
+                )}
+                {vippsValidation === 'invalid_format' && (
+                  <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>✗ {vippsValidationMessage}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowVippsHelpModal(true)}
+                  style={{ background: 'none', border: 'none', padding: 0, marginTop: '6px', color: '#2d6a4f', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  ⓘ Hvor finner jeg Vipps-nummeret?
+                </button>
               </div>
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: '#4a5e50', marginBottom: '6px', display: 'block' }}>Kiosk-lenke (del denne eller lag QR-kode)</label>
@@ -572,6 +785,62 @@ export const KioskAdmin: React.FC = () => {
         )}
       </div>
       {showPremiumGate && <PremiumGateModal featureName="kiosken" onClose={() => setShowPremiumGate(false)} />}
+
+      {/* INFO-MODAL: Hvor finner jeg Vipps-nummeret? — speiler LotteryAdmin */}
+      {showVippsHelpModal && (
+        <div
+          onClick={() => setShowVippsHelpModal(false)}
+          onKeyDown={e => { if (e.key === 'Escape') setShowVippsHelpModal(false); }}
+          tabIndex={-1}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '20px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '12px', padding: '28px', maxWidth: '520px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1a2e1f' }}>Hvor finner du lagets Vipps-nummer</h3>
+              <button onClick={() => setShowVippsHelpModal(false)} aria-label="Lukk" style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#6b7f70', padding: 0, lineHeight: 1 }}>×</button>
+            </div>
+
+            <div style={{ fontSize: '13px', color: '#4a5e50', lineHeight: '1.7' }}>
+              <p style={{ marginTop: 0 }}>
+                Lagets Vipps-nummer er det 5–7-sifrede nummeret som er knyttet til lagets Vipps Salgssted. Det er ikke et privat Vipps-nummer.
+              </p>
+
+              <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Hvordan finne det:</p>
+              <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                <li>Logg inn på <strong>business.vipps.no</strong> med BankID</li>
+                <li>Velg laget i øverste meny (hvis du administrerer flere)</li>
+                <li>Klikk <strong>«Salgssteder»</strong> i venstre meny</li>
+                <li>Vipps-nummeret står øverst på Salgsstedet — eks: <code>123456</code></li>
+              </ol>
+
+              <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Vippsen må ha «Payment Integration» aktivert.</p>
+              <p style={{ marginTop: 0 }}>
+                Hvis Salgsstedet kun har «Cash register integration» (for kiosk-bruk), må noen i klubben aktivere Payment Integration:
+              </p>
+              <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                <li>Gå til <strong>business.vipps.no</strong></li>
+                <li>Bestill produkt → <strong>«Payment Integration»</strong></li>
+                <li>Aktivering tar normalt 1–2 dager</li>
+                <li>Kom tilbake hit når dere har bekreftelse fra Vipps</li>
+              </ol>
+
+              <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Har laget ikke Salgssted ennå?</p>
+              <p>Da må klubbens kasserer eller styre bestille det først. Kontakt Vipps via <strong>business.vipps.no</strong>.</p>
+
+              <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '8px', padding: '12px', fontSize: '12px', color: '#854f0b', marginTop: '16px' }}>
+                💡 <strong>Vipps-nummeret kontrolleres ved første betaling.</strong> Hvis nummeret er feil, ser dere det da og kan rette opp.
+              </div>
+
+              <p style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70' }}>
+                Trenger du hjelp? Klubbens kasserer eller styre kan hjelpe.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
