@@ -20,14 +20,28 @@ const TICKET_PACKAGES = [
 ];
 
 // Phases for Vipps ePayment-integrasjon (2026-05-09 KIL pilot):
-//   shop        — kjøpsskjema (default)
-//   initiating  — POST /vipps-initiate-payment, vis spinner
-//   redirecting — fikk redirectUrl, sender brukeren til Vipps
-//   returning   — kommet tilbake fra Vipps, polling status
-//   success     — CAPTURED eller AUTHORIZED — lodd registrert
-//   cancelled   — CANCELLED/TERMINATED
-//   failed      — FAILED/EXPIRED eller teknisk feil
-type Phase = 'shop' | 'initiating' | 'redirecting' | 'returning' | 'success' | 'cancelled' | 'failed';
+//   shop                 — kjøpsskjema (default)
+//   initiating           — POST /vipps-initiate-payment, vis spinner
+//   redirecting          — fikk redirectUrl, sender brukeren til Vipps
+//   returning            — kommet tilbake fra Vipps, polling status
+//   success              — CAPTURED eller AUTHORIZED — lodd registrert
+//   cancelled            — CANCELLED/TERMINATED
+//   failed               — FAILED/EXPIRED eller teknisk feil
+//   pending_confirmation — polling timet ut uten endelig status; vi
+//                          lyver IKKE om success — viser eksplisitt
+//                          "venter på bekreftelse" med retry-knapp.
+//                          Nødvendig fordi webhook-race kan gjøre at
+//                          en avbrutt betaling ser ut som CREATED i
+//                          hele polling-vinduet.
+type Phase =
+  | 'shop'
+  | 'initiating'
+  | 'redirecting'
+  | 'returning'
+  | 'success'
+  | 'cancelled'
+  | 'failed'
+  | 'pending_confirmation';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -48,6 +62,14 @@ export const LotteryShop: React.FC = () => {
   const [resultTickets, setResultTickets] = useState(0);
   const [resultAmount, setResultAmount] = useState(0);
   const [resultBuyer, setResultBuyer] = useState('');
+
+  // Retry-state for pending_confirmation-skjermen. pendingReference
+  // beholdes så "Sjekk på nytt"-knappen kan kjøre pollStatus igjen.
+  // pollRetryCount=0 ved første timeout, ≥1 etter retry → viser
+  // mer pessimistisk meldingstekst.
+  const [pendingReference, setPendingReference] = useState<string | null>(null);
+  const [pollRetryCount, setPollRetryCount] = useState(0);
+
   const pollAbortRef = useRef(false);
 
   // Hent lotteri og selger
@@ -110,16 +132,17 @@ export const LotteryShop: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll vipps-poll-status: prøv inntil 4 ganger over ~6 sek.
+  // Poll vipps-poll-status. Første runde: 4 forsøk over ~6 sek.
+  // Retry fra "Sjekk på nytt"-knapp: 3 forsøk over ~4.5 sek.
   // Webhook er sannhetskilde, men kan være litt forsinket.
   //
-  // Race-vindu (2026-05-10 fix): hvis brukeren returnerer fra Vipps
-  // før webhook har levert, ser alle 4 polls fortsatt 'CREATED'.
-  // Fallback antar success siden det er normaltilfellet, men vi
-  // logger lastSeenStatus + pollAttempts slik at race-tilfeller
-  // (cancelled/expired med treg webhook) kan oppdages i konsollen.
-  const pollStatus = async (reference: string) => {
-    const delays = [0, 1500, 1500, 1500];
+  // Race-vindu: hvis brukeren returnerer fra Vipps før webhook har
+  // levert, ser alle polls fortsatt 'CREATED'. Vi LYVER IKKE om
+  // success da — vi går til pending_confirmation-skjermen som lar
+  // brukeren prøve på nytt eller lukke. console.warn logger
+  // lastSeenStatus + pollAttempts for diagnose.
+  const pollStatus = async (reference: string, isRetry = false) => {
+    const delays = isRetry ? [0, 1500, 1500] : [0, 1500, 1500, 1500];
     let pollAttempts = 0;
     let lastSeenStatus: string | null = null;
 
@@ -164,19 +187,31 @@ export const LotteryShop: React.FC = () => {
         console.error('[poll]', e);
       }
     }
-    // Etter alle forsøk: ingen endelig status. Anta success siden det
-    // er normaltilfellet (webhook leverer rett etter), men logg
-    // detaljer slik at race-tilfeller (cancelled/expired med treg
-    // webhook) kan oppdages — pollAttempts=0 betyr nettverksfeil
-    // hele veien; lastSeenStatus='CREATED' betyr webhook-race.
-    console.warn('[poll] Timeout — ingen endelig status etter polling. Antar success.', {
+    // Timeout uten endelig status. Vi vet ikke om betalingen lyktes
+    // eller ble avbrutt. Vis pending_confirmation i stedet for å
+    // lyve om success. pollAttempts=0 betyr nettverksfeil hele
+    // veien; lastSeenStatus='CREATED' betyr webhook-race.
+    console.warn('[poll] Timeout — ingen endelig status etter polling.', {
       reference,
       lastSeenStatus,
       pollAttempts,
       totalAttempts: delays.length,
+      isRetry,
     });
-    localStorage.removeItem(LS_REF_KEY);
-    setPhase('success');
+    setPendingReference(reference);
+    setPhase('pending_confirmation');
+  };
+
+  const handleRetryPoll = () => {
+    if (!pendingReference) return;
+    setPollRetryCount(c => c + 1);
+    setPhase('returning');
+    pollStatus(pendingReference, true);
+  };
+
+  const handleClosePending = () => {
+    try { localStorage.removeItem(LS_REF_KEY); } catch { /* noop */ }
+    resetForNewPurchase();
   };
 
   // Steg 1: kall vipps-initiate-payment, send brukeren til Vipps.
@@ -254,6 +289,8 @@ export const LotteryShop: React.FC = () => {
     setResultAmount(0);
     setResultTickets(0);
     setResultBuyer('');
+    setPendingReference(null);
+    setPollRetryCount(0);
     setPhase('shop');
   };
 
@@ -317,6 +354,40 @@ export const LotteryShop: React.FC = () => {
           <div style={{ fontSize: '48px', marginBottom: '8px' }}>🔄</div>
           <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '700', color: '#1a2e1f' }}>Sjekker betalingsstatus…</h2>
           <p style={{ marginTop: '12px', fontSize: '13px', color: '#4a5e50' }}>Et øyeblikk.</p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== PENDING_CONFIRMATION =====
+  // Polling timet ut uten endelig status. I stedet for å lyve om
+  // success viser vi en eksplisitt "venter"-skjerm med retry.
+  if (phase === 'pending_confirmation') {
+    const isSecondTimeout = pollRetryCount >= 1;
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>⏱️</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Vi venter på bekreftelse fra Vipps</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            {isSecondTimeout
+              ? 'Hvis du har fullført betalingen, vises den i din Vipps-historikk. Kontakt klubben hvis du tror det er feil.'
+              : 'Vi har ikke fått endelig svar ennå. Hvis du fullførte betalingen i Vipps, vil den bli registrert om kort tid.'}
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '24px' }}>
+            <button
+              onClick={handleRetryPoll}
+              style={{ flex: 1, background: '#2d6a4f', color: 'white', border: 'none', fontSize: '15px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+            >
+              Sjekk på nytt
+            </button>
+            <button
+              onClick={handleClosePending}
+              style={{ flex: 1, background: '#ffffff', color: '#1a2e1f', border: '0.5px solid #dedddd', fontSize: '15px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+            >
+              Lukk
+            </button>
+          </div>
         </div>
       </CenteredCard>
     );
