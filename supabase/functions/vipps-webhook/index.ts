@@ -114,14 +114,19 @@ async function hmacSha256Base64(keyBytes: Uint8Array, data: string): Promise<str
 }
 
 // Vipps' webhook-secret leveres typisk som base64-encoded raw bytes
-// (Azure/AWS-mønster for HMAC-signaturer). Vi prøver base64-decoded
-// primært og UTF-8 raw som fallback i tilfelle secret ble lagret
-// uten encoding.
+// (Azure/AWS-mønster for HMAC-signaturer), ofte UTEN padding. Vi
+// pad-er til multipler av 4 før atob(). 86-char secret + "==" = 88
+// chars → 64 raw bytes (verifisert via debug_data 2026-05-10).
+//
+// UTF-8 raw beholdes som fallback i tilfelle secret ble lagret uten
+// encoding (eldre webhook-registreringer eller manuell setting).
 function getCandidateKeys(secret: string): Uint8Array[] {
   const keys: Uint8Array[] = [];
-  if (/^[A-Za-z0-9+/=]+$/.test(secret) && secret.length % 4 === 0) {
+  if (/^[A-Za-z0-9+/=]+$/.test(secret)) {
+    const padding = (4 - secret.length % 4) % 4;
+    const padded = secret + '='.repeat(padding);
     try {
-      keys.push(Uint8Array.from(atob(secret), c => c.charCodeAt(0)));
+      keys.push(Uint8Array.from(atob(padded), c => c.charCodeAt(0)));
     } catch { /* ignore — ikke gyldig base64 */ }
   }
   keys.push(new TextEncoder().encode(secret));
