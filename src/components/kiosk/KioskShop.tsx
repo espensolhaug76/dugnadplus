@@ -120,8 +120,17 @@ export const KioskShop: React.FC = () => {
 
   // Poll vipps-poll-status: prøv inntil 4 ganger over ~6 sek.
   // Webhook er sannhetskilde, men kan være litt forsinket.
+  //
+  // Race-vindu (2026-05-10 fix): hvis brukeren returnerer fra Vipps
+  // før webhook har levert, ser alle 4 polls fortsatt 'CREATED'.
+  // Fallback antar success siden det er normaltilfellet, men vi
+  // logger lastSeenStatus + pollAttempts slik at race-tilfeller
+  // (cancelled/expired med treg webhook) kan oppdages i konsollen.
   const pollStatus = async (reference: string) => {
     const delays = [0, 1500, 1500, 1500];
+    let pollAttempts = 0;
+    let lastSeenStatus: string | null = null;
+
     for (let i = 0; i < delays.length; i++) {
       if (pollAbortRef.current) return;
       if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
@@ -131,6 +140,8 @@ export const KioskShop: React.FC = () => {
         });
         if (!resp.ok) continue;
         const data = await resp.json();
+        pollAttempts++;
+        lastSeenStatus = data.status || null;
         setResultTotal(data.amount || 0);
 
         if (data.status === 'CAPTURED' || data.status === 'AUTHORIZED') {
@@ -160,7 +171,17 @@ export const KioskShop: React.FC = () => {
         console.error('[poll]', e);
       }
     }
-    // Etter alle forsøk: anta at webhook kommer senere
+    // Etter alle forsøk: ingen endelig status. Anta success siden det
+    // er normaltilfellet (webhook leverer rett etter), men logg
+    // detaljer slik at race-tilfeller (cancelled/expired med treg
+    // webhook) kan oppdages — pollAttempts=0 betyr nettverksfeil
+    // hele veien; lastSeenStatus='CREATED' betyr webhook-race.
+    console.warn('[poll] Timeout — ingen endelig status etter polling. Antar success.', {
+      reference,
+      lastSeenStatus,
+      pollAttempts,
+      totalAttempts: delays.length,
+    });
     localStorage.removeItem(LS_REF_KEY);
     setPhase('success');
   };
