@@ -34,6 +34,74 @@ const STATUS_RANK: Record<string, number> = {
   FAILED: 30,
 };
 
+// =============================================================
+// Reference-prefix routing — kilde bestemmes av prefiks i reference:
+//   'lottery-<uuid>' → lottery_sales (amount-kolonne, lotteries-FK
+//                      for vipps_number)
+//   'kiosk-<uuid>'   → kiosk_sales   (total_amount-kolonne, separat
+//                      oppslag mot kiosk_settings for vipps_number
+//                      siden ingen FK er definert)
+// Ukjent prefiks: returnér null → main handler logger
+// 'unknown_reference' og returnerer 2xx (samme som ukjent rad).
+// =============================================================
+
+interface SaleContext {
+  id: string;
+  status: string;
+  amount: number;       // normalisert: amount (lottery) / total_amount (kiosk)
+  msn: string | null;   // for auto-capture; null hvis settings mangler
+  table: 'lottery_sales' | 'kiosk_sales';
+}
+
+async function fetchSaleByReference(reference: string): Promise<SaleContext | null> {
+  if (reference.startsWith('lottery-')) {
+    const { data } = await supabase
+      .from('lottery_sales')
+      .select('id, status, amount, lottery_id, lotteries(vipps_number)')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      id: data.id,
+      status: data.status,
+      amount: data.amount,
+      msn: (data as any).lotteries?.vipps_number ?? null,
+      table: 'lottery_sales',
+    };
+  }
+
+  if (reference.startsWith('kiosk-')) {
+    const { data: sale } = await supabase
+      .from('kiosk_sales')
+      .select('id, status, total_amount, team_id')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!sale) return null;
+
+    // Ingen FK fra kiosk_sales.team_id → kiosk_settings.team_id, så
+    // vi gjør et eksplisitt oppslag for å hente vipps_number.
+    let msn: string | null = null;
+    if (sale.team_id) {
+      const { data: settings } = await supabase
+        .from('kiosk_settings')
+        .select('vipps_number')
+        .eq('team_id', sale.team_id)
+        .maybeSingle();
+      msn = settings?.vipps_number ?? null;
+    }
+
+    return {
+      id: sale.id,
+      status: sale.status,
+      amount: sale.total_amount,
+      msn,
+      table: 'kiosk_sales',
+    };
+  }
+
+  return null;
+}
+
 // Vipps event_name → vår status
 function mapVippsEvent(eventName: string): string | null {
   // Eventer kommer som "epayments.payment.authorized.v1" — ta nest siste segment
@@ -369,16 +437,13 @@ Deno.serve(async (req) => {
     return corsResponse({ ok: true, ignored: true });
   }
 
-  // Slå opp eksisterende rad
-  const { data: sale } = await supabase
-    .from('lottery_sales')
-    .select('id, status, amount, lottery_id, lotteries(vipps_number)')
-    .eq('vipps_reference', reference)
-    .maybeSingle();
+  // Slå opp eksisterende rad — ruter på reference-prefiks (lottery-/kiosk-)
+  const sale = await fetchSaleByReference(reference);
 
   if (!sale) {
     await updateLog('unknown_reference');
-    // Vipps krever 2xx for ikke å retry — vi har logget for debug
+    // Vipps krever 2xx for ikke å retry — vi har logget for debug.
+    // Dette dekker både ukjent prefiks og kjent prefiks der raden er slettet.
     return corsResponse({ ok: true, ignored: true });
   }
 
@@ -402,8 +467,10 @@ Deno.serve(async (req) => {
   if (newStatus === 'CAPTURED') update.captured_at = nowIso;
   if (newStatus === 'CANCELLED' || newStatus === 'TERMINATED') update.cancelled_at = nowIso;
 
+  // sale.table er 'lottery_sales' eller 'kiosk_sales' — dynamic table-navn
+  // er trygt fordi det er typed til union, ikke fra request.
   const { error: updErr } = await supabase
-    .from('lottery_sales')
+    .from(sale.table)
     .update(update)
     .eq('vipps_reference', reference);
 
@@ -422,8 +489,11 @@ Deno.serve(async (req) => {
   // kallet ble aldri logget). Vipps' webhook-roundtrip blir ikke
   // tregere — vi returnerer 200 umiddelbart og lar capture fullføre
   // i bakgrunnen (timeout 150s på free plan, vi trenger ~500ms).
+  //
+  // sale.amount er normalisert (lottery.amount eller kiosk.total_amount)
+  // og sale.msn hentes fra riktig kilde-tabell i fetchSaleByReference.
   if (newStatus === 'AUTHORIZED' && sale.status !== 'CAPTURED') {
-    const msn = (sale as any).lotteries?.vipps_number;
+    const msn = sale.msn;
     if (msn) {
       // @ts-ignore — EdgeRuntime er Supabase Edge Function-globalt API
       const rt = (globalThis as any).EdgeRuntime;
