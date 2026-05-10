@@ -268,7 +268,11 @@ async function autoCapture(
       'POST',
       {
         msn,
-        idempotencyKey: `${vippsReference}-capture`,
+        // Vipps krever Idempotency-Key max 50 chars. vipps_reference er
+        // 'lottery-<uuid>' = 44 chars; vi har 6 chars margin. Suffix '-c'
+        // skiller capture-key fra initiate-payment-key (som er bare
+        // vipps_reference uten suffix).
+        idempotencyKey: `${vippsReference}-c`,
         body: { modificationAmount: { value: amountMinor, currency: 'NOK' } },
       }
     );
