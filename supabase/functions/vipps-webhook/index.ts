@@ -75,6 +75,20 @@ interface SigResult { valid: boolean; reason?: string; }
 // EXPECTED_PATH først, og req.url-pathen som fallback.
 const EXPECTED_PATH = '/vipps-webhook';
 
+// Vipps-host kan ikke leses fra request-headerne — Supabase' gateway
+// stripper den eksterne hosten og setter intern verdi
+// (edge-runtime.supabase.com) i både `host` og `x-forwarded-host`.
+// Bevist via signature_mismatch-debug 2026-05-10.
+//
+// Utled host fra SUPABASE_URL (https://<ref>.supabase.co) ved å bytte
+// .supabase.co → .functions.supabase.co. Ikke hardkoding — endres
+// SUPABASE_URL ved prosjekt-flytting følger hosten med.
+function deriveExternalHost(): string | null {
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const m = url.match(/^https?:\/\/([^./]+)\.supabase\.co/);
+  return m ? `${m[1]}.functions.supabase.co` : null;
+}
+
 async function sha256Base64(input: Uint8Array | string): Promise<string> {
   const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   const hash = await crypto.subtle.digest('SHA-256', data);
@@ -130,13 +144,17 @@ async function verifyVippsSignature(
     return { valid: false, reason: 'content_hash_mismatch' };
   }
 
-  // Host: behold preferering x-forwarded-host > host > url.host.
-  // Skal IKKE hardkodes — kommer fra request-headerne så koden
-  // overlever URL-/prosjekt-flytting.
+  // Bygg kandidat-host-liste. derivedHost (fra SUPABASE_URL) prøves
+  // først siden vi vet at request-headerne gir intern verdi.
+  // headerHost beholdes som fallback for robusthet.
   const url = new URL(req.url);
-  const host = req.headers.get('x-forwarded-host')
-            || req.headers.get('host')
-            || url.host;
+  const headerHost = req.headers.get('x-forwarded-host')
+                  || req.headers.get('host')
+                  || url.host;
+  const derivedHost = deriveExternalHost();
+  const candidateHosts = derivedHost && derivedHost !== headerHost
+    ? [derivedHost, headerHost]
+    : [headerHost];
 
   // Prøv EXPECTED_PATH først (det Vipps registrerte mot), deretter
   // req.url-pathen som fallback. Tar med search hvis req.url har det.
@@ -145,23 +163,25 @@ async function verifyVippsSignature(
   if (reqPath !== EXPECTED_PATH) candidatePaths.push(reqPath);
 
   let lastExpected = '';
-  for (const path of candidatePaths) {
-    const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
-    const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
-    lastExpected = expected;
-    if (constantTimeEqual(expected, providedSig)) {
-      console.log(`[webhook] signature OK using path="${path}" host="${host}"`);
-      return { valid: true };
+  for (const host of candidateHosts) {
+    for (const path of candidatePaths) {
+      const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
+      const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
+      lastExpected = expected;
+      if (constantTimeEqual(expected, providedSig)) {
+        console.log(`[webhook] signature OK using host="${host}" path="${path}"`);
+        return { valid: true };
+      }
     }
   }
 
-  // Ingen path matchet. Logg alt vi har for første-runde-debugging.
+  // Ingen kombinasjon matchet. Logg alt for debugging.
   const trunc = (s: string) => s.slice(0, 16);
   const debug =
     `signature_mismatch:expected=${trunc(lastExpected)}:received=${trunc(providedSig)}` +
-    `:path=${reqPath}:host=${host}:date=${date}`;
+    `:tried_hosts=${candidateHosts.join(',')}:tried_paths=${candidatePaths.join(',')}` +
+    `:date=${date}`;
   console.error('[webhook]', debug, {
-    tried_paths: candidatePaths,
     expected_len: lastExpected.length,
     provided_len: providedSig.length,
   });
