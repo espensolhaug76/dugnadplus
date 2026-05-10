@@ -248,25 +248,54 @@ async function verifyVippsSignature(
   return { valid: false, reason, debug };
 }
 
+// Auto-capture etter AUTHORIZED. Logger forsøket til
+// vipps_webhook_events som event_name='auto_capture_attempt' med
+// result 'captured' eller 'capture_failed' — uavhengig av om Vipps
+// senere sender CAPTURED-webhook. Gir oss diagnostikk uten å være
+// avhengig av Edge Function runtime-logs.
 async function autoCapture(
   vippsReference: string,
   msn: string,
   amountMinor: number
 ): Promise<void> {
   console.log(`[webhook] auto-capture for ${vippsReference}`);
-  const resp = await vippsFetch(
-    `/epayment/v1/payments/${vippsReference}/capture`,
-    'POST',
-    {
-      msn,
-      idempotencyKey: `${vippsReference}-capture`,
-      body: { modificationAmount: { value: amountMinor, currency: 'NOK' } },
-    }
-  );
-  if (!resp.ok) {
-    console.warn(`[webhook] capture failed for ${vippsReference}: HTTP ${resp.status}`, resp.data);
-    // Vi gjør ingenting — AUTHORIZED-status beholdes, manuell capture
-    // kan håndteres senere fra DA-admin.
+  let resp: { status: number; data: any; ok: boolean } | null = null;
+  let errorMessage: string | null = null;
+
+  try {
+    resp = await vippsFetch(
+      `/epayment/v1/payments/${vippsReference}/capture`,
+      'POST',
+      {
+        msn,
+        idempotencyKey: `${vippsReference}-capture`,
+        body: { modificationAmount: { value: amountMinor, currency: 'NOK' } },
+      }
+    );
+  } catch (e: any) {
+    errorMessage = e?.message || String(e);
+    console.error(`[webhook] capture threw for ${vippsReference}:`, e);
+  }
+
+  // Logg utfallet til vipps_webhook_events (egen rad, slik at vi ikke
+  // overskriver den opprinnelige AUTHORIZED-eventets logg).
+  const ok = resp?.ok ?? false;
+  if (!ok && !errorMessage) {
+    errorMessage = `HTTP ${resp?.status} ${JSON.stringify(resp?.data).slice(0, 500)}`;
+  }
+  await supabase.from('vipps_webhook_events').insert({
+    vipps_reference: vippsReference,
+    event_name: 'auto_capture_attempt',
+    payload: { msn, amountMinor, vipps_response: resp?.data ?? null, error: errorMessage },
+    signature: '',
+    signature_valid: ok,
+    result: ok ? 'captured' : 'capture_failed',
+  });
+
+  if (!ok) {
+    console.warn(`[webhook] capture failed for ${vippsReference}: ${errorMessage}`);
+    // Vi gjør ingenting med lottery_sales.status — AUTHORIZED beholdes,
+    // manuell capture kan håndteres senere fra DA-admin.
   }
 }
 
@@ -382,14 +411,27 @@ Deno.serve(async (req) => {
 
   await updateLog('updated');
 
-  // Auto-capture ved AUTHORIZED
+  // Auto-capture ved AUTHORIZED. Bruker EdgeRuntime.waitUntil slik at
+  // Deno Deploy ikke avbryter promiset når responsen sendes til Vipps.
+  // Fire-and-forget med catch ville blitt drept i serverless-runtime
+  // (bevist av manglende CAPTURED-events 2026-05-10 09:02 — capture-
+  // kallet ble aldri logget). Vipps' webhook-roundtrip blir ikke
+  // tregere — vi returnerer 200 umiddelbart og lar capture fullføre
+  // i bakgrunnen (timeout 150s på free plan, vi trenger ~500ms).
   if (newStatus === 'AUTHORIZED' && sale.status !== 'CAPTURED') {
     const msn = (sale as any).lotteries?.vipps_number;
     if (msn) {
-      // Fire-and-forget — Vipps sender egen CAPTURED-webhook ved suksess
-      autoCapture(reference, msn, sale.amount * 100).catch((e) =>
-        console.error('[webhook] auto-capture error:', e)
-      );
+      // @ts-ignore — EdgeRuntime er Supabase Edge Function-globalt API
+      const rt = (globalThis as any).EdgeRuntime;
+      const captureTask = autoCapture(reference, msn, sale.amount * 100)
+        .catch((e) => console.error('[webhook] auto-capture error:', e));
+      if (rt && typeof rt.waitUntil === 'function') {
+        rt.waitUntil(captureTask);
+      } else {
+        // Fallback hvis runtime mangler waitUntil (lokal dev) — await
+        // (litt seinere webhook-respons, men capture garantert gjort).
+        await captureTask;
+      }
     } else {
       console.warn(`[webhook] no MSN for auto-capture of ${reference}`);
     }
