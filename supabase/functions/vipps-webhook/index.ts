@@ -95,16 +95,31 @@ async function sha256Base64(input: Uint8Array | string): Promise<string> {
   return btoa(String.fromCharCode(...new Uint8Array(hash)));
 }
 
-async function hmacSha256Base64(secret: string, data: string): Promise<string> {
+async function hmacSha256Base64(keyBytes: Uint8Array, data: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(secret),
+    keyBytes,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
   );
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
   return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+// Vipps' webhook-secret leveres typisk som base64-encoded raw bytes
+// (Azure/AWS-mønster for HMAC-signaturer). Vi prøver base64-decoded
+// primært og UTF-8 raw som fallback i tilfelle secret ble lagret
+// uten encoding.
+function getCandidateKeys(secret: string): Uint8Array[] {
+  const keys: Uint8Array[] = [];
+  if (/^[A-Za-z0-9+/=]+$/.test(secret) && secret.length % 4 === 0) {
+    try {
+      keys.push(Uint8Array.from(atob(secret), c => c.charCodeAt(0)));
+    } catch { /* ignore — ikke gyldig base64 */ }
+  }
+  keys.push(new TextEncoder().encode(secret));
+  return keys;
 }
 
 // Constant-time string compare for å unngå timing-leakage på secret.
@@ -162,15 +177,23 @@ async function verifyVippsSignature(
   const candidatePaths = [EXPECTED_PATH];
   if (reqPath !== EXPECTED_PATH) candidatePaths.push(reqPath);
 
+  // Bygg kandidat-secrets (base64-decoded først, UTF-8 fallback)
+  const candidateKeys = getCandidateKeys(WEBHOOK_SECRET);
+  const keyLabels = candidateKeys.map((k, i) =>
+    i === 0 && candidateKeys.length > 1 ? `b64(${k.length})` : `utf8(${k.length})`
+  );
+
   let lastExpected = '';
-  for (const host of candidateHosts) {
-    for (const path of candidatePaths) {
-      const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
-      const expected = await hmacSha256Base64(WEBHOOK_SECRET, signatureText);
-      lastExpected = expected;
-      if (constantTimeEqual(expected, providedSig)) {
-        console.log(`[webhook] signature OK using host="${host}" path="${path}"`);
-        return { valid: true };
+  for (let ki = 0; ki < candidateKeys.length; ki++) {
+    for (const host of candidateHosts) {
+      for (const path of candidatePaths) {
+        const signatureText = `POST\n${path}\n${date};${host};${contentHashHeader}`;
+        const expected = await hmacSha256Base64(candidateKeys[ki], signatureText);
+        lastExpected = expected;
+        if (constantTimeEqual(expected, providedSig)) {
+          console.log(`[webhook] signature OK using key=${keyLabels[ki]} host="${host}" path="${path}"`);
+          return { valid: true };
+        }
       }
     }
   }
@@ -179,6 +202,7 @@ async function verifyVippsSignature(
   const trunc = (s: string) => s.slice(0, 16);
   const debug =
     `signature_mismatch:expected=${trunc(lastExpected)}:received=${trunc(providedSig)}` +
+    `:tried_keys=${keyLabels.join(',')}` +
     `:tried_hosts=${candidateHosts.join(',')}:tried_paths=${candidatePaths.join(',')}` +
     `:date=${date}`;
   console.error('[webhook]', debug, {
