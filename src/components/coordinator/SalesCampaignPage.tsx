@@ -204,6 +204,24 @@ export const SalesCampaignPage: React.FC = () => {
     fetchData();
   };
 
+  // Inline-redigering av kampanje-felter — speiler LotteryAdmin sitt
+  // mønster. Brukes i Innstillinger-seksjonen på aktiv/draft-visning
+  // slik at DA kan rette Vipps-nummer, pris, frister osv. etter at
+  // kampanjen er opprettet (kritisk for å recovere fra feiltastet
+  // Vipps-nummer som ikke ble fanget av format-validering).
+  const updateCampaignField = async (field: string, value: any) => {
+    if (!campaign) return;
+    const { error } = await supabase
+      .from('sales_campaigns')
+      .update({ [field]: value })
+      .eq('id', campaign.id);
+    if (error) {
+      alert(`Kunne ikke lagre: ${error.message}`);
+      return;
+    }
+    setCampaign({ ...campaign, [field]: value });
+  };
+
   const toggleDelivered = async (saleId: string, current: boolean) => {
     await supabase.from('campaign_sales').update({ delivered: !current }).eq('id', saleId);
     setSales(prev => prev.map(s => s.id === saleId ? { ...s, delivered: !current } : s));
@@ -657,6 +675,82 @@ export const SalesCampaignPage: React.FC = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Innstillinger — inline-redigering. Speiler LotteryAdmin sitt
+          mønster: defaultValue + onBlur lagrer direkte til DB. Ingen
+          format-validering her — fail-fast ved første betalingsforsøk
+          fanger feiltastet Vipps-nummer. */}
+      <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Innstillinger</div>
+      <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Pris per enhet (kr)</label>
+            <input
+              key={`unit_price-${campaign.unit_price}`}
+              type="number"
+              style={inputStyle}
+              defaultValue={campaign.unit_price}
+              onBlur={e => updateCampaignField('unit_price', parseInt(e.target.value) || 0)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Mål per familie</label>
+            <input
+              key={`target-${campaign.target_per_family}`}
+              type="number"
+              style={inputStyle}
+              defaultValue={campaign.target_per_family}
+              onBlur={e => updateCampaignField('target_per_family', parseInt(e.target.value) || 0)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Vipps-nummer</label>
+            <input
+              key={`vipps-${campaign.vipps_number}`}
+              style={inputStyle}
+              defaultValue={campaign.vipps_number}
+              onBlur={e => updateCampaignField('vipps_number', e.target.value.trim())}
+              placeholder="F.eks. 12345"
+            />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Startdato</label>
+            <input
+              key={`start-${campaign.start_date}`}
+              type="date"
+              style={inputStyle}
+              defaultValue={campaign.start_date || ''}
+              onBlur={e => updateCampaignField('start_date', e.target.value || null)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Sluttdato</label>
+            <input
+              key={`end-${campaign.end_date}`}
+              type="date"
+              style={inputStyle}
+              defaultValue={campaign.end_date || ''}
+              onBlur={e => updateCampaignField('end_date', e.target.value || null)}
+            />
+          </div>
+        </div>
+        <div style={{ marginTop: '12px' }}>
+          <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Beskrivelse</label>
+          <textarea
+            key={`desc-${campaign.description}`}
+            style={{ ...inputStyle, resize: 'vertical' }}
+            rows={2}
+            defaultValue={campaign.description || ''}
+            onBlur={e => updateCampaignField('description', e.target.value)}
+          />
+        </div>
+        <p style={{ fontSize: '11px', color: '#6b7f70', marginTop: '8px', marginBottom: 0 }}>
+          Endringer lagres automatisk når du klikker ut av feltet.
+          Vipps-nummeret kontrolleres ved første betaling etter endring.
+        </p>
       </div>
 
       {/* Purre-knapp */}
