@@ -879,7 +879,7 @@ export const LotteryAdmin: React.FC = () => {
                 </div>
                 <div style={{ fontSize: '12px', color: '#991b1b', lineHeight: '1.6', marginBottom: '10px' }}>
                   En forelder forsøkte å betale, men Vipps avviste mottakernummeret <strong>{lottery.vippsNumber}</strong>. Lotteriet er midlertidig skjult for kjøpere.
-                  Sjekk at det er riktig 5–7-sifret Salgssted-nummer med Payment Integration aktivert.
+                  Sjekk at det er riktig 4–7-sifret Salgssted-nummer med Payment Integration aktivert.
                 </div>
                 <button
                   onClick={async () => {
@@ -1376,7 +1376,7 @@ export const LotteryAdmin: React.FC = () => {
 
               <div style={{ fontSize: '13px', color: '#4a5e50', lineHeight: '1.7' }}>
                 <p style={{ marginTop: 0 }}>
-                  Lagets Vipps-nummer er det 5–7-sifrede nummeret som er knyttet til lagets Vipps Salgssted. Det er ikke et privat Vipps-nummer.
+                  Lagets Vipps-nummer er det 4–7-sifrede nummeret som er knyttet til lagets Vipps Salgssted. Det er ikke et privat Vipps-nummer.
                 </p>
 
                 <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Hvordan finne det:</p>
