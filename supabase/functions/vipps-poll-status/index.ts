@@ -45,21 +45,23 @@ function vippsStateToStatus(vState: string): string {
 
 // =============================================================
 // Reference-prefix routing — speiler vipps-webhook-mønsteret.
-//   'lottery-<uuid>' → lottery_sales (amount, tickets, lotteries-FK)
-//   'kiosk-<uuid>'   → kiosk_sales (total_amount, separat oppslag
-//                      mot kiosk_settings for vipps_number)
-//   Ukjent prefiks   → null (gir 404 til frontend)
+//   'lottery-<uuid>'  → lottery_sales (amount, tickets, lotteries-FK)
+//   'kiosk-<uuid>'    → kiosk_sales (total_amount, separat oppslag
+//                       mot kiosk_settings for vipps_number)
+//   'campaign-<uuid>' → campaign_sales (amount, sales_campaigns-FK
+//                       for vipps_number — samme mønster som lottery)
+//   Ukjent prefiks    → null (gir 404 til frontend)
 // =============================================================
 
 interface SaleContext {
   id: string;
   status: string;
-  amount: number;             // normalisert: amount (lottery) / total_amount (kiosk)
-  tickets: number | null;     // kun lottery — kiosk har ikke "tickets"
+  amount: number;             // normalisert: amount (lottery/campaign) / total_amount (kiosk)
+  tickets: number | null;     // kun lottery — kiosk og campaign har ikke "tickets"
   created_at: string;
   failure_reason: string | null;
   msn: string | null;         // for direct Vipps-oppslag
-  table: 'lottery_sales' | 'kiosk_sales';
+  table: 'lottery_sales' | 'kiosk_sales' | 'campaign_sales';
 }
 
 async function fetchSaleByReference(reference: string): Promise<SaleContext | null> {
@@ -111,6 +113,25 @@ async function fetchSaleByReference(reference: string): Promise<SaleContext | nu
       failure_reason: sale.failure_reason,
       msn,
       table: 'kiosk_sales',
+    };
+  }
+
+  if (reference.startsWith('campaign-')) {
+    const { data } = await supabase
+      .from('campaign_sales')
+      .select('id, status, amount, created_at, failure_reason, campaign_id, sales_campaigns(vipps_number)')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      id: data.id,
+      status: data.status,
+      amount: data.amount,
+      tickets: null,
+      created_at: data.created_at,
+      failure_reason: data.failure_reason,
+      msn: (data as any).sales_campaigns?.vipps_number ?? null,
+      table: 'campaign_sales',
     };
   }
 
