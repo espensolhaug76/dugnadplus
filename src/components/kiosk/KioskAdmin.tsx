@@ -21,6 +21,41 @@ interface SalesSummary {
   topItem: string;
 }
 
+interface KioskTransaction {
+  id: string;
+  created_at: string;
+  buyer_name: string | null;
+  buyer_phone: string | null;
+  items: { name: string; emoji: string; price: number; qty: number }[];
+  total_amount: number;
+  status: string;
+}
+
+// Status som teller som "ekte salg" — speiler LotteryAdmin sin definisjon.
+// AUTHORIZED inkluderes fordi auto-capture er fire-and-forget; hvis
+// capture feiler teknisk beholder vi AUTHORIZED, og pengene er
+// reservert hos kjøperen. CANCELLED/EXPIRED/FAILED/TERMINATED teller
+// ikke. CREATED er ikke endelig — kan ende som AUTHORIZED eller bli
+// ryddet vekk av Vipps EXPIRED-event.
+const PAID_STATUSES = new Set(['AUTHORIZED', 'CAPTURED']);
+const isPaidSale = (s: { status: string }) => PAID_STATUSES.has(s.status);
+
+// Status-badge styling — speiler LotteryAdmin sin farge- og label-bruk
+// for konsistens på tvers av admin-flatene.
+function statusBadge(status: string): { label: string; bg: string; fg: string } {
+  switch (status) {
+    case 'CAPTURED':   return { label: 'Betalt',     bg: '#e8f5ef', fg: '#2d6a4f' };
+    case 'AUTHORIZED': return { label: 'Bekreftet',  bg: '#fff8e6', fg: '#854f0b' };
+    case 'CREATED':    return { label: 'Venter',     bg: '#f3f4f6', fg: '#6b7f70' };
+    case 'CANCELLED':
+    case 'TERMINATED': return { label: 'Avbrutt',    bg: '#fff5f5', fg: '#b91c1c' };
+    case 'EXPIRED':    return { label: 'Utløpt',     bg: '#fff5f5', fg: '#b91c1c' };
+    case 'FAILED':     return { label: 'Mislyktes',  bg: '#fff5f5', fg: '#b91c1c' };
+    case 'REFUNDED':   return { label: 'Refundert',  bg: '#f3f4f6', fg: '#6b7f70' };
+    default:           return { label: status,       bg: '#f3f4f6', fg: '#6b7f70' };
+  }
+}
+
 const DEFAULT_ITEMS = [
   { name: 'Kaffe', price: 20, emoji: '☕' },
   { name: 'Brus', price: 15, emoji: '🧃' },
@@ -37,6 +72,7 @@ const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
 export const KioskAdmin: React.FC = () => {
   const [items, setItems] = useState<KioskItem[]>([]);
   const [salesByEvent, setSalesByEvent] = useState<SalesSummary[]>([]);
+  const [transactions, setTransactions] = useState<KioskTransaction[]>([]);
   const [, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [vippsNumber, setVippsNumber] = useState('');
@@ -126,40 +162,58 @@ export const KioskAdmin: React.FC = () => {
     const { data: eventsData } = await eventsQuery;
     if (eventsData) setEvents(eventsData);
 
-    // Hent salg — team-avgrenset
+    // Hent salg — team-avgrenset. Tar med alle statuser (paid +
+    // pending + cancelled) til transaksjonslisten; aggregering filtrerer
+    // til PAID_STATUSES nedenfor så cancelled ikke teller mot omsetning.
     let salesQuery = supabase
       .from('kiosk_sales')
-      .select('event_id, items, total_amount');
+      .select('id, created_at, buyer_name, buyer_phone, event_id, items, total_amount, status')
+      .order('created_at', { ascending: false });
     if (currentTeamId) salesQuery = salesQuery.eq('team_id', currentTeamId);
     const { data: salesData } = await salesQuery;
 
-    if (salesData && eventsData) {
-      const byEvent: Record<string, { totalAmount: number; count: number; itemCounts: Record<string, number> }> = {};
-      salesData.forEach((s: any) => {
-        const eid = s.event_id || '__none__';
-        if (!byEvent[eid]) byEvent[eid] = { totalAmount: 0, count: 0, itemCounts: {} };
-        byEvent[eid].totalAmount += s.total_amount || 0;
-        byEvent[eid].count++;
-        const saleItems = typeof s.items === 'string' ? JSON.parse(s.items) : s.items;
-        if (Array.isArray(saleItems)) {
-          saleItems.forEach((item: any) => {
-            byEvent[eid].itemCounts[item.name] = (byEvent[eid].itemCounts[item.name] || 0) + (item.qty || 1);
-          });
-        }
-      });
+    if (salesData) {
+      // Normalisér items-feltet (kan være string eller objekt avhengig
+      // av Postgres jsonb-håndtering) for hele transaksjonslisten.
+      const allTransactions: KioskTransaction[] = salesData.map((s: any) => ({
+        id: s.id,
+        created_at: s.created_at,
+        buyer_name: s.buyer_name,
+        buyer_phone: s.buyer_phone,
+        items: typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || []),
+        total_amount: s.total_amount || 0,
+        status: s.status || 'CREATED',
+      }));
+      setTransactions(allTransactions);
 
-      const summaries: SalesSummary[] = Object.entries(byEvent).map(([eid, data]) => {
-        const event = eventsData.find((e: any) => e.id === eid);
-        const topEntry = Object.entries(data.itemCounts).sort((a, b) => b[1] - a[1])[0];
-        return {
-          eventName: event?.name || 'Uten arrangement',
-          eventDate: event?.date || '',
-          totalAmount: data.totalAmount,
-          transactionCount: data.count,
-          topItem: topEntry ? `${topEntry[0]} (${topEntry[1]} stk)` : '-'
-        };
-      }).sort((a, b) => (b.eventDate || '').localeCompare(a.eventDate || ''));
-      setSalesByEvent(summaries);
+      // Aggregering per event — KUN paid (AUTHORIZED/CAPTURED).
+      if (eventsData) {
+        const byEvent: Record<string, { totalAmount: number; count: number; itemCounts: Record<string, number> }> = {};
+        allTransactions.filter(isPaidSale).forEach((s) => {
+          const eid = (salesData.find((row: any) => row.id === s.id)?.event_id) || '__none__';
+          if (!byEvent[eid]) byEvent[eid] = { totalAmount: 0, count: 0, itemCounts: {} };
+          byEvent[eid].totalAmount += s.total_amount;
+          byEvent[eid].count++;
+          if (Array.isArray(s.items)) {
+            s.items.forEach((item) => {
+              byEvent[eid].itemCounts[item.name] = (byEvent[eid].itemCounts[item.name] || 0) + (item.qty || 1);
+            });
+          }
+        });
+
+        const summaries: SalesSummary[] = Object.entries(byEvent).map(([eid, data]) => {
+          const event = eventsData.find((e: any) => e.id === eid);
+          const topEntry = Object.entries(data.itemCounts).sort((a, b) => b[1] - a[1])[0];
+          return {
+            eventName: event?.name || 'Uten arrangement',
+            eventDate: event?.date || '',
+            totalAmount: data.totalAmount,
+            transactionCount: data.count,
+            topItem: topEntry ? `${topEntry[0]} (${topEntry[1]} stk)` : '-'
+          };
+        }).sort((a, b) => (b.eventDate || '').localeCompare(a.eventDate || ''));
+        setSalesByEvent(summaries);
+      }
     }
 
     // Vipps-nummer — leses fra kiosk_settings (server-side sannhet
@@ -780,6 +834,56 @@ export const KioskAdmin: React.FC = () => {
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f' }}>{s.totalAmount} kr</div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Transaksjoner — per-rad detalj med status-badge.
+            Aggregeringene ovenfor (omsetning, salg per kampdag) teller
+            kun AUTHORIZED/CAPTURED. Denne listen viser ALLE statuser
+            slik at koordinator kan se cancelled/expired/failed-rader
+            og forstå hvorfor totalene avviker fra rå antall forsøk. */}
+        {transactions.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, letterSpacing: '.06em', marginBottom: '8px' }}>Transaksjoner ({transactions.length})</div>
+            <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #dedddd', textAlign: 'left', background: '#faf8f4' }}>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', whiteSpace: 'nowrap' }}>Dato</th>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Kjøper</th>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Telefon</th>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Varer</th>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Beløp</th>
+                      <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map(tx => {
+                      const badge = statusBadge(tx.status);
+                      const itemCount = tx.items.reduce((sum, it) => sum + (it.qty || 0), 0);
+                      const isPaid = isPaidSale(tx);
+                      return (
+                        <tr key={tx.id} style={{ borderBottom: '0.5px solid #eee', opacity: isPaid ? 1 : 0.7 }}>
+                          <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: '#4a5e50' }}>
+                            {new Date(tx.created_at).toLocaleDateString('nb-NO')} {new Date(tx.created_at).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td style={{ padding: '10px 12px', fontWeight: '500', color: '#1a2e1f' }}>{tx.buyer_name || '–'}</td>
+                          <td style={{ padding: '10px 12px', color: '#4a5e50' }}>{tx.buyer_phone || '–'}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#1a2e1f' }}>{itemCount}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '500', color: isPaid ? '#2d6a4f' : '#6b7f70' }}>{tx.total_amount} kr</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', background: badge.bg, color: badge.fg, fontWeight: '500', whiteSpace: 'nowrap' }}>
+                              {badge.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
