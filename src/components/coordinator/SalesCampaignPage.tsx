@@ -5,8 +5,25 @@ import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } fr
 import { GuideButton } from '../../utils/guides/GuideButton';
 import { PremiumGateModal, hasPremium } from '../common/PremiumGateModal';
 
-interface Campaign { id: string; title: string; description: string; product_name: string; unit_price: number; target_per_family: number; start_date: string; end_date: string; status: string; vipps_number: string; }
+interface Campaign {
+  id: string;
+  title: string;
+  description: string;
+  product_name: string;
+  unit_price: number;
+  target_per_family: number;
+  start_date: string;
+  end_date: string;
+  status: string;
+  vipps_number: string;
+  vipps_validation_failed_at: string | null;
+  vipps_validation_error: string | null;
+}
 interface Sale { id: string; seller_family_id: string; buyer_name: string; quantity: number; amount: number; paid: boolean; delivered: boolean; sellerName: string; }
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -40,6 +57,14 @@ export const SalesCampaignPage: React.FC = () => {
 
   const teamId = localStorage.getItem('dugnad_active_team_filter') || '';
   const [showPremiumGate, setShowPremiumGate] = useState(false);
+
+  // Vipps-validering (format-only) — speiler LotteryAdmin-mønsteret.
+  // Ekte MSN-validering skjer fail-fast ved første betalingsforsøk
+  // i vipps-initiate-payment.
+  type VnvState = 'idle' | 'validating' | 'valid_format' | 'invalid_format';
+  const [vippsValidation, setVippsValidation] = useState<VnvState>('idle');
+  const [vippsValidationMessage, setVippsValidationMessage] = useState('');
+  const [showVippsHelpModal, setShowVippsHelpModal] = useState(false);
 
   const [createErrors, setCreateErrors] = useState<FormErrors>({});
   const createFieldRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -130,6 +155,52 @@ export const SalesCampaignPage: React.FC = () => {
   const endCampaign = async () => {
     if (!campaign || !confirm('Avslutte kampanjen? Leveringslisten genereres.')) return;
     await supabase.from('sales_campaigns').update({ status: 'completed' }).eq('id', campaign.id);
+    fetchData();
+  };
+
+  // Validér Vipps-nummer-format mot Edge Function. Gjenbruker samme
+  // funksjon som LotteryAdmin/KioskAdmin. Format-only — ekte MSN-
+  // validering skjer ved første betalingsforsøk i vipps-initiate-payment.
+  const validateVippsFormat = async (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setVippsValidation('idle');
+      setVippsValidationMessage('');
+      return;
+    }
+    setVippsValidation('validating');
+    setVippsValidationMessage('Sjekker format…');
+    try {
+      const resp = await fetch(VALIDATE_FN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ vipps_number: trimmed }),
+      });
+      const data = await resp.json();
+      if (data?.valid) {
+        setVippsValidation('valid_format');
+        setVippsValidationMessage('Format er gyldig. Vipps-nummeret kontrolleres ved første betaling.');
+      } else {
+        setVippsValidation('invalid_format');
+        setVippsValidationMessage(data?.message || 'Ugyldig Vipps-nummer.');
+      }
+    } catch {
+      setVippsValidation('invalid_format');
+      setVippsValidationMessage('Kunne ikke kontakte server. Prøv igjen.');
+    }
+  };
+
+  const reactivateVipps = async () => {
+    if (!campaign) return;
+    if (!confirm('Aktivere kampanjen på nytt? Sørg for at Vipps-nummeret nå er korrekt.')) return;
+    await supabase.from('sales_campaigns').update({
+      vipps_validation_failed_at: null,
+      vipps_validation_error: null,
+    }).eq('id', campaign.id);
     fetchData();
   };
 
@@ -288,12 +359,45 @@ export const SalesCampaignPage: React.FC = () => {
                 <label style={labelStyle}>Vipps-nummer *</label>
                 <input
                   ref={el => { createFieldRefs.current.vipps_number = el; }}
-                  style={{ ...inputStyle, ...(createErrors.vipps_number ? { border: `1px solid ${ERROR_COLOR}` } : {}) }}
+                  style={{
+                    ...inputStyle,
+                    border:
+                      createErrors.vipps_number || vippsValidation === 'invalid_format'
+                        ? `1px solid ${ERROR_COLOR}`
+                        : vippsValidation === 'valid_format'
+                          ? '1px solid #2d6a4f'
+                          : '0.5px solid #dedddd',
+                  }}
                   value={form.vipps_number}
-                  onChange={e => { setForm({ ...form, vipps_number: e.target.value }); clearCreateError('vipps_number'); }}
-                  placeholder="For betaling"
+                  onChange={e => {
+                    setForm({ ...form, vipps_number: e.target.value });
+                    clearCreateError('vipps_number');
+                    // Endring → tilbake til idle, må valideres på nytt ved blur
+                    if (vippsValidation !== 'idle') {
+                      setVippsValidation('idle');
+                      setVippsValidationMessage('');
+                    }
+                  }}
+                  onBlur={e => validateVippsFormat(e.target.value)}
+                  placeholder="F.eks. 12345"
                 />
                 {createErrors.vipps_number && <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>{createErrors.vipps_number}</p>}
+                {vippsValidation === 'validating' && (
+                  <p style={{ color: '#6b7f70', fontSize: '12px', margin: '6px 0 0 0' }}>{vippsValidationMessage}</p>
+                )}
+                {vippsValidation === 'valid_format' && (
+                  <p style={{ color: '#2d6a4f', fontSize: '12px', margin: '6px 0 0 0' }}>✓ {vippsValidationMessage}</p>
+                )}
+                {vippsValidation === 'invalid_format' && (
+                  <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>✗ {vippsValidationMessage}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowVippsHelpModal(true)}
+                  style={{ background: 'none', border: 'none', padding: 0, marginTop: '6px', color: '#2d6a4f', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  ⓘ Hvor finner jeg Vipps-nummeret?
+                </button>
               </div>
               <div>
                 <label style={labelStyle}>Beskrivelse (valgfritt)</label>
@@ -301,7 +405,80 @@ export const SalesCampaignPage: React.FC = () => {
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowCreate(false)} style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', padding: '10px 20px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', color: '#4a5e50' }}>Avbryt</button>
-                <button onClick={createCampaign} style={{ background: '#2d6a4f', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '10px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Start kampanje</button>
+                <button
+                  onClick={createCampaign}
+                  disabled={vippsValidation !== 'valid_format'}
+                  title={vippsValidation !== 'valid_format' ? 'Skriv inn et gyldig Vipps-nummer først' : ''}
+                  style={{
+                    background: '#2d6a4f',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: vippsValidation !== 'valid_format' ? 'not-allowed' : 'pointer',
+                    opacity: vippsValidation !== 'valid_format' ? 0.5 : 1,
+                  }}
+                >
+                  Start kampanje
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* INFO-MODAL: Hvor finner jeg Vipps-nummeret? — speiler LotteryAdmin */}
+        {showVippsHelpModal && (
+          <div
+            onClick={() => setShowVippsHelpModal(false)}
+            onKeyDown={e => { if (e.key === 'Escape') setShowVippsHelpModal(false); }}
+            tabIndex={-1}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '20px' }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: '#fff', borderRadius: '12px', padding: '28px', maxWidth: '520px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1a2e1f' }}>Hvor finner du lagets Vipps-nummer</h3>
+                <button onClick={() => setShowVippsHelpModal(false)} aria-label="Lukk" style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#6b7f70', padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#4a5e50', lineHeight: '1.7' }}>
+                <p style={{ marginTop: 0 }}>
+                  Lagets Vipps-nummer er det 5–7-sifrede nummeret som er knyttet til lagets Vipps Salgssted. Det er ikke et privat Vipps-nummer.
+                </p>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Hvordan finne det:</p>
+                <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                  <li>Logg inn på <strong>business.vipps.no</strong> med BankID</li>
+                  <li>Velg laget i øverste meny (hvis du administrerer flere)</li>
+                  <li>Klikk <strong>«Salgssteder»</strong> i venstre meny</li>
+                  <li>Vipps-nummeret står øverst på Salgsstedet — eks: <code>123456</code></li>
+                </ol>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Vippsen må ha «Payment Integration» aktivert.</p>
+                <p style={{ marginTop: 0 }}>
+                  Hvis Salgsstedet kun har «Cash register integration» (for kiosk-bruk), må noen i klubben aktivere Payment Integration:
+                </p>
+                <ol style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
+                  <li>Gå til <strong>business.vipps.no</strong></li>
+                  <li>Bestill produkt → <strong>«Payment Integration»</strong></li>
+                  <li>Aktivering tar normalt 1–2 dager</li>
+                  <li>Kom tilbake hit når dere har bekreftelse fra Vipps</li>
+                </ol>
+
+                <p style={{ fontWeight: '600', color: '#1a2e1f', marginBottom: '4px' }}>Har laget ikke Salgssted ennå?</p>
+                <p>Da må klubbens kasserer eller styre bestille det først. Kontakt Vipps via <strong>business.vipps.no</strong>.</p>
+
+                <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '8px', padding: '12px', fontSize: '12px', color: '#854f0b', marginTop: '16px' }}>
+                  💡 <strong>Vipps-nummeret kontrolleres ved første betaling.</strong> Hvis nummeret er feil, ser dere det da og kan rette opp.
+                </div>
+
+                <p style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70' }}>
+                  Trenger du hjelp? Klubbens kasserer eller styre kan hjelpe.
+                </p>
               </div>
             </div>
           </div>
@@ -399,6 +576,28 @@ export const SalesCampaignPage: React.FC = () => {
         )}
       </div>
       {showPremiumGate && <PremiumGateModal featureName="salgskampanjen" onClose={() => setShowPremiumGate(false)} />}
+
+      {/* Fail-fast-banner: Vipps avviste mottakernummeret */}
+      {campaign.vipps_validation_failed_at && (
+        <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: '10px', padding: '14px 16px', marginBottom: '16px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#b91c1c', marginBottom: '6px' }}>
+            ⚠️ Vipps-nummeret fungerer ikke
+          </div>
+          <div style={{ fontSize: '12px', color: '#991b1b', lineHeight: '1.6', marginBottom: '10px' }}>
+            En kunde forsøkte å betale, men Vipps avviste mottakernummeret <strong>{campaign.vipps_number}</strong>. Kampanjen er midlertidig skjult for kjøpere.
+            Sjekk at det er riktig 5–7-sifret Salgssted-nummer med Payment Integration aktivert.
+            {campaign.vipps_validation_error && (
+              <div style={{ marginTop: '6px', fontStyle: 'italic' }}>Vipps-feil: {campaign.vipps_validation_error}</div>
+            )}
+          </div>
+          <button
+            onClick={reactivateVipps}
+            style={{ fontSize: '12px', padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#b91c1c', color: '#fff', cursor: 'pointer', fontWeight: '600' }}
+          >
+            Aktiver på nytt
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Oversikt</div>
