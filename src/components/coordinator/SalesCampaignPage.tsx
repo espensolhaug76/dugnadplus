@@ -81,6 +81,10 @@ export const SalesCampaignPage: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    // Reset Vipps-valideringsstate så meldinger fra forrige flyt
+    // (create-form → active view) ikke lekker inn i Innstillinger.
+    setVippsValidation('idle');
+    setVippsValidationMessage('');
     // Hent aktiv kampanje
     let query = supabase.from('sales_campaigns').select('*').eq('status', 'active');
     if (teamId) query = query.eq('team_id', teamId);
@@ -161,12 +165,14 @@ export const SalesCampaignPage: React.FC = () => {
   // Validér Vipps-nummer-format mot Edge Function. Gjenbruker samme
   // funksjon som LotteryAdmin/KioskAdmin. Format-only — ekte MSN-
   // validering skjer ved første betalingsforsøk i vipps-initiate-payment.
-  const validateVippsFormat = async (raw: string) => {
+  // Returnerer boolean så Innstillinger-flyten kan vente på resultatet
+  // og avgjøre om DB-lagring skal skje.
+  const validateVippsFormat = async (raw: string): Promise<boolean> => {
     const trimmed = raw.trim();
     if (!trimmed) {
       setVippsValidation('idle');
       setVippsValidationMessage('');
-      return;
+      return false;
     }
     setVippsValidation('validating');
     setVippsValidationMessage('Sjekker format…');
@@ -184,14 +190,28 @@ export const SalesCampaignPage: React.FC = () => {
       if (data?.valid) {
         setVippsValidation('valid_format');
         setVippsValidationMessage('Format er gyldig. Vipps-nummeret kontrolleres ved første betaling.');
-      } else {
-        setVippsValidation('invalid_format');
-        setVippsValidationMessage(data?.message || 'Ugyldig Vipps-nummer.');
+        return true;
       }
+      setVippsValidation('invalid_format');
+      setVippsValidationMessage(data?.message || 'Ugyldig Vipps-nummer.');
+      return false;
     } catch {
       setVippsValidation('invalid_format');
       setVippsValidationMessage('Kunne ikke kontakte server. Prøv igjen.');
+      return false;
     }
+  };
+
+  // Validér + lagre Vipps-nummer fra Innstillinger inline-edit.
+  // Format-validering blokkerer lagring slik at en feiltastet verdi
+  // (f.eks. 12-sifret) ikke overskriver et gyldig nummer i DB.
+  const validateAndSaveVippsNumber = async (raw: string) => {
+    if (!campaign) return;
+    const trimmed = raw.trim();
+    if (trimmed === campaign.vipps_number) return; // Ingen endring
+    const isValid = await validateVippsFormat(trimmed);
+    if (!isValid) return; // Stopp her — vippsValidation-state viser feilmelding inline
+    await updateCampaignField('vipps_number', trimmed);
   };
 
   const reactivateVipps = async () => {
@@ -708,11 +728,33 @@ export const SalesCampaignPage: React.FC = () => {
             <label style={{ fontSize: '11px', fontWeight: '500', color: '#4a5e50', marginBottom: '4px', display: 'block' }}>Vipps-nummer</label>
             <input
               key={`vipps-${campaign.vipps_number}`}
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                border:
+                  vippsValidation === 'invalid_format' ? `1px solid ${ERROR_COLOR}` :
+                  vippsValidation === 'valid_format' ? '1px solid #2d6a4f' :
+                  '0.5px solid #dedddd',
+              }}
               defaultValue={campaign.vipps_number}
-              onBlur={e => updateCampaignField('vipps_number', e.target.value.trim())}
+              onChange={() => {
+                // Endring → tilbake til idle inntil onBlur validerer
+                if (vippsValidation !== 'idle') {
+                  setVippsValidation('idle');
+                  setVippsValidationMessage('');
+                }
+              }}
+              onBlur={e => validateAndSaveVippsNumber(e.target.value)}
               placeholder="F.eks. 12345"
             />
+            {vippsValidation === 'validating' && (
+              <p style={{ color: '#6b7f70', fontSize: '12px', margin: '6px 0 0 0' }}>{vippsValidationMessage}</p>
+            )}
+            {vippsValidation === 'valid_format' && vippsValidationMessage && (
+              <p style={{ color: '#2d6a4f', fontSize: '12px', margin: '6px 0 0 0' }}>✓ Lagret</p>
+            )}
+            {vippsValidation === 'invalid_format' && (
+              <p style={{ color: ERROR_COLOR, fontSize: '12px', margin: '6px 0 0 0' }}>✗ {vippsValidationMessage} — ikke lagret</p>
+            )}
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -749,7 +791,8 @@ export const SalesCampaignPage: React.FC = () => {
         </div>
         <p style={{ fontSize: '11px', color: '#6b7f70', marginTop: '8px', marginBottom: 0 }}>
           Endringer lagres automatisk når du klikker ut av feltet.
-          Vipps-nummeret kontrolleres ved første betaling etter endring.
+          Vipps-nummerets format sjekkes umiddelbart; gyldighet mot Vipps
+          bekreftes ved første betaling etter endring.
         </p>
       </div>
 
