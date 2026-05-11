@@ -89,13 +89,6 @@ export const KioskAdmin: React.FC = () => {
   const [vippsValidationError, setVippsValidationError] = useState<string | null>(null);
   const [vippsSaving, setVippsSaving] = useState(false);
 
-  // Engangs-banner: vises hvis brukeren har et gammelt Vipps-nummer i
-  // localStorage (fra før kiosk_settings ble innført), men kiosk_settings
-  // er tom for dette team_id. Vi auto-migrerer ikke — DA må re-skrive inn
-  // nummeret slik at de får format-validering og legger merke til at
-  // lagring nå er server-side.
-  const [showLocalStorageBanner, setShowLocalStorageBanner] = useState(false);
-
   // Ny vare
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState(0);
@@ -216,11 +209,8 @@ export const KioskAdmin: React.FC = () => {
       }
     }
 
-    // Vipps-nummer — leses fra kiosk_settings (server-side sannhet
-    // siden 2026-05-10). localStorage 'dugnad_kiosk_vipps' er deprecated;
-    // vi sjekker den kun for å vise engangs-banner til brukere som har
-    // gammelt nummer i localStorage men ikke i DB.
-    let dbHasVipps = false;
+    // Vipps-nummer leses fra kiosk_settings (server-side sannhet
+    // siden 2026-05-10). localStorage-fallback ble fjernet i steg 8.
     if (currentTeamId) {
       const { data: settings } = await supabase
         .from('kiosk_settings')
@@ -232,16 +222,10 @@ export const KioskAdmin: React.FC = () => {
         // Allerede lagret i DB → behandle som validert format
         setVippsValidation('valid_format');
         setVippsValidationMessage('Lagret.');
-        dbHasVipps = true;
       }
       setVippsValidationFailedAt(settings?.vipps_validation_failed_at ?? null);
       setVippsValidationError(settings?.vipps_validation_error ?? null);
     }
-
-    try {
-      const stored = localStorage.getItem('dugnad_kiosk_vipps');
-      if (stored && !dbHasVipps) setShowLocalStorageBanner(true);
-    } catch {}
 
     setLoading(false);
   };
@@ -308,9 +292,6 @@ export const KioskAdmin: React.FC = () => {
     setVippsValidationFailedAt(null);
     setVippsValidationError(null);
     setVippsValidationMessage('Lagret.');
-    // Rydd opp gammel localStorage-verdi og engangs-banneren
-    try { localStorage.removeItem('dugnad_kiosk_vipps'); } catch {}
-    setShowLocalStorageBanner(false);
     clearItemError('vippsNumber');
   };
 
@@ -551,21 +532,6 @@ export const KioskAdmin: React.FC = () => {
             >
               Aktiver på nytt
             </button>
-          </div>
-        )}
-
-        {/* Engangs-banner: gammelt Vipps-nummer i localStorage, må re-skrives.
-            Auto-migrering droppet med vilje slik at DA går gjennom format-
-            valideringen og legger merke til at lagring nå er server-side. */}
-        {showLocalStorageBanner && (
-          <div style={{ background: '#fff8e6', border: '1px solid #fac775', borderRadius: '10px', padding: '14px 16px', marginBottom: '12px' }}>
-            <div style={{ fontSize: '13px', fontWeight: '600', color: '#854f0b', marginBottom: '6px' }}>
-              📌 Bekreft Vipps-nummeret på nytt
-            </div>
-            <div style={{ fontSize: '12px', color: '#854f0b', lineHeight: '1.6' }}>
-              Vipps-nummeret lagres nå sentralt slik at kioskens betalingsflyt fungerer på alle enheter.
-              Skriv inn nummeret i feltet under og trykk <strong>Lagre</strong>. Du gjør dette kun én gang.
-            </div>
           </div>
         )}
 
