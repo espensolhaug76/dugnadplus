@@ -19,11 +19,49 @@ interface Campaign {
   vipps_validation_failed_at: string | null;
   vipps_validation_error: string | null;
 }
-interface Sale { id: string; seller_family_id: string; buyer_name: string; quantity: number; amount: number; paid: boolean; delivered: boolean; sellerName: string; }
+interface Sale {
+  id: string;
+  created_at: string;
+  seller_family_id: string;
+  buyer_name: string;
+  buyer_phone: string | null;
+  quantity: number;
+  amount: number;
+  paid: boolean;
+  delivered: boolean;
+  status: string;
+  vipps_reference: string | null;
+  sellerName: string;
+}
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
+
+// Status som teller som "ekte salg" — speiler LotteryAdmin/KioskAdmin
+// sin definisjon. AUTHORIZED inkluderes fordi auto-capture er fire-and-
+// forget; hvis capture feiler teknisk beholder vi AUTHORIZED og pengene
+// er reservert hos kjøperen. CANCELLED/EXPIRED/FAILED/TERMINATED/
+// REFUNDED teller ikke. CREATED er ikke endelig — kan ende som
+// AUTHORIZED eller bli ryddet vekk av Vipps EXPIRED-event.
+const PAID_STATUSES = new Set(['AUTHORIZED', 'CAPTURED']);
+const isPaidSale = (s: { status: string }) => PAID_STATUSES.has(s.status);
+
+// Status-badge styling — speiler LotteryAdmin/KioskAdmin sin farge-
+// og label-bruk for konsistens på tvers av admin-flatene.
+function statusBadge(status: string): { label: string; bg: string; fg: string } {
+  switch (status) {
+    case 'CAPTURED':   return { label: 'Betalt',     bg: '#e8f5ef', fg: '#2d6a4f' };
+    case 'AUTHORIZED': return { label: 'Bekreftet',  bg: '#fff8e6', fg: '#854f0b' };
+    case 'CREATED':    return { label: 'Venter',     bg: '#f3f4f6', fg: '#6b7f70' };
+    case 'CANCELLED':
+    case 'TERMINATED': return { label: 'Avbrutt',    bg: '#fff5f5', fg: '#b91c1c' };
+    case 'EXPIRED':    return { label: 'Utløpt',     bg: '#fff5f5', fg: '#b91c1c' };
+    case 'FAILED':     return { label: 'Mislyktes',  bg: '#fff5f5', fg: '#b91c1c' };
+    case 'REFUNDED':   return { label: 'Refundert',  bg: '#f3f4f6', fg: '#6b7f70' };
+    default:           return { label: status,       bg: '#f3f4f6', fg: '#6b7f70' };
+  }
+}
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -113,7 +151,11 @@ export const SalesCampaignPage: React.FC = () => {
     if (campaignData || campaign) {
       const cid = (campaignData || campaign)?.id;
       if (cid) {
-        const { data: salesData } = await supabase.from('campaign_sales').select('*, families:seller_family_id(name, family_members(name, role))').eq('campaign_id', cid);
+        const { data: salesData } = await supabase
+          .from('campaign_sales')
+          .select('*, families:seller_family_id(name, family_members(name, role))')
+          .eq('campaign_id', cid)
+          .order('created_at', { ascending: false });
         if (salesData) {
           setSales(salesData.map((s: any) => {
             const children = s.families?.family_members?.filter((m: any) => m.role === 'child') || [];
@@ -265,9 +307,12 @@ export const SalesCampaignPage: React.FC = () => {
     a.click();
   };
 
+  // Aggregeringer (omsetning, antall, toppliste, ikke-startet) bruker
+  // KUN paid-rader (AUTHORIZED/CAPTURED). Cancelled/expired/failed/
+  // refunded teller ikke — speiler LotteryAdmin/KioskAdmin.
   const getSellerStats = () => {
     const map: Record<string, { name: string; qty: number; amount: number; delivered: boolean }> = {};
-    sales.forEach(s => {
+    sales.filter(isPaidSale).forEach(s => {
       const id = s.seller_family_id || '__direct__';
       if (!map[id]) map[id] = { name: s.sellerName || 'Ukjent', qty: 0, amount: 0, delivered: s.delivered };
       map[id].qty += s.quantity;
@@ -279,10 +324,13 @@ export const SalesCampaignPage: React.FC = () => {
 
   if (loading) return <div style={{ padding: '40px', textAlign: 'center', background: '#faf8f4', minHeight: '100vh', color: '#4a5e50' }}>Laster...</div>;
 
-  const totalQty = sales.reduce((s, x) => s + x.quantity, 0);
-  const totalAmount = sales.reduce((s, x) => s + x.amount, 0);
+  const paidSales = sales.filter(isPaidSale);
+  const totalQty = paidSales.reduce((s, x) => s + x.quantity, 0);
+  const totalAmount = paidSales.reduce((s, x) => s + x.amount, 0);
   const sellerStats = getSellerStats();
-  const familiesNotStarted = families.filter(f => !sales.some(s => s.seller_family_id === f.id));
+  // "Ikke startet" = familier uten paid sale. Cancelled forsøk gjør IKKE
+  // at en familie regnes som startet — DA trenger fortsatt å nudge dem.
+  const familiesNotStarted = families.filter(f => !paidSales.some(s => s.seller_family_id === f.id));
 
   // --- TILSTAND 1: Ingen kampanje ---
   if (!campaign) {
@@ -696,6 +744,57 @@ export const SalesCampaignPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Transaksjoner — per-rad detalj med status-badge.
+          Aggregeringene over (omsetning, toppliste, ikke-startet)
+          teller kun AUTHORIZED/CAPTURED. Denne listen viser ALLE
+          statuser slik at DA kan se cancelled/expired/failed-rader
+          og forstå hvorfor totalene avviker fra rå antall forsøk. */}
+      {sales.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: '#4a5e50', textTransform: 'uppercase' as const, marginBottom: '8px' }}>Transaksjoner ({sales.length})</div>
+          <div style={{ background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #dedddd', textAlign: 'left', background: '#faf8f4' }}>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', whiteSpace: 'nowrap' }}>Dato</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Kjøper</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Telefon</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Selger</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Antall</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Beløp</th>
+                    <th style={{ padding: '10px 12px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sales.map(tx => {
+                    const badge = statusBadge(tx.status);
+                    const isPaid = isPaidSale(tx);
+                    return (
+                      <tr key={tx.id} style={{ borderBottom: '0.5px solid #eee', opacity: isPaid ? 1 : 0.7 }}>
+                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: '#4a5e50' }}>
+                          {new Date(tx.created_at).toLocaleDateString('nb-NO')} {new Date(tx.created_at).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td style={{ padding: '10px 12px', fontWeight: '500', color: '#1a2e1f' }}>{tx.buyer_name || '–'}</td>
+                        <td style={{ padding: '10px 12px', color: '#4a5e50' }}>{tx.buyer_phone || '–'}</td>
+                        <td style={{ padding: '10px 12px', color: '#4a5e50' }}>{tx.sellerName || '–'}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#1a2e1f' }}>{tx.quantity}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '500', color: isPaid ? '#2d6a4f' : '#6b7f70' }}>{tx.amount} kr</td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', background: badge.bg, color: badge.fg, fontWeight: '500', whiteSpace: 'nowrap' }}>
+                            {badge.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Innstillinger — inline-redigering. Speiler LotteryAdmin sitt
           mønster: defaultValue + onBlur lagrer direkte til DB. Ingen
