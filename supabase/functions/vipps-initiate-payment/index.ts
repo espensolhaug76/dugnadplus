@@ -1,14 +1,18 @@
 // vipps-initiate-payment
 // =============================================================
-// Steg 1 i Vipps ePayment-flyt for både lottery og kiosk:
-//   1. Validér input + kilde-spesifikk lookup (lottery_id eller team_id)
-//   2. Generer vipps_reference med kilde-prefiks (lottery- / kiosk-)
-//   3. INSERT i kilde-spesifikk tabell (lottery_sales / kiosk_sales)
+// Steg 1 i Vipps ePayment-flyt for lottery, kiosk og salgskampanje:
+//   1. Validér input + kilde-spesifikk lookup (lottery_id / team_id /
+//      campaign_id)
+//   2. Generer vipps_reference med kilde-prefiks
+//      (lottery- / kiosk- / campaign-)
+//   3. INSERT i kilde-spesifikk tabell
+//      (lottery_sales / kiosk_sales / campaign_sales)
 //      med status='CREATED'
 //   4. Kall Vipps POST /epayment/v1/payments
 //   5. Returnér redirectUrl til frontend
 //
 // Source-parameterisert siden 2026-05-10 (kiosk-migrering steg 2).
+// Campaign-support lagt til 2026-05-11 (salgskampanje steg 2).
 // Backward compat: requests uten 'source' defaulter til 'lottery'.
 //
 // Fail-fast: Hvis Vipps returnerer 401/403 (ugyldig MSN eller
@@ -33,7 +37,7 @@ const FRONTEND_BASE_URL =
 // Input-typer
 // =============================================================
 
-type Source = 'lottery' | 'kiosk';
+type Source = 'lottery' | 'kiosk' | 'campaign';
 
 interface KioskItem {
   name: string;
@@ -61,14 +65,27 @@ interface KioskInput {
   amount_nok: number;
 }
 
-type Input = LotteryInput | KioskInput;
+interface CampaignInput {
+  source: 'campaign';
+  campaign_id: string;
+  seller_family_id: string | null;
+  quantity: number;
+  buyer_name: string;
+  buyer_phone: string;
+  amount_nok: number;
+}
+
+type Input = LotteryInput | KioskInput | CampaignInput;
 
 function validateInput(b: any): Input | { error: string } {
   if (!b || typeof b !== 'object') return { error: 'Body må være JSON-objekt' };
 
   // Backward compat: default source='lottery' for eksisterende clients
   // som ikke har blitt oppdatert til å sende source eksplisitt.
-  const source: Source = b.source === 'kiosk' ? 'kiosk' : 'lottery';
+  const source: Source =
+    b.source === 'kiosk' ? 'kiosk' :
+    b.source === 'campaign' ? 'campaign' :
+    'lottery';
 
   // Felles felter
   if (typeof b.buyer_name !== 'string' || !b.buyer_name.trim())
@@ -94,26 +111,42 @@ function validateInput(b: any): Input | { error: string } {
     };
   }
 
-  // kiosk
-  if (typeof b.team_id !== 'string' || !b.team_id)
-    return { error: 'team_id mangler' };
-  if (!Array.isArray(b.items) || b.items.length === 0)
-    return { error: 'items må være ikke-tom array' };
-  for (const item of b.items) {
-    if (!item || typeof item !== 'object') return { error: 'items har ugyldig element' };
-    if (typeof item.name !== 'string' || !item.name) return { error: 'items: name mangler' };
-    if (!Number.isInteger(item.price) || item.price < 0) return { error: 'items: price må være positivt heltall' };
-    if (!Number.isInteger(item.qty) || item.qty <= 0) return { error: 'items: qty må være positivt heltall' };
+  if (source === 'kiosk') {
+    if (typeof b.team_id !== 'string' || !b.team_id)
+      return { error: 'team_id mangler' };
+    if (!Array.isArray(b.items) || b.items.length === 0)
+      return { error: 'items må være ikke-tom array' };
+    for (const item of b.items) {
+      if (!item || typeof item !== 'object') return { error: 'items har ugyldig element' };
+      if (typeof item.name !== 'string' || !item.name) return { error: 'items: name mangler' };
+      if (!Number.isInteger(item.price) || item.price < 0) return { error: 'items: price må være positivt heltall' };
+      if (!Number.isInteger(item.qty) || item.qty <= 0) return { error: 'items: qty må være positivt heltall' };
+    }
+    return {
+      source: 'kiosk',
+      team_id: b.team_id,
+      items: b.items.map((i: any) => ({
+        name: String(i.name),
+        emoji: typeof i.emoji === 'string' ? i.emoji : undefined,
+        price: i.price,
+        qty: i.qty,
+      })),
+      buyer_name: b.buyer_name.trim(),
+      buyer_phone: b.buyer_phone,
+      amount_nok: b.amount_nok,
+    };
   }
+
+  // campaign
+  if (typeof b.campaign_id !== 'string' || !b.campaign_id)
+    return { error: 'campaign_id mangler' };
+  if (!Number.isInteger(b.quantity) || b.quantity <= 0)
+    return { error: 'quantity må være positivt heltall' };
   return {
-    source: 'kiosk',
-    team_id: b.team_id,
-    items: b.items.map((i: any) => ({
-      name: String(i.name),
-      emoji: typeof i.emoji === 'string' ? i.emoji : undefined,
-      price: i.price,
-      qty: i.qty,
-    })),
+    source: 'campaign',
+    campaign_id: b.campaign_id,
+    seller_family_id: typeof b.seller_family_id === 'string' && b.seller_family_id ? b.seller_family_id : null,
+    quantity: b.quantity,
     buyer_name: b.buyer_name.trim(),
     buyer_phone: b.buyer_phone,
     amount_nok: b.amount_nok,
@@ -325,6 +358,78 @@ async function resolveKiosk(v: KioskInput): Promise<ResolveResult> {
   };
 }
 
+async function resolveCampaign(v: CampaignInput): Promise<ResolveResult> {
+  const { data: campaign, error } = await supabase
+    .from('sales_campaigns')
+    .select('id, title, product_name, unit_price, vipps_number, status, team_id, vipps_validation_failed_at')
+    .eq('id', v.campaign_id)
+    .maybeSingle();
+
+  if (error || !campaign) return { error: 'Kampanjen finnes ikke', status: 404 };
+  if (campaign.status !== 'active') return { error: 'Kampanjen er ikke aktiv', status: 400 };
+  if (!campaign.vipps_number) return { error: 'Kampanjen mangler Vipps-nummer', status: 400 };
+  if (campaign.vipps_validation_failed_at) {
+    return {
+      error: 'Kampanjen er midlertidig utilgjengelig. Klubben er varslet.',
+      reason: 'merchant_invalid',
+      status: 503,
+    };
+  }
+
+  // Validér at amount_nok matcher quantity × unit_price (server-side
+  // beregning, tillit-grense mot manipulert frontend).
+  const expected = campaign.unit_price * v.quantity;
+  if (expected !== v.amount_nok) {
+    return {
+      error: `Beløp stemmer ikke. Forventet ${expected} NOK for ${v.quantity} × ${campaign.product_name}.`,
+      status: 400,
+    };
+  }
+
+  return {
+    msn: campaign.vipps_number,
+    teamId: campaign.team_id,
+    displayName: `kampanjen "${campaign.title}"`,
+    paymentDescription: `${campaign.product_name} ${v.buyer_name}`.slice(0, 100),
+    referencePrefix: 'campaign-',
+    adminPath: '/sales-campaign',
+    buildReturnUrl: (vippsRef) => {
+      const sellerParam = v.seller_family_id ? `&seller=${v.seller_family_id}` : '';
+      return `${FRONTEND_BASE_URL}/campaign-shop?reference=${vippsRef}${sellerParam}`;
+    },
+    insertSaleRow: (vippsRef) => supabase
+      .from('campaign_sales')
+      .insert({
+        campaign_id: v.campaign_id,
+        seller_family_id: v.seller_family_id,
+        buyer_name: v.buyer_name,
+        buyer_phone: v.buyer_phone,
+        quantity: v.quantity,
+        amount: v.amount_nok,
+        payment_method: 'vipps',
+        status: 'CREATED',
+        vipps_reference: vippsRef,
+        // paid:boolean settes til false av DB-default; trigger
+        // (sync_campaign_sales_paid) oppdaterer den når status går
+        // til AUTHORIZED/CAPTURED via webhook.
+      })
+      .then((r) => ({ error: r.error })),
+    markSaleFailed: async (vippsRef, reason) => {
+      await supabase.from('campaign_sales')
+        .update({ status: 'FAILED', failure_reason: reason })
+        .eq('vipps_reference', vippsRef);
+    },
+    markConfigFailed: async (reason) => {
+      await supabase.from('sales_campaigns')
+        .update({
+          vipps_validation_failed_at: new Date().toISOString(),
+          vipps_validation_error: reason,
+        })
+        .eq('id', campaign.id);
+    },
+  };
+}
+
 // =============================================================
 // Main handler
 // =============================================================
@@ -343,7 +448,10 @@ Deno.serve(async (req) => {
   const v = validateInput(raw);
   if ('error' in v) return corsResponse({ error: v.error }, 400);
 
-  const ctx = v.source === 'lottery' ? await resolveLottery(v) : await resolveKiosk(v);
+  const ctx =
+    v.source === 'lottery'  ? await resolveLottery(v) :
+    v.source === 'kiosk'    ? await resolveKiosk(v) :
+                              await resolveCampaign(v);
   if ('error' in ctx) {
     return corsResponse(
       { error: ctx.error, ...(ctx.reason ? { reason: ctx.reason } : {}) },
