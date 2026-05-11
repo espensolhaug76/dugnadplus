@@ -36,11 +36,13 @@ const STATUS_RANK: Record<string, number> = {
 
 // =============================================================
 // Reference-prefix routing — kilde bestemmes av prefiks i reference:
-//   'lottery-<uuid>' → lottery_sales (amount-kolonne, lotteries-FK
-//                      for vipps_number)
-//   'kiosk-<uuid>'   → kiosk_sales   (total_amount-kolonne, separat
-//                      oppslag mot kiosk_settings for vipps_number
-//                      siden ingen FK er definert)
+//   'lottery-<uuid>'  → lottery_sales (amount-kolonne, lotteries-FK
+//                       for vipps_number)
+//   'kiosk-<uuid>'    → kiosk_sales   (total_amount-kolonne, separat
+//                       oppslag mot kiosk_settings for vipps_number
+//                       siden ingen FK er definert)
+//   'campaign-<uuid>' → campaign_sales (amount-kolonne, sales_campaigns-FK
+//                       for vipps_number — samme mønster som lottery)
 // Ukjent prefiks: returnér null → main handler logger
 // 'unknown_reference' og returnerer 2xx (samme som ukjent rad).
 // =============================================================
@@ -48,9 +50,9 @@ const STATUS_RANK: Record<string, number> = {
 interface SaleContext {
   id: string;
   status: string;
-  amount: number;       // normalisert: amount (lottery) / total_amount (kiosk)
+  amount: number;       // normalisert: amount (lottery/campaign) / total_amount (kiosk)
   msn: string | null;   // for auto-capture; null hvis settings mangler
-  table: 'lottery_sales' | 'kiosk_sales';
+  table: 'lottery_sales' | 'kiosk_sales' | 'campaign_sales';
 }
 
 async function fetchSaleByReference(reference: string): Promise<SaleContext | null> {
@@ -96,6 +98,22 @@ async function fetchSaleByReference(reference: string): Promise<SaleContext | nu
       amount: sale.total_amount,
       msn,
       table: 'kiosk_sales',
+    };
+  }
+
+  if (reference.startsWith('campaign-')) {
+    const { data } = await supabase
+      .from('campaign_sales')
+      .select('id, status, amount, campaign_id, sales_campaigns(vipps_number)')
+      .eq('vipps_reference', reference)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      id: data.id,
+      status: data.status,
+      amount: data.amount,
+      msn: (data as any).sales_campaigns?.vipps_number ?? null,
+      table: 'campaign_sales',
     };
   }
 
