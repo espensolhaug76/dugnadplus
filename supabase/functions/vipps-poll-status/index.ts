@@ -152,17 +152,37 @@ Deno.serve(async (req) => {
     return corsResponse({ error: 'Ukjent reference' }, 404);
   }
 
+  const ageMs = Date.now() - new Date(sale.created_at).getTime();
+
   // Allerede endelig — returnér fra DB
   if (TERMINAL_STATUSES.has(sale.status)) {
+    console.log('[poll]', JSON.stringify({
+      reference,
+      ageMs,
+      db_status: sale.status,
+      vipps_direct_called: false,
+      vipps_state: null,
+      returned_status: sale.status,
+    }));
     return corsResponse(buildResponse(sale, reference));
   }
 
-  // CREATED og > 30 sek — spør Vipps direkte for å unngå at frontend
-  // henger på "venter" hvis webhook har feilet.
-  const ageMs = Date.now() - new Date(sale.created_at).getTime();
-  if (sale.status === 'CREATED' && ageMs > 30 * 1000 && sale.msn) {
+  // CREATED og > 10 sek — spør Vipps direkte for autoritativt svar.
+  // 10s-terskel: webhook leverer typisk på 5-8s i happy-path, så vi
+  // unngår unødvendige Vipps-kall i normaltilfellet. Retry-runden
+  // (frontend "Sjekk på nytt"-knapp) starter tidligst ~15s etter sale
+  // opprettet, så den får alltid autoritativt svar fra Vipps —
+  // korrekt route til cancelled/expired/failed selv om webhook er
+  // treig. (Tidligere terskel 30s ga race-vindu der avbrutte
+  // betalinger viste seg som "Takk for handelen".)
+  let vippsDirectCalled = false;
+  let vippsState: string | null = null;
+
+  if (sale.status === 'CREATED' && ageMs > 10 * 1000 && sale.msn) {
+    vippsDirectCalled = true;
     const resp = await vippsFetch(`/epayment/v1/payments/${reference}`, 'GET', { msn: sale.msn });
     if (resp.ok && resp.data?.state) {
+      vippsState = String(resp.data.state);
       const mappedStatus = vippsStateToStatus(resp.data.state);
       if (mappedStatus !== sale.status) {
         const update: Record<string, any> = { status: mappedStatus };
@@ -177,11 +197,27 @@ Deno.serve(async (req) => {
 
         // sale.table er typed union — trygt mot injection.
         await supabase.from(sale.table).update(update).eq('vipps_reference', reference);
+        console.log('[poll]', JSON.stringify({
+          reference,
+          ageMs,
+          db_status: sale.status,
+          vipps_direct_called: true,
+          vipps_state: vippsState,
+          returned_status: mappedStatus,
+        }));
         return corsResponse(buildResponse(sale, reference, mappedStatus));
       }
     }
   }
 
   // Ikke noe nytt
+  console.log('[poll]', JSON.stringify({
+    reference,
+    ageMs,
+    db_status: sale.status,
+    vipps_direct_called: vippsDirectCalled,
+    vipps_state: vippsState,
+    returned_status: sale.status,
+  }));
   return corsResponse(buildResponse(sale, reference));
 });
