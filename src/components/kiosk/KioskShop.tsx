@@ -539,7 +539,7 @@ export const KioskShop: React.FC = () => {
       <div style={{ maxWidth: '500px', width: '100%', background: '#ffffff', border: '0.5px solid #dedddd', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
         <div style={{ background: '#1e3a2f', padding: '32px 20px', color: 'white', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '8px' }}>🛒</div>
-          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800' }}>{clubName || 'Kiosk'}</h1>
+          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800', color: 'white' }}>{clubName || 'Kiosk'}</h1>
           <p style={{ color: 'rgba(255,255,255,0.6)', marginTop: '8px', fontSize: '14px' }}>Velg varer og betal med Vipps</p>
         </div>
 

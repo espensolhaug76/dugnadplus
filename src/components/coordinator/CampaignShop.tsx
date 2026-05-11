@@ -520,7 +520,7 @@ export const CampaignShop: React.FC = () => {
         {/* Header */}
         <div style={{ background: '#1e3a2f', padding: '32px 20px', color: 'white', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '8px' }}>🛍️</div>
-          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '800' }}>{campaign.title}</h1>
+          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: 'white' }}>{campaign.title}</h1>
           <p style={{ color: 'rgba(255,255,255,0.6)', marginTop: '8px', fontSize: '14px' }}>Støtt {sellerName} og laget!</p>
         </div>
 
