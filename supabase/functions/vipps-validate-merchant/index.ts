@@ -8,7 +8,7 @@
 // som ikke er knyttet til våre credentials. I test har vi kun
 // MSN 486209.
 //
-// I stedet: vi validerer formatet her (5-7 sifre — Vipps' faktiske
+// I stedet: vi validerer formatet her (4-7 sifre — Vipps' faktiske
 // MSN-format), og fail-fast i vipps-initiate-payment hvis MSN er
 // feil — første mislykkede betaling triggerer push-varsel til DA
 // og pauser lotteriet/kiosken/kampanjen.
@@ -39,16 +39,16 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Format: kun siffer, 5-7 lange. Ingen mellomrom, ingen +47, ingen
+  // Format: kun siffer, 4-7 lange. Ingen mellomrom, ingen +47, ingen
   // bindestrek. DA skriver inn MSN, ikke privat-nummer. Vipps MSN er
-  // typisk 6-sifret, av og til 5 eller 7. Alle hjelp-modaler og
-  // fail-fast-bannere refererer "5–7-sifret Salgssted-nummer" —
+  // typisk 6-sifret, av og til 4, 5 eller 7. Alle hjelp-modaler og
+  // fail-fast-bannere refererer "4–7-sifret Salgssted-nummer" —
   // validering må matche.
-  if (!/^\d{5,7}$/.test(raw)) {
+  if (!/^\d{4,7}$/.test(raw)) {
     return corsResponse({
       valid: false,
       reason: 'invalid_format',
-      message: 'Vipps-nummeret må bestå av 5–7 sifre uten mellomrom.',
+      message: 'Vipps-nummeret må bestå av 4–7 sifre uten mellomrom.',
     });
   }
 

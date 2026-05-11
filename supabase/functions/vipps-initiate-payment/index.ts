@@ -176,7 +176,7 @@ async function notifyCoordinatorOfFailure(
     const title = 'Vipps-betaling feilet';
     const body =
       `Vipps-nummeret på ${sourceLabel} fungerer ikke. ` +
-      `Sjekk at det er riktig 5–7-sifret Salgssted-nummer med ` +
+      `Sjekk at det er riktig 4–7-sifret Salgssted-nummer med ` +
       `Payment Integration aktivert.`;
 
     await Promise.allSettled(
