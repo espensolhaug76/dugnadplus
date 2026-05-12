@@ -44,6 +44,9 @@ import { FamilyMembersPage } from './components/family/FamilyMembersPage';
 import { PointsTierPage } from './components/family/PointsTierPage';
 import { MyLottery } from './components/family/MyLottery';
 import { LotteryShop } from './components/family/LotteryShop';
+import { SellMenu } from './components/family/SellMenu';
+import { MyCampaigns } from './components/family/MyCampaigns';
+import { MyCampaignDetail } from './components/family/MyCampaignDetail';
 
 // Vikar
 import { SubstituteMarketplacePage } from './components/substitute/SubstituteMarketplacePage';
@@ -169,6 +172,9 @@ function AppContent() {
           <Route path="/points-tier" element={<PointsTierPage />} />
           <Route path="/my-lottery" element={<MyLottery />} />
           <Route path="/lottery-shop" element={<LotteryShop />} />
+          <Route path="/sell" element={<FamilyLayout><SellMenu /></FamilyLayout>} />
+          <Route path="/my-campaigns" element={<FamilyLayout><MyCampaigns /></FamilyLayout>} />
+          <Route path="/my-campaign/:id" element={<FamilyLayout><MyCampaignDetail /></FamilyLayout>} />
 
           {/* Juridisk */}
           <Route path="/personvern" element={<PersonvernPage />} />
