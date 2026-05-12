@@ -163,7 +163,7 @@ export const MyLottery: React.FC = () => {
             <p style={{ color: '#4a5e50' }}>Ingen aktive lotterier akkurat nå.</p>
             <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#ffffff', borderTop: '0.5px solid #dedddd', zIndex: 100 }}>
                 <button onClick={() => window.location.href = '/family-dashboard'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🏠</div>Hjem</button>
-                <button style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🎟️</div>Lodd</button>
+                <button onClick={() => window.location.href = '/sell'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>💰</div>Selg</button>
             </div>
         </div>
     );
@@ -282,7 +282,7 @@ export const MyLottery: React.FC = () => {
 
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#ffffff', borderTop: '0.5px solid #dedddd', zIndex: 100 }}>
         <button onClick={() => window.location.href = '/family-dashboard'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🏠</div>Hjem</button>
-        <button style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>🎟️</div>Lodd</button>
+        <button onClick={() => window.location.href = '/sell'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#2d6a4f', fontWeight: 600, cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>💰</div>Selg</button>
         <button onClick={() => window.location.href = '/my-shifts'} style={{ flex: 1, padding: '10px 0', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', fontSize: '11px', color: '#6b7f70', cursor: 'pointer' }}><div style={{ fontSize: '20px' }}>📅</div>Vakter</button>
       </div>
     </div>
