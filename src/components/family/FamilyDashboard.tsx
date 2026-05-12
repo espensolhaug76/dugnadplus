@@ -48,6 +48,7 @@ export const FamilyDashboard: React.FC = () => {
   const [points, setPoints] = useState(0);
   const [nextTierPoints, setNextTierPoints] = useState(100);
   const [activeLottery, setActiveLottery] = useState<any>(null);
+  const [activeCampaigns, setActiveCampaigns] = useState<{ count: number; productNames: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentFamily, setCurrentFamily] = useState<any>(null);
   const [displayName, setDisplayName] = useState('');
@@ -218,6 +219,22 @@ export const FamilyDashboard: React.FC = () => {
 
       if (lotteries && lotteries.length > 0) setActiveLottery(lotteries[0]);
 
+      // Hent aktive salgskampanjer for familiens lag (team-scoped).
+      // Brukes til betinget kort i "💰 Selg for laget"-seksjonen.
+      if (family.team_id) {
+        const { data: campaignsData } = await supabase
+          .from('sales_campaigns')
+          .select('id, product_name')
+          .eq('team_id', family.team_id)
+          .eq('status', 'active');
+        if (campaignsData && campaignsData.length > 0) {
+          setActiveCampaigns({
+            count: campaignsData.length,
+            productNames: campaignsData.slice(0, 3).map((c: any) => c.product_name).filter(Boolean),
+          });
+        }
+      }
+
       // Sjekk om sponsorer er synlige
       const { data: sponsorSetting } = await supabase.from('settings').select('value').eq('key', 'sponsors_visible').maybeSingle();
       if (sponsorSetting?.value === 'true') {
@@ -350,11 +367,31 @@ export const FamilyDashboard: React.FC = () => {
           <span style={{ fontSize: '18px' }}>+</span> Legg til barn med kode
         </button>
 
-        {activeLottery && (
-            <div style={{ padding: '24px', marginBottom: '24px', border: '2px solid #2d6a4f', background: '#e8f5ef', borderRadius: '8px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#2d6a4f', marginBottom: '8px', margin: 0 }}>🎟️ {activeLottery.name}</h2>
-                <p style={{ color: '#2d6a4f', marginBottom: '16px' }}>Bli med å støtte laget! Selg lodd digitalt.</p>
-                <button onClick={() => window.location.href = '/my-lottery'} style={{ width: '100%', background: '#2d6a4f', border: 'none', color: '#fff', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til min loddbok →</button>
+        {(activeLottery || activeCampaigns) && (
+            <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '12px', color: '#1a2e1f' }}>💰 Selg for laget</h2>
+
+                {activeLottery && (
+                    <div style={{ padding: '20px', marginBottom: '12px', border: '2px solid #2d6a4f', background: '#e8f5ef', borderRadius: '8px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f', margin: '0 0 4px 0' }}>🎟️ {activeLottery.name}</h3>
+                        <p style={{ color: '#2d6a4f', margin: '0 0 12px 0', fontSize: '13px' }}>Selg lodd digitalt via Vipps.</p>
+                        <button onClick={() => window.location.href = '/my-lottery'} style={{ width: '100%', background: '#2d6a4f', border: 'none', color: '#fff', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til min loddbok →</button>
+                    </div>
+                )}
+
+                {activeCampaigns && (
+                    <div style={{ padding: '20px', border: '2px solid #2d6a4f', background: '#e8f5ef', borderRadius: '8px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#2d6a4f', margin: '0 0 4px 0' }}>
+                            🛍️ Salgskampanjer ({activeCampaigns.count} {activeCampaigns.count === 1 ? 'aktiv' : 'aktive'})
+                        </h3>
+                        {activeCampaigns.productNames.length > 0 && (
+                            <p style={{ color: '#2d6a4f', margin: '0 0 12px 0', fontSize: '13px' }}>
+                                {activeCampaigns.productNames.join(', ')}
+                            </p>
+                        )}
+                        <button onClick={() => window.location.href = '/my-campaigns'} style={{ width: '100%', background: '#2d6a4f', border: 'none', color: '#fff', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Se mine kampanjer →</button>
+                    </div>
+                )}
             </div>
         )}
 
@@ -506,7 +543,7 @@ export const FamilyDashboard: React.FC = () => {
       </div>
       <div data-guide="family-dashboard-nav" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '0.5px solid #dedddd', display: 'flex', justifyContent: 'space-around', padding: '8px 0', zIndex: 100 }}>
         <button style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#2d6a4f', fontSize: '11px', fontWeight: '600', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🏠</div>Hjem</button>
-        <button onClick={() => window.location.href = '/my-lottery'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>🎟️</div>Lodd</button>
+        <button onClick={() => window.location.href = '/sell'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>💰</div>Selg</button>
         <button onClick={() => window.location.href = '/my-shifts'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>📅</div>Vakter</button>
         <button onClick={() => window.location.href = '/family-members'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>👨‍👩‍👧</div>Familie</button>
         <button onClick={() => window.location.href = '/profile'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', color: '#6b7f70', fontSize: '11px', cursor: 'pointer', padding: '4px 8px' }}><div style={{ fontSize: '20px', marginBottom: '2px' }}>👤</div>Profil</button>
