@@ -85,6 +85,17 @@ export const MyCampaignDetail: React.FC = () => {
         .eq('id', campaignId)
         .maybeSingle();
 
+      // TEMP DEBUG (kan fjernes når completed-redirect-bug er løst)
+      console.log('[MyCampaignDetail debug]', {
+        campaignId,
+        familyId,
+        familyTeamId,
+        campaignData,
+        redirect_reason: !campaignData ? 'no_data'
+          : campaignData.team_id !== familyTeamId ? 'team_mismatch'
+          : 'will_continue'
+      });
+
       // Cross-team-tilgang blokkeres: parent skal ikke kunne åpne en
       // annen klubbs kampanje selv ved direkte URL-manipulasjon.
       // Manglende kampanje (slettet) behandles likt — tilbake til liste.
