@@ -62,6 +62,15 @@ export const MyCampaignDetail: React.FC = () => {
   const campaignId = getCampaignIdFromUrl();
 
   useEffect(() => {
+    // TEMP DEBUG: bekrefte at useEffect fires + se fam-state-verdier
+    console.log('[MyCampaignDetail useEffect]', {
+      fam_loading: fam.loading,
+      fam_unauthenticated: fam.unauthenticated,
+      fam_noFamily: fam.noFamily,
+      fam_familyId: fam.familyId,
+      campaignId,
+      pathname: window.location.pathname,
+    });
     if (fam.loading) return;
     if (fam.unauthenticated) { window.location.href = '/login'; return; }
     if (fam.noFamily) { window.location.href = '/claim-family'; return; }
