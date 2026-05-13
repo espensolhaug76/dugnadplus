@@ -80,19 +80,22 @@ export const MyCampaignDetail: React.FC = () => {
 
   const loadData = async (familyId: string) => {
     setLoading(true);
+    console.log('[MyCampaignDetail loadData] start', { familyId, campaignId });
     try {
-      const { data: familyRow } = await supabase
+      const { data: familyData, error: familyError } = await supabase
         .from('families')
         .select('team_id')
         .eq('id', familyId)
         .maybeSingle();
-      const familyTeamId = familyRow?.team_id;
+      console.log('[MyCampaignDetail loadData] family fetched', { familyData, familyError });
+      const familyTeamId = familyData?.team_id;
 
-      const { data: campaignData } = await supabase
+      const { data: campaignData, error: campaignError } = await supabase
         .from('sales_campaigns')
         .select('id, title, description, product_name, unit_price, target_per_family, start_date, end_date, team_id, status')
         .eq('id', campaignId)
         .maybeSingle();
+      console.log('[MyCampaignDetail loadData] campaign fetched', { campaignData, campaignError });
 
       // TEMP DEBUG (kan fjernes når completed-redirect-bug er løst)
       console.log('[MyCampaignDetail debug]', {
