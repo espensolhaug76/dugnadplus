@@ -172,7 +172,7 @@ export const MyLottery: React.FC = () => {
   return (
     <div style={{ minHeight: '100vh', background: '#faf8f4', paddingBottom: '80px' }}>
       <div style={{ background: '#1e3a2f', padding: '24px', color: 'white' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>Min Loddbok</h1>
+        <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: 'white' }}>Min Loddbok</h1>
         <p style={{ color: 'rgba(255,255,255,0.6)', margin: '4px 0 0 0' }}>{lottery.name}</p>
       </div>
 
