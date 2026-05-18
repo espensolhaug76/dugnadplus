@@ -62,15 +62,6 @@ export const MyCampaignDetail: React.FC = () => {
   const campaignId = getCampaignIdFromUrl();
 
   useEffect(() => {
-    // TEMP DEBUG: bekrefte at useEffect fires + se fam-state-verdier
-    console.log('[MyCampaignDetail useEffect]', {
-      fam_loading: fam.loading,
-      fam_unauthenticated: fam.unauthenticated,
-      fam_noFamily: fam.noFamily,
-      fam_familyId: fam.familyId,
-      campaignId,
-      pathname: window.location.pathname,
-    });
     if (fam.loading) return;
     if (fam.unauthenticated) { window.location.href = '/login'; return; }
     if (fam.noFamily) { window.location.href = '/claim-family'; return; }
@@ -80,33 +71,19 @@ export const MyCampaignDetail: React.FC = () => {
 
   const loadData = async (familyId: string) => {
     setLoading(true);
-    console.log('[MyCampaignDetail loadData] start', { familyId, campaignId });
     try {
-      const { data: familyData, error: familyError } = await supabase
+      const { data: familyRow } = await supabase
         .from('families')
         .select('team_id')
         .eq('id', familyId)
         .maybeSingle();
-      console.log('[MyCampaignDetail loadData] family fetched', { familyData, familyError });
-      const familyTeamId = familyData?.team_id;
+      const familyTeamId = familyRow?.team_id;
 
-      const { data: campaignData, error: campaignError } = await supabase
+      const { data: campaignData } = await supabase
         .from('sales_campaigns')
         .select('id, title, description, product_name, unit_price, target_per_family, start_date, end_date, team_id, status')
         .eq('id', campaignId)
         .maybeSingle();
-      console.log('[MyCampaignDetail loadData] campaign fetched', { campaignData, campaignError });
-
-      // TEMP DEBUG (kan fjernes når completed-redirect-bug er løst)
-      console.log('[MyCampaignDetail debug]', {
-        campaignId,
-        familyId,
-        familyTeamId,
-        campaignData,
-        redirect_reason: !campaignData ? 'no_data'
-          : campaignData.team_id !== familyTeamId ? 'team_mismatch'
-          : 'will_continue'
-      });
 
       // Cross-team-tilgang blokkeres: parent skal ikke kunne åpne en
       // annen klubbs kampanje selv ved direkte URL-manipulasjon.
