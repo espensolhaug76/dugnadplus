@@ -106,16 +106,14 @@ export const CampaignShop: React.FC = () => {
 
         // Last selger-info (hvis ?seller= er satt) — vises i header
         // som "Støtt {sellerName} og laget!"
+        //
+        // SECURITY DEFINER-RPC. Returnerer barnets fornavn med
+        // fallback til familiens navn. Erstatter direkte families-
+        // query slik at families-RLS kan strammes til team-scoped
+        // uten å brekke denne anonyme shop-flyten.
         if (sid) {
-          const { data: family } = await supabase
-            .from('families')
-            .select('name, family_members(name, role)')
-            .eq('id', sid)
-            .maybeSingle();
-          if (family) {
-            const child = (family as any).family_members?.find((m: any) => m.role === 'child');
-            setSellerName(child?.name || (family as any).name || 'en dugnadsfamilie');
-          }
+          const { data: name } = await supabase.rpc('get_seller_display_name', { p_family_id: sid });
+          if (name) setSellerName(name as string);
         }
 
         // Retur fra Vipps?
