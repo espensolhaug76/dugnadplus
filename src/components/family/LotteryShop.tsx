@@ -100,17 +100,12 @@ export const LotteryShop: React.FC = () => {
 
         if (sid) {
           setSellerId(sid);
-          const { data: family } = await supabase
-            .from('families')
-            .select('*, family_members(*)')
-            .eq('id', sid)
-            .maybeSingle();
-          if (family) {
-            const child = family.family_members?.find((m: any) => m.role === 'child');
-            if (child) setSellerName(child.name);
-            else if (family.family_members?.length > 0) setSellerName(family.family_members[0].name);
-            else setSellerName(family.name);
-          }
+          // SECURITY DEFINER-RPC. Returnerer forelderens fornavn
+          // som fallback til familiens navn. Erstatter direkte
+          // families-query slik at families-RLS kan strammes til
+          // team-scoped uten å brekke denne anonyme shop-flyten.
+          const { data: name } = await supabase.rpc('get_seller_display_name', { p_family_id: sid });
+          if (name) setSellerName(name as string);
         }
 
         // Retur fra Vipps?
