@@ -24,6 +24,14 @@
 // fjernet — se commit-melding for 'fix(sw): remove caching to
 // prevent stale-bundle bugs'.
 //
+// Install-handleren finnes KUN for å trigge self.skipWaiting().
+// Den gjør INGEN caching — ikke addAll, ikke put, ikke pre-fetch.
+// skipWaiting trengs for at nye SW-versjoner skal aktivere
+// umiddelbart i stedet for å henge i waiting-state til alle
+// PWA-tabs lukkes (kan ta dager for power-users). IKKE legg til
+// pre-caching av offline URLs her — det var nettopp det som
+// skapte stale-bundle-bugs vi nettopp fjernet.
+//
 // Activate-handleren er beholdt som engangs-cleanup: når
 // eksisterende brukere får denne SW-en, slettes alle gamle
 // cache-buckets (inkludert dugnadplus-v1) automatisk. Det
@@ -32,6 +40,14 @@
 // =============================================================
 
 const CACHE = 'dugnadplus-v2';
+
+self.addEventListener('install', () => {
+  // Ingen caching. Bare hopper over waiting-state slik at nye SW-
+  // versjoner aktiverer umiddelbart på neste navigasjon i stedet
+  // for å henge i waiting til alle tabs lukkes. Krever ikke
+  // e.waitUntil() siden vi ikke gjør noe asynkront.
+  self.skipWaiting();
+});
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys =>
