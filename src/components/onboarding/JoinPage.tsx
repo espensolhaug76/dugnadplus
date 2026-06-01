@@ -22,6 +22,17 @@ interface MatchedChild {
   subgroup?: string;
 }
 
+// Speiler RETURNS TABLE-signaturen til resolve_join_code-RPC
+// (migration 20260520_resolve_join_code_expand.sql).
+interface ResolveJoinCodeRow {
+  family_member_id: string;
+  child_name: string;
+  family_id: string;
+  family_name: string | null;
+  subgroup: string | null;
+  team_display_name: string;
+}
+
 const COLORS = {
   darkGreen: '#1a3028',
   mediumGreen: '#2d6a4f',
@@ -88,13 +99,12 @@ export const JoinPage: React.FC = () => {
     else { setLooking(true); setLookupError(''); }
 
     const { data, error } = await supabase
-      .from('family_members')
-      .select('id, name, family_id, subgroup, families(name)')
-      .eq('join_code', trimmed)
-      .eq('role', 'child')
-      .single();
+      .rpc('resolve_join_code', { p_code: trimmed })
+      .maybeSingle();
 
-    if (error || !data) {
+    const row = data as ResolveJoinCodeRow | null;
+
+    if (error || !row) {
       const msg = 'Koden ble ikke funnet. Sjekk at du har skrevet riktig.';
       if (opts?.isAddMore) { setAddMoreError(msg); setAddMoreLooking(false); }
       else { setLookupError(msg); setLooking(false); }
@@ -102,12 +112,12 @@ export const JoinPage: React.FC = () => {
     }
 
     setMatchedChildren(prev => [...prev, {
-      id: data.id,
-      name: data.name,
-      familyId: data.family_id,
-      familyName: (data as any).families?.name || '',
+      id: row.family_member_id,
+      name: row.child_name,
+      familyId: row.family_id,
+      familyName: row.family_name || '',
       code: trimmed,
-      subgroup: data.subgroup,
+      subgroup: row.subgroup ?? undefined,
     }]);
 
     if (opts?.isAddMore) { setAddMoreCode(''); setAddMoreLooking(false); }
