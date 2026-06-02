@@ -8,6 +8,10 @@ interface SubstituteStats {
 }
 
 export const SubstituteProfilePage: React.FC = () => {
+  // profile.id = substitutes.id (ikke auth.users.id). Fra Fase 4B er
+  // substitutes.id den kanoniske vikar-referansen. assignments.family_id
+  // og requests.bid_family_id peker på denne (polymorfi-gjeld — Fase 5
+  // splitter til actor_kind + actor_id).
   const [profile, setProfile] = useState({
     id: '',
     name: '',
@@ -15,9 +19,9 @@ export const SubstituteProfilePage: React.FC = () => {
     phone: '',
     age: '',
     experience: '',
-    availability: [] as string[] // Liste med dato-strenger (YYYY-MM-DD)
+    availability: [] as string[]
   });
-  
+
   const [stats, setStats] = useState<SubstituteStats>({ completedJobs: 0, upcomingJobs: 0, totalHours: 0 });
   const [upcomingDates, setUpcomingDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,22 +36,50 @@ export const SubstituteProfilePage: React.FC = () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
 
-        const { data: familyData } = await supabase.from('families').select('*').eq('id', user.id).single();
+        // Get-or-create substitutes-rad. Første besøk på profil-siden
+        // oppretter en tom rad (UNIQUE-constraint på auth_user_id
+        // forhindrer duplikater).
+        let { data: sub } = await supabase
+            .from('substitutes')
+            .select('id, name, phone, age, experience')
+            .eq('auth_user_id', user.id)
+            .maybeSingle();
+
+        if (!sub) {
+            const { data: created, error: createErr } = await supabase
+                .from('substitutes')
+                .insert({
+                    auth_user_id: user.id,
+                    name: user.user_metadata?.full_name || ''
+                })
+                .select('id, name, phone, age, experience')
+                .single();
+            if (createErr) throw createErr;
+            sub = created;
+        }
+
+        const { data: availRows } = await supabase
+            .from('substitute_availability')
+            .select('date')
+            .eq('substitute_id', sub!.id);
 
         setProfile({
-            id: user.id,
-            name: familyData?.name || user.user_metadata?.full_name || '',
+            id: sub!.id,
+            name: sub!.name || '',
             email: user.email || '',
-            phone: familyData?.contact_phone || user.user_metadata?.phone || '',
-            age: user.user_metadata?.age || '',
-            experience: user.user_metadata?.experience || '',
-            availability: user.user_metadata?.availability || []
+            phone: sub!.phone || '',
+            age: sub!.age != null ? String(sub!.age) : '',
+            experience: sub!.experience || '',
+            availability: (availRows || []).map((r: any) => r.date)
         });
 
+        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id
+        // kan inneholde families.id eller substitutes.id. Her filtrerer
+        // vi på substitutes.id for vikar-statistikk.
         const { data: assignments } = await supabase
             .from('assignments')
             .select(`id, shift:shifts (start_time, end_time, event:events (date))`)
-            .eq('family_id', user.id);
+            .eq('family_id', sub!.id);
 
         let completed = 0; let upcoming = 0; let hours = 0;
         const now = new Date(); now.setHours(0,0,0,0);
@@ -81,18 +113,53 @@ export const SubstituteProfilePage: React.FC = () => {
   const handleSave = async () => {
     if (!profile.id) return;
     try {
-        const { error: dbError } = await supabase.from('families').update({ name: profile.name, contact_phone: profile.phone }).eq('id', profile.id);
-        if (dbError) throw dbError;
-        const { error: authError } = await supabase.auth.updateUser({ data: { full_name: profile.name, phone: profile.phone, age: profile.age, experience: profile.experience, availability: profile.availability } });
-        if (authError) throw authError;
-        
-        const userJson = localStorage.getItem('dugnad_user');
-        if (userJson) {
-            const user = JSON.parse(userJson);
-            const updatedUser = { ...user, ...profile, fullName: profile.name, stats };
-            localStorage.setItem('dugnad_user', JSON.stringify(updatedUser));
+        const ageInt = profile.age.trim() ? parseInt(profile.age, 10) : null;
+        if (profile.age.trim() && Number.isNaN(ageInt)) {
+            alert('Alder må være et tall.');
+            return;
         }
-        alert('✅ Profil lagret i skyen!');
+
+        const { error: dbError } = await supabase
+            .from('substitutes')
+            .update({
+                name: profile.name,
+                phone: profile.phone || null,
+                age: ageInt,
+                experience: profile.experience || null
+            })
+            .eq('id', profile.id);
+        if (dbError) throw dbError;
+
+        // Sync substitute_availability: diff mot DB.
+        const { data: existing } = await supabase
+            .from('substitute_availability')
+            .select('date')
+            .eq('substitute_id', profile.id);
+
+        const existingDates = new Set((existing || []).map((r: any) => r.date));
+        const desiredDates = new Set(profile.availability);
+
+        const toInsert = [...desiredDates]
+            .filter(d => !existingDates.has(d))
+            .map(date => ({ substitute_id: profile.id, date }));
+        const toDelete = [...existingDates].filter(d => !desiredDates.has(d));
+
+        if (toInsert.length > 0) {
+            const { error: insErr } = await supabase
+                .from('substitute_availability')
+                .insert(toInsert);
+            if (insErr) throw insErr;
+        }
+        if (toDelete.length > 0) {
+            const { error: delErr } = await supabase
+                .from('substitute_availability')
+                .delete()
+                .eq('substitute_id', profile.id)
+                .in('date', toDelete);
+            if (delErr) throw delErr;
+        }
+
+        alert('✅ Profil lagret!');
     } catch (error: any) { alert('Kunne ikke lagre profil: ' + error.message); }
   };
 
