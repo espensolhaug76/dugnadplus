@@ -19,30 +19,49 @@ export const SubstituteDashboard: React.FC = () => {
     setLoading(true);
     try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
-        let userId = authUser?.id;
-        
-        if (!userId) {
-            const localUser = JSON.parse(localStorage.getItem('dugnad_user') || 'null');
-            if (localUser) userId = localUser.id;
-        }
-
-        if (!userId) {
+        if (!authUser) {
             setLoading(false);
             return;
         }
 
-        const { data: familyData } = await supabase
-            .from('families')
-            .select('name')
-            .eq('id', userId)
-            .single();
-        
-        setCurrentUser({ 
-            id: userId, 
-            fullName: familyData?.name || authUser?.user_metadata?.full_name || 'Vikar' 
+        // Get-or-create substitutes-rad. currentUser.id holder nå
+        // substitutes.id (ikke auth.users.id) — kanonisk vikar-referanse
+        // fra Fase 4B. assignments.family_id og requests.target_family_id
+        // peker på denne (polymorfi-gjeld — Fase 5 splitter til
+        // actor_kind + actor_id).
+        let { data: sub } = await supabase
+            .from('substitutes')
+            .select('id, name')
+            .eq('auth_user_id', authUser.id)
+            .maybeSingle();
+
+        if (!sub) {
+            const { data: created, error } = await supabase
+                .from('substitutes')
+                .insert({
+                    auth_user_id: authUser.id,
+                    name: authUser.user_metadata?.full_name || 'Vikar'
+                })
+                .select('id, name')
+                .single();
+            if (error) {
+                console.error('Kunne ikke opprette vikar-profil:', error);
+                setLoading(false);
+                return;
+            }
+            sub = created;
+        }
+
+        const substituteId = sub!.id;
+
+        setCurrentUser({
+            id: substituteId,
+            fullName: sub!.name || authUser.user_metadata?.full_name || 'Vikar'
         });
 
-        // Hent mine tildelte jobber
+        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id og
+        // requests.target_family_id kan holde families.id eller
+        // substitutes.id. Vi filtrerer på substitutes.id.
         const { data: assignments } = await supabase
             .from('assignments')
             .select(`
@@ -60,9 +79,8 @@ export const SubstituteDashboard: React.FC = () => {
                     )
                 )
             `)
-            .eq('family_id', userId);
+            .eq('family_id', substituteId);
 
-        // Hent direkte forespørsler
         const { data: requests } = await supabase
             .from('requests')
             .select(`
@@ -83,7 +101,7 @@ export const SubstituteDashboard: React.FC = () => {
                 ),
                 family:from_family_id (name)
             `)
-            .eq('target_family_id', userId)
+            .eq('target_family_id', substituteId)
             .eq('is_active', true);
 
         let completedCount = 0;
@@ -180,8 +198,11 @@ export const SubstituteDashboard: React.FC = () => {
         }
 
         if (!confirm('Vil du ta dette oppdraget?')) return;
-        
+
         try {
+            // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id
+            // holder substitutes.id når en vikar tar oppdrag (eller
+            // families.id når en familie er tildelt). Ryddes i Fase 5.
             const { error: assignError } = await supabase
                 .from('assignments')
                 .insert({
