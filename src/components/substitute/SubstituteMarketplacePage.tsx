@@ -20,32 +20,54 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [availableJobs, setAvailableJobs] = useState<any[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]);
   const [filterSport, setFilterSport] = useState('all');
-  
+
   const [upcomingDates, setUpcomingDates] = useState<string[]>([]);
   const [availability, setAvailability] = useState<string[]>([]);
-  
-  const [currentUserId, setCurrentUserId] = useState('');
-  const [currentUserName, setCurrentUserName] = useState('');
+
+  // currentSubstituteId = substitutes.id (ikke auth.users.id). Kanonisk
+  // vikar-referanse fra Fase 4B. Brukes som family_id i assignments og
+  // bid_family_id i requests (polymorfi-gjeld — Fase 5 splitter til
+  // actor_kind + actor_id).
+  const [currentSubstituteId, setCurrentSubstituteId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Hent brukerinfo
-    const userJson = localStorage.getItem('dugnad_user');
-    const user = userJson ? JSON.parse(userJson) : null;
-    
-    if (user) {
-        setCurrentUserId(user.id);
-        setCurrentUserName(user.fullName || 'Vikar');
-        setAvailability(user.availability || []);
-    } else {
-        // Prøv Supabase auth direkte hvis localstorage mangler
-        supabase.auth.getUser().then(({ data }) => {
-            if (data.user) {
-                setCurrentUserId(data.user.id);
-                setCurrentUserName(data.user.user_metadata?.full_name || 'Vikar');
+    (async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Get-or-create substitutes-rad. Idempotent via UNIQUE
+        // auth_user_id-constraint.
+        let { data: sub } = await supabase
+            .from('substitutes')
+            .select('id, name')
+            .eq('auth_user_id', user.id)
+            .maybeSingle();
+
+        if (!sub) {
+            const { data: created, error } = await supabase
+                .from('substitutes')
+                .insert({
+                    auth_user_id: user.id,
+                    name: user.user_metadata?.full_name || 'Vikar'
+                })
+                .select('id, name')
+                .single();
+            if (error) {
+                console.error('Kunne ikke opprette vikar-profil:', error);
+                return;
             }
-        });
-    }
+            sub = created;
+        }
+
+        setCurrentSubstituteId(sub!.id);
+
+        const { data: availRows } = await supabase
+            .from('substitute_availability')
+            .select('date')
+            .eq('substitute_id', sub!.id);
+        setAvailability((availRows || []).map((r: any) => r.date));
+    })();
 
     fetchMarketplaceData();
   }, []);
@@ -102,8 +124,11 @@ export const SubstituteMarketplacePage: React.FC = () => {
                 const subReq = shift.requests?.find((r: any) => r.type === 'substitute' && r.is_active);
 
                 if (subReq) {
-                    // Sjekk om det er et direkte tilbud til meg
-                    const isForMe = subReq.target_family_id === currentUserId;
+                    // POLYMORFI-GJELD (Fase 4B → Fase 5): target_family_id
+                    // og bid_family_id holder enten families.id eller
+                    // substitutes.id. Vi sammenligner mot substitutes.id
+                    // som kanonisk vikar-referanse.
+                    const isForMe = subReq.target_family_id === currentSubstituteId;
                     const isOpen = !subReq.target_family_id;
 
                     if (isOpen || isForMe) {
@@ -157,18 +182,30 @@ export const SubstituteMarketplacePage: React.FC = () => {
     }
   };
 
-  const toggleAvailability = (date: string) => {
-    const newAvailability = availability.includes(date)
-      ? availability.filter(d => d !== date)
-      : [...availability, date];
-    
-    setAvailability(newAvailability);
+  const toggleAvailability = async (date: string) => {
+    if (!currentSubstituteId) return;
+    const isCurrentlyAvailable = availability.includes(date);
 
-    const userJson = localStorage.getItem('dugnad_user');
-    if (userJson) {
-        const user = JSON.parse(userJson);
-        user.availability = newAvailability;
-        localStorage.setItem('dugnad_user', JSON.stringify(user));
+    if (isCurrentlyAvailable) {
+      const { error } = await supabase
+        .from('substitute_availability')
+        .delete()
+        .eq('substitute_id', currentSubstituteId)
+        .eq('date', date);
+      if (error) {
+        console.error('Kunne ikke fjerne dato:', error);
+        return;
+      }
+      setAvailability(prev => prev.filter(d => d !== date));
+    } else {
+      const { error } = await supabase
+        .from('substitute_availability')
+        .insert({ substitute_id: currentSubstituteId, date });
+      if (error) {
+        console.error('Kunne ikke legge til dato:', error);
+        return;
+      }
+      setAvailability(prev => [...prev, date]);
     }
   };
 
@@ -178,15 +215,18 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [bidMessage, setBidMessage] = useState('');
 
   const sendBid = async () => {
-    if (!bidModal || !currentUserId) return;
+    if (!bidModal || !currentSubstituteId) return;
     const amount = parseInt(bidAmount) || 0;
     if (amount <= 0) { alert('Sett en pris.'); return; }
     if (amount > 500) { alert('Makspris er 500 kr per vakt.'); return; }
 
+    // POLYMORFI-GJELD (Fase 4B → Fase 5): bid_family_id kan holde
+    // enten families.id (forelder som byr på swap) eller substitutes.id
+    // (vikar som byr). Ryddes til actor_kind + actor_id i Fase 5.
     await supabase.from('requests').update({
       bid_amount: amount,
       bid_message: bidMessage || null,
-      bid_family_id: currentUserId,
+      bid_family_id: currentSubstituteId,
       bid_status: 'pending'
     }).eq('id', bidModal.requestId);
 
@@ -198,42 +238,24 @@ export const SubstituteMarketplacePage: React.FC = () => {
   };
 
   const acceptJob = async (job: any) => {
-    if (!currentUserId) return alert('Du må være logget inn.');
+    if (!currentSubstituteId) return alert('Du må være logget inn.');
     if (!confirm(`Vil du ta dette oppdraget?\n\nDu overtar ansvaret for vakten "${job.shiftName}".\nFamilien vil få beskjed.`)) return;
 
     try {
-        // 1. Sjekk/Opprett profil
-        const { data: existingProfile } = await supabase
-            .from('families')
-            .select('id')
-            .eq('id', currentUserId)
-            .single();
+        // substitutes-rad er allerede sikret i useEffect (get-or-create).
 
-        if (!existingProfile) {
-            const { error: createError } = await supabase
-                .from('families')
-                .insert({
-                    id: currentUserId,
-                    name: currentUserName || 'Vikar',
-                    contact_email: '', 
-                    is_substitute: true 
-                });
-            
-            if (createError) throw new Error('Kunne ikke opprette vikar-profil.');
-        }
-
-        // 2. Opprett assignment
+        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id kan
+        // holde enten families.id eller substitutes.id. Ryddes i Fase 5.
         const { error: assignError } = await supabase
             .from('assignments')
             .insert({
                 shift_id: job.shiftId,
-                family_id: currentUserId,
+                family_id: currentSubstituteId,
                 status: 'assigned'
             });
 
         if (assignError) throw assignError;
 
-        // 3. Oppdater request
         const { error: reqError } = await supabase
             .from('requests')
             .update({ is_active: false })
@@ -373,9 +395,9 @@ export const SubstituteMarketplacePage: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                {job.bidStatus === 'pending' && job.bidFamilyId === currentUserId ? (
+                                {job.bidStatus === 'pending' && job.bidFamilyId === currentSubstituteId ? (
                                     <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.bidAmount} kr)</span>
-                                ) : job.bidStatus === 'accepted' && job.bidFamilyId === currentUserId ? (
+                                ) : job.bidStatus === 'accepted' && job.bidFamilyId === currentSubstituteId ? (
                                     <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', padding: '6px 12px', background: '#dcfce7', borderRadius: '8px' }}>✅ Bud akseptert!</span>
                                 ) : (
                                     <>
