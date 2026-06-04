@@ -25,10 +25,8 @@ export const SubstituteDashboard: React.FC = () => {
         }
 
         // Get-or-create substitutes-rad. currentUser.id holder nå
-        // substitutes.id (ikke auth.users.id) — kanonisk vikar-referanse
-        // fra Fase 4B. assignments.family_id og requests.target_family_id
-        // peker på denne (polymorfi-gjeld — Fase 5 splitter til
-        // actor_kind + actor_id).
+        // substitutes.id. Brukes som assignments.substitute_id og
+        // requests.target_substitute_id (Fase 5 — separate FK-kolonner).
         let { data: sub } = await supabase
             .from('substitutes')
             .select('id, name')
@@ -59,9 +57,7 @@ export const SubstituteDashboard: React.FC = () => {
             fullName: sub!.name || authUser.user_metadata?.full_name || 'Vikar'
         });
 
-        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id og
-        // requests.target_family_id kan holde families.id eller
-        // substitutes.id. Vi filtrerer på substitutes.id.
+        // Filter på de dedikerte substitute-kolonnene (Fase 5).
         const { data: assignments } = await supabase
             .from('assignments')
             .select(`
@@ -79,7 +75,7 @@ export const SubstituteDashboard: React.FC = () => {
                     )
                 )
             `)
-            .eq('family_id', substituteId);
+            .eq('substitute_id', substituteId);
 
         const { data: requests } = await supabase
             .from('requests')
@@ -101,7 +97,7 @@ export const SubstituteDashboard: React.FC = () => {
                 ),
                 family:from_family_id (name)
             `)
-            .eq('target_family_id', substituteId)
+            .eq('target_substitute_id', substituteId)
             .eq('is_active', true);
 
         let completedCount = 0;
@@ -200,14 +196,13 @@ export const SubstituteDashboard: React.FC = () => {
         if (!confirm('Vil du ta dette oppdraget?')) return;
 
         try {
-            // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id
-            // holder substitutes.id når en vikar tar oppdrag (eller
-            // families.id når en familie er tildelt). Ryddes i Fase 5.
+            // Vikar-assignment skrives til substitute_id (Fase 5).
+            // family_id forblir NULL — XOR-CHECK krever nøyaktig én satt.
             const { error: assignError } = await supabase
                 .from('assignments')
                 .insert({
                     shift_id: offer.shiftId,
-                    family_id: currentUser.id,
+                    substitute_id: currentUser.id,
                     status: 'assigned'
                 });
 
@@ -232,9 +227,12 @@ export const SubstituteDashboard: React.FC = () => {
         if (!confirm('Vil du avslå tilbudet? Jobben vil da gå tilbake til det åpne markedet.')) return;
         
         try {
+            // Vikar avslår direkte tilbud → tilbake til åpent marked.
+            // Direkte tilbud til vikar lever i target_substitute_id (Fase 5),
+            // ikke target_family_id.
             const { error } = await supabase
                 .from('requests')
-                .update({ target_family_id: null }) 
+                .update({ target_substitute_id: null })
                 .eq('id', offer.requestId);
 
             if (error) throw error;
