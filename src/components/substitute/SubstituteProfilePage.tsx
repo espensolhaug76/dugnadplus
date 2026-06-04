@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { COUNTY_MUNICIPALITIES, SORTED_COUNTIES } from '../../utils/norwayGeo';
 
 interface SubstituteStats {
   completedJobs: number;
@@ -12,6 +13,10 @@ export const SubstituteProfilePage: React.FC = () => {
   // substitutes.id den kanoniske vikar-referansen. assignments.family_id
   // og requests.bid_family_id peker på denne (polymorfi-gjeld — Fase 5
   // splitter til actor_kind + actor_id).
+  //
+  // Fra Fase 4D: availability-feltet er fjernet (behov-drevet modell —
+  // vikar ser åpne vakter i sin kommune i stedet for å krysse av datoer).
+  // county + municipality erstatter det som geografisk filter.
   const [profile, setProfile] = useState({
     id: '',
     name: '',
@@ -19,12 +24,14 @@ export const SubstituteProfilePage: React.FC = () => {
     phone: '',
     age: '',
     experience: '',
-    availability: [] as string[]
+    county: '',
+    municipality: ''
   });
 
   const [stats, setStats] = useState<SubstituteStats>({ completedJobs: 0, upcomingJobs: 0, totalHours: 0 });
-  const [upcomingDates, setUpcomingDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const municipalities = profile.county ? COUNTY_MUNICIPALITIES[profile.county] || [] : [];
 
   useEffect(() => {
     loadProfileData();
@@ -41,7 +48,7 @@ export const SubstituteProfilePage: React.FC = () => {
         // forhindrer duplikater).
         let { data: sub } = await supabase
             .from('substitutes')
-            .select('id, name, phone, age, experience')
+            .select('id, name, phone, age, experience, county, municipality')
             .eq('auth_user_id', user.id)
             .maybeSingle();
 
@@ -52,16 +59,11 @@ export const SubstituteProfilePage: React.FC = () => {
                     auth_user_id: user.id,
                     name: user.user_metadata?.full_name || ''
                 })
-                .select('id, name, phone, age, experience')
+                .select('id, name, phone, age, experience, county, municipality')
                 .single();
             if (createErr) throw createErr;
             sub = created;
         }
-
-        const { data: availRows } = await supabase
-            .from('substitute_availability')
-            .select('date')
-            .eq('substitute_id', sub!.id);
 
         setProfile({
             id: sub!.id,
@@ -70,7 +72,8 @@ export const SubstituteProfilePage: React.FC = () => {
             phone: sub!.phone || '',
             age: sub!.age != null ? String(sub!.age) : '',
             experience: sub!.experience || '',
-            availability: (availRows || []).map((r: any) => r.date)
+            county: sub!.county || '',
+            municipality: sub!.municipality || ''
         });
 
         // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id
@@ -96,18 +99,7 @@ export const SubstituteProfilePage: React.FC = () => {
             });
         }
         setStats({ completedJobs: completed, upcomingJobs: upcoming, totalHours: Math.round(hours * 10) / 10 });
-
-        const { data: futureEvents } = await supabase.from('events').select('date').gte('date', new Date().toISOString().split('T')[0]).order('date', { ascending: true });
-        if (futureEvents) {
-            const dates = Array.from(new Set(futureEvents.map((e: any) => e.date)));
-            setUpcomingDates(dates);
-        }
     } catch (error) { console.error('Feil ved lasting av profil:', error); } finally { setLoading(false); }
-  };
-
-  const toggleAvailability = (date: string) => {
-    const newAvailability = profile.availability.includes(date) ? profile.availability.filter(d => d !== date) : [...profile.availability, date];
-    setProfile({ ...profile, availability: newAvailability });
   };
 
   const handleSave = async () => {
@@ -125,39 +117,12 @@ export const SubstituteProfilePage: React.FC = () => {
                 name: profile.name,
                 phone: profile.phone || null,
                 age: ageInt,
-                experience: profile.experience || null
+                experience: profile.experience || null,
+                county: profile.county || null,
+                municipality: profile.municipality || null
             })
             .eq('id', profile.id);
         if (dbError) throw dbError;
-
-        // Sync substitute_availability: diff mot DB.
-        const { data: existing } = await supabase
-            .from('substitute_availability')
-            .select('date')
-            .eq('substitute_id', profile.id);
-
-        const existingDates = new Set((existing || []).map((r: any) => r.date));
-        const desiredDates = new Set(profile.availability);
-
-        const toInsert = [...desiredDates]
-            .filter(d => !existingDates.has(d))
-            .map(date => ({ substitute_id: profile.id, date }));
-        const toDelete = [...existingDates].filter(d => !desiredDates.has(d));
-
-        if (toInsert.length > 0) {
-            const { error: insErr } = await supabase
-                .from('substitute_availability')
-                .insert(toInsert);
-            if (insErr) throw insErr;
-        }
-        if (toDelete.length > 0) {
-            const { error: delErr } = await supabase
-                .from('substitute_availability')
-                .delete()
-                .eq('substitute_id', profile.id)
-                .in('date', toDelete);
-            if (delErr) throw delErr;
-        }
 
         alert('✅ Profil lagret!');
     } catch (error: any) { alert('Kunne ikke lagre profil: ' + error.message); }
@@ -173,7 +138,7 @@ export const SubstituteProfilePage: React.FC = () => {
       </div>
 
       <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-        
+
         <div className="card" style={{ padding: '20px', marginBottom: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#166534' }}>📊 Din Dugnad-statistikk</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px' }}>
@@ -215,15 +180,35 @@ export const SubstituteProfilePage: React.FC = () => {
         </div>
 
         <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '8px' }}>📅 Når kan du jobbe?</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>Kryss av datoene du er ledig. Du vil havne øverst på listen hos familier som trenger hjelp disse dagene.</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {upcomingDates.length === 0 ? <p style={{ fontSize: '13px', fontStyle: 'italic' }}>Ingen kommende arrangementer funnet.</p> : upcomingDates.map(date => {
-                        const isSelected = profile.availability.includes(date);
-                        return <button key={date} onClick={() => toggleAvailability(date)} style={{ padding: '8px 12px', borderRadius: '20px', border: isSelected ? '2px solid #16a8b8' : '1px solid #e2e8f0', background: isSelected ? '#e0f7fa' : 'white', color: isSelected ? '#0e7490' : 'var(--text-primary)', cursor: 'pointer', fontSize: '13px', fontWeight: isSelected ? '600' : '400' }}>{isSelected ? '✅ ' : ''}{new Date(date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}</button>
-                    })
-                }
+          <h3 style={{ marginTop: 0, marginBottom: '8px' }}>📍 Hvor bor du?</h3>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+            Du vil se åpne vakter i din kommune. La feltene stå tomme hvis du vil se vakter på tvers av kommuner.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label className="input-label">Fylke</label>
+              <select
+                value={profile.county}
+                onChange={e => setProfile({ ...profile, county: e.target.value, municipality: '' })}
+                className="input"
+              >
+                <option value="">Velg fylke</option>
+                {SORTED_COUNTIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
+            <div>
+              <label className="input-label">Kommune</label>
+              <select
+                value={profile.municipality}
+                onChange={e => setProfile({ ...profile, municipality: e.target.value })}
+                className="input"
+                disabled={!profile.county}
+              >
+                <option value="">{profile.county ? 'Velg kommune' : 'Velg fylke først'}</option>
+                {municipalities.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
 
         <button onClick={handleSave} className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '16px' }}>💾 Lagre profil</button>
