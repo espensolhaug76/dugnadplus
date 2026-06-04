@@ -26,28 +26,20 @@ export const MySubstituteJobsPage: React.FC = () => {
   const fetchMyJobs = async () => {
     setLoading(true);
     try {
-        const userJson = localStorage.getItem('dugnad_user');
-        let userId = '';
-        let email = '';
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
 
-        if (userJson) {
-            const user = JSON.parse(userJson);
-            userId = user.id;
-            email = user.email;
-        } else {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                userId = user.id;
-                email = user.email || '';
-            }
-        }
+        setCurrentUserEmail(user.email || '');
 
-        if (!userId) {
-            setLoading(false);
-            return;
-        }
+        // Slå opp vikar-rad. assignments filtreres på den dedikerte
+        // substitute_id-kolonnen (Fase 5).
+        const { data: sub } = await supabase
+            .from('substitutes')
+            .select('id')
+            .eq('auth_user_id', user.id)
+            .maybeSingle();
 
-        setCurrentUserEmail(email);
+        if (!sub) { setLoading(false); return; }
 
         const { data: assignments, error } = await supabase
             .from('assignments')
@@ -67,7 +59,7 @@ export const MySubstituteJobsPage: React.FC = () => {
                     )
                 )
             `)
-            .eq('family_id', userId)
+            .eq('substitute_id', sub.id)
             .order('id', { ascending: false });
 
         if (error) throw error;
