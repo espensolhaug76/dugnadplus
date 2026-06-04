@@ -9,10 +9,8 @@ interface SubstituteStats {
 }
 
 export const SubstituteProfilePage: React.FC = () => {
-  // profile.id = substitutes.id (ikke auth.users.id). Fra Fase 4B er
-  // substitutes.id den kanoniske vikar-referansen. assignments.family_id
-  // og requests.bid_family_id peker på denne (polymorfi-gjeld — Fase 5
-  // splitter til actor_kind + actor_id).
+  // profile.id = substitutes.id. Stats-spørringen filtrerer på
+  // assignments.substitute_id (Fase 5 — dedikert FK-kolonne).
   //
   // Fra Fase 4D: availability-feltet er fjernet (behov-drevet modell —
   // vikar ser åpne vakter i sin kommune i stedet for å krysse av datoer).
@@ -76,13 +74,12 @@ export const SubstituteProfilePage: React.FC = () => {
             municipality: sub!.municipality || ''
         });
 
-        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id
-        // kan inneholde families.id eller substitutes.id. Her filtrerer
-        // vi på substitutes.id for vikar-statistikk.
+        // Vikar-stats: filter på den dedikerte substitute_id-kolonnen
+        // (Fase 5).
         const { data: assignments } = await supabase
             .from('assignments')
             .select(`id, shift:shifts (start_time, end_time, event:events (date))`)
-            .eq('family_id', sub!.id);
+            .eq('substitute_id', sub!.id);
 
         let completed = 0; let upcoming = 0; let hours = 0;
         const now = new Date(); now.setHours(0,0,0,0);
