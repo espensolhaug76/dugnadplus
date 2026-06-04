@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 // Hjelpefunksjoner
@@ -21,55 +21,55 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]);
   const [filterSport, setFilterSport] = useState('all');
 
-  const [upcomingDates, setUpcomingDates] = useState<string[]>([]);
-  const [availability, setAvailability] = useState<string[]>([]);
-
   // currentSubstituteId = substitutes.id (ikke auth.users.id). Kanonisk
   // vikar-referanse fra Fase 4B. Brukes som family_id i assignments og
   // bid_family_id i requests (polymorfi-gjeld — Fase 5 splitter til
   // actor_kind + actor_id).
   const [currentSubstituteId, setCurrentSubstituteId] = useState('');
+  const [currentMunicipality, setCurrentMunicipality] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        setLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) { setLoading(false); return; }
 
-        // Get-or-create substitutes-rad. Idempotent via UNIQUE
-        // auth_user_id-constraint.
-        let { data: sub } = await supabase
-            .from('substitutes')
-            .select('id, name')
-            .eq('auth_user_id', user.id)
-            .maybeSingle();
-
-        if (!sub) {
-            const { data: created, error } = await supabase
+            // Get-or-create substitutes-rad. Idempotent via UNIQUE
+            // auth_user_id-constraint.
+            let { data: sub } = await supabase
                 .from('substitutes')
-                .insert({
-                    auth_user_id: user.id,
-                    name: user.user_metadata?.full_name || 'Vikar'
-                })
-                .select('id, name')
-                .single();
-            if (error) {
-                console.error('Kunne ikke opprette vikar-profil:', error);
-                return;
+                .select('id, name, municipality')
+                .eq('auth_user_id', user.id)
+                .maybeSingle();
+
+            if (!sub) {
+                const { data: created, error } = await supabase
+                    .from('substitutes')
+                    .insert({
+                        auth_user_id: user.id,
+                        name: user.user_metadata?.full_name || 'Vikar'
+                    })
+                    .select('id, name, municipality')
+                    .single();
+                if (error) {
+                    console.error('Kunne ikke opprette vikar-profil:', error);
+                    setLoading(false);
+                    return;
+                }
+                sub = created;
             }
-            sub = created;
+
+            setCurrentSubstituteId(sub!.id);
+            setCurrentMunicipality(sub!.municipality);
+
+            await fetchMarketplaceData(sub!.id, sub!.municipality);
+        } catch (e) {
+            console.error(e);
+            setLoading(false);
         }
-
-        setCurrentSubstituteId(sub!.id);
-
-        const { data: availRows } = await supabase
-            .from('substitute_availability')
-            .select('date')
-            .eq('substitute_id', sub!.id);
-        setAvailability((availRows || []).map((r: any) => r.date));
     })();
-
-    fetchMarketplaceData();
   }, []);
 
   // Filtrering
@@ -81,131 +81,72 @@ export const SubstituteMarketplacePage: React.FC = () => {
     }
   }, [filterSport, availableJobs]);
 
-  const fetchMarketplaceData = async () => {
+  const fetchMarketplaceData = async (substituteId: string, municipality: string | null) => {
     setLoading(true);
     try {
-        const today = new Date().toISOString().split('T')[0];
-
-        // Hent events, shifts og requests
-        const { data: eventsData, error } = await supabase
-            .from('events')
-            .select(`
-                *,
-                shifts (
-                    *,
-                    requests (
-                        id,
-                        type,
-                        from_family_id,
-                        target_family_id,
-                        is_active,
-                        created_at,
-                        bid_amount,
-                        bid_message,
-                        bid_family_id,
-                        bid_status,
-                        families:from_family_id (name)
-                    )
-                )
-            `)
-            .gte('date', today)
-            .order('date', { ascending: true });
-
+        // Kall list_open_substitute_jobs-RPC (Fase 4D-C). RPC tar
+        // p_municipality som null → returnerer alle åpne vakter
+        // hvis vikar ikke har satt hjemkommune. Else: 2-hop-join
+        // events → team_members → clubs.municipality skjer server-side.
+        const { data, error } = await supabase.rpc('list_open_substitute_jobs', {
+            p_municipality: municipality || null
+        });
         if (error) throw error;
 
-        const jobs: any[] = [];
-        const dates = new Set<string>();
+        // RPC returnerer alle aktive substitute-requests i (evt.) kommunen,
+        // også de med target_family_id satt til andre vikarer. Vi
+        // filtrerer client-side til åpne + de rettet mot oss.
+        const jobs = (data || [])
+            .map((row: any) => {
+                const [startH, startM] = row.start_time.slice(0,5).split(':').map(Number);
+                const [endH, endM] = row.end_time.slice(0,5).split(':').map(Number);
+                const duration = (endH * 60 + endM) - (startH * 60 + startM);
+                const hours = Math.floor(duration / 60);
+                const mins = duration % 60;
+                const durationStr = mins > 0 ? `${hours}t ${mins}m` : `${hours}t`;
 
-        eventsData.forEach((event: any) => {
-            dates.add(event.date);
+                const startDateTime = new Date(`${row.event_date}T${row.start_time}`);
+                const timeDiff = startDateTime.getTime() - new Date().getTime();
+                const hoursUntil = timeDiff / (1000 * 60 * 60);
+                const isUrgent = hoursUntil < 48 && hoursUntil > 0;
 
-            event.shifts.forEach((shift: any) => {
-                // Finn aktiv substitute request
-                const subReq = shift.requests?.find((r: any) => r.type === 'substitute' && r.is_active);
+                // POLYMORFI-GJELD (Fase 4B → Fase 5): target_family_id og
+                // bid_family_id holder enten families.id eller substitutes.id.
+                // Sammenligner mot substitutes.id som kanonisk referanse.
+                const isForMe = row.target_family_id === substituteId;
+                const isOpen = !row.target_family_id;
 
-                if (subReq) {
-                    // POLYMORFI-GJELD (Fase 4B → Fase 5): target_family_id
-                    // og bid_family_id holder enten families.id eller
-                    // substitutes.id. Vi sammenligner mot substitutes.id
-                    // som kanonisk vikar-referanse.
-                    const isForMe = subReq.target_family_id === currentSubstituteId;
-                    const isOpen = !subReq.target_family_id;
+                if (!isOpen && !isForMe) return null;
 
-                    if (isOpen || isForMe) {
-                        // Beregn varighet
-                        const [startH, startM] = shift.start_time.slice(0,5).split(':').map(Number);
-                        const [endH, endM] = shift.end_time.slice(0,5).split(':').map(Number);
-                        const duration = (endH * 60 + endM) - (startH * 60 + startM);
-                        const hours = Math.floor(duration / 60);
-                        const mins = duration % 60;
-                        const durationStr = mins > 0 ? `${hours}t ${mins}m` : `${hours}t`;
+                return {
+                    eventId: row.event_id,
+                    eventName: row.event_name,
+                    eventDate: row.event_date,
+                    location: row.event_location || 'Sted ikke angitt',
+                    sport: row.event_sport,
+                    shiftId: row.shift_id,
+                    shiftName: row.shift_name,
+                    startTime: row.start_time.slice(0,5),
+                    endTime: row.end_time.slice(0,5),
+                    durationStr,
+                    requestingFamilyName: row.from_family_name || 'Ukjent familie',
+                    requestId: row.request_id,
+                    isDirectOffer: isForMe,
+                    isUrgent,
+                    duration,
+                    bidAmount: row.bid_amount,
+                    bidMessage: row.bid_message,
+                    bidFamilyId: row.bid_family_id,
+                    bidStatus: row.bid_status || 'none'
+                };
+            })
+            .filter(Boolean);
 
-                        // Sjekk hastverk (<48t)
-                        const startDateTime = new Date(`${event.date}T${shift.start_time}`);
-                        const timeDiff = startDateTime.getTime() - new Date().getTime();
-                        const hoursUntil = timeDiff / (1000 * 60 * 60);
-                        const isUrgent = hoursUntil < 48 && hoursUntil > 0;
-
-                        jobs.push({
-                            eventId: event.id,
-                            eventName: event.name,
-                            eventDate: event.date,
-                            location: event.location || 'Sted ikke angitt',
-                            sport: event.sport,
-                            shiftId: shift.id,
-                            shiftName: shift.name,
-                            startTime: shift.start_time.slice(0,5),
-                            endTime: shift.end_time.slice(0,5),
-                            durationStr,
-                            requestingFamilyName: subReq.families?.name || 'Ukjent familie',
-                            requestId: subReq.id,
-                            isDirectOffer: isForMe,
-                            isUrgent,
-                            duration,
-                            bidAmount: subReq.bid_amount,
-                            bidMessage: subReq.bid_message,
-                            bidFamilyId: subReq.bid_family_id,
-                            bidStatus: subReq.bid_status || 'none'
-                        });
-                    }
-                }
-            });
-        });
-
-        setAvailableJobs(jobs);
-        setUpcomingDates(Array.from(dates).sort());
-
+        setAvailableJobs(jobs as any[]);
     } catch (error) {
         console.error('Feil ved henting av marked:', error);
     } finally {
         setLoading(false);
-    }
-  };
-
-  const toggleAvailability = async (date: string) => {
-    if (!currentSubstituteId) return;
-    const isCurrentlyAvailable = availability.includes(date);
-
-    if (isCurrentlyAvailable) {
-      const { error } = await supabase
-        .from('substitute_availability')
-        .delete()
-        .eq('substitute_id', currentSubstituteId)
-        .eq('date', date);
-      if (error) {
-        console.error('Kunne ikke fjerne dato:', error);
-        return;
-      }
-      setAvailability(prev => prev.filter(d => d !== date));
-    } else {
-      const { error } = await supabase
-        .from('substitute_availability')
-        .insert({ substitute_id: currentSubstituteId, date });
-      if (error) {
-        console.error('Kunne ikke legge til dato:', error);
-        return;
-      }
-      setAvailability(prev => [...prev, date]);
     }
   };
 
@@ -234,7 +175,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
     setBidAmount('200');
     setBidMessage('');
     alert('✅ Bud sendt! Familien kan nå se ditt tilbud.');
-    fetchMarketplaceData();
+    fetchMarketplaceData(currentSubstituteId, currentMunicipality);
   };
 
   const acceptJob = async (job: any) => {
@@ -264,7 +205,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
         if (reqError) throw reqError;
 
         alert('✅ Oppdrag akseptert! Vakten ligger nå under "Mine jobber".');
-        fetchMarketplaceData();
+        fetchMarketplaceData(currentSubstituteId, currentMunicipality);
 
     } catch (error: any) {
         console.error('Feil ved aksept:', error);
@@ -281,7 +222,9 @@ export const SubstituteMarketplacePage: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '800px', margin: '0 auto' }}>
             <div>
                 <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: 'var(--text-primary)' }}>Vikar-børsen</h1>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Finn vakter som passer deg</p>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                  {currentMunicipality ? `Åpne vakter i ${currentMunicipality}` : 'Åpne vakter — alle kommuner'}
+                </p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={() => setFilterSport('all')} style={filterStyle(filterSport === 'all')}>Alle</button>
@@ -292,60 +235,32 @@ export const SubstituteMarketplacePage: React.FC = () => {
       </div>
 
       <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-        
-        {/* Tilgjengelighet */}
-        <div style={{ background: 'var(--card-bg, white)', borderRadius: '16px', padding: '20px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>📅 Når er du ledig?</h3>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {upcomingDates.length === 0 ? (
-                    <span style={{fontSize: '13px', color: 'var(--text-secondary)'}}>Ingen kommende arrangementer.</span>
-                ) : (
-                    upcomingDates.map(date => {
-                        const isSelected = availability.includes(date);
-                        return (
-                            <button 
-                                key={date}
-                                onClick={() => toggleAvailability(date)}
-                                style={{
-                                    padding: '8px 14px', borderRadius: '20px', fontSize: '13px', cursor: 'pointer',
-                                    border: isSelected ? '1px solid #16a8b8' : '1px solid #e5e7eb',
-                                    background: isSelected ? '#e0f7fa' : 'white',
-                                    color: isSelected ? '#0e7490' : '#4b5563',
-                                    fontWeight: isSelected ? '600' : '500',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                {isSelected ? '✓ ' : ''}
-                                {new Date(date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}
-                            </button>
-                        )
-                    })
-                )}
-            </div>
-        </div>
 
         {/* Oppdragsliste */}
         <h2 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
             Ledige oppdrag ({filteredJobs.length})
         </h2>
-        
+
         {filteredJobs.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📭</div>
                 <p>Ingen oppdrag funnet akkurat nå.</p>
+                {!currentMunicipality && (
+                    <p style={{ fontSize: '12px', marginTop: '12px' }}>
+                        Tips: sett hjemkommune i profilen for å se vakter nær deg når de dukker opp.
+                    </p>
+                )}
             </div>
         ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {filteredJobs.map((job, idx) => (
-                    <div key={idx} style={{ 
+                    <div key={idx} style={{
                         background: 'var(--card-bg, white)', borderRadius: '16px', padding: '16px',
                         boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: job.isDirectOffer ? '2px solid #f6ad55' : '1px solid transparent',
                         display: 'flex', flexDirection: 'column', gap: '16px'
                     }}>
                         <div style={{ display: 'flex', gap: '16px' }}>
-                            <div style={{ 
+                            <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                 background: 'var(--bg-secondary)', borderRadius: '12px', width: '60px', height: '60px', flexShrink: 0
                             }}>
@@ -365,7 +280,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
                                         </span>
                                     )}
                                 </div>
-                                
+
                                 <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                         <span>⏰</span> {job.startTime}-{job.endTime} ({job.durationStr})
@@ -377,12 +292,12 @@ export const SubstituteMarketplacePage: React.FC = () => {
                             </div>
                         </div>
 
-                        <div style={{ 
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                            paddingTop: '16px', borderTop: '1px solid #f3f4f6' 
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            paddingTop: '16px', borderTop: '1px solid #f3f4f6'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div style={{ 
+                                <div style={{
                                     width: '32px', height: '32px', borderRadius: '50%', background: '#3b82f6', color: 'white',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700'
                                 }}>
