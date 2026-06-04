@@ -21,10 +21,10 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]);
   const [filterSport, setFilterSport] = useState('all');
 
-  // currentSubstituteId = substitutes.id (ikke auth.users.id). Kanonisk
-  // vikar-referanse fra Fase 4B. Brukes som family_id i assignments og
-  // bid_family_id i requests (polymorfi-gjeld — Fase 5 splitter til
-  // actor_kind + actor_id).
+  // currentSubstituteId = substitutes.id. Skrives nå til de dedikerte
+  // substitute-kolonnene (Fase 5): bid_substitute_id i requests og
+  // substitute_id i assignments. CHECK-constraints i DB garanterer at
+  // family- og substitute-kolonnene er gjensidig utelukkende per rolle.
   const [currentSubstituteId, setCurrentSubstituteId] = useState('');
   const [currentMunicipality, setCurrentMunicipality] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,11 +110,11 @@ export const SubstituteMarketplacePage: React.FC = () => {
                 const hoursUntil = timeDiff / (1000 * 60 * 60);
                 const isUrgent = hoursUntil < 48 && hoursUntil > 0;
 
-                // POLYMORFI-GJELD (Fase 4B → Fase 5): target_family_id og
-                // bid_family_id holder enten families.id eller substitutes.id.
-                // Sammenligner mot substitutes.id som kanonisk referanse.
-                const isForMe = row.target_family_id === substituteId;
-                const isOpen = !row.target_family_id;
+                // Vikar-rettet direkte tilbud bruker target_substitute_id
+                // (Fase 5). En request er "åpen" hvis verken family- eller
+                // substitute-target er satt — da kan vikar by/ta direkte.
+                const isForMe = row.target_substitute_id === substituteId;
+                const isOpen = !row.target_family_id && !row.target_substitute_id;
 
                 if (!isOpen && !isForMe) return null;
 
@@ -136,7 +136,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
                     duration,
                     bidAmount: row.bid_amount,
                     bidMessage: row.bid_message,
-                    bidFamilyId: row.bid_family_id,
+                    bidSubstituteId: row.bid_substitute_id,
                     bidStatus: row.bid_status || 'none'
                 };
             })
@@ -161,13 +161,12 @@ export const SubstituteMarketplacePage: React.FC = () => {
     if (amount <= 0) { alert('Sett en pris.'); return; }
     if (amount > 500) { alert('Makspris er 500 kr per vakt.'); return; }
 
-    // POLYMORFI-GJELD (Fase 4B → Fase 5): bid_family_id kan holde
-    // enten families.id (forelder som byr på swap) eller substitutes.id
-    // (vikar som byr). Ryddes til actor_kind + actor_id i Fase 5.
+    // Vikar-bud skrives til bid_substitute_id (Fase 5). bid_family_id
+    // forblir NULL — requests_bid_actor_mutex CHECK krever maks én satt.
     await supabase.from('requests').update({
       bid_amount: amount,
       bid_message: bidMessage || null,
-      bid_family_id: currentSubstituteId,
+      bid_substitute_id: currentSubstituteId,
       bid_status: 'pending'
     }).eq('id', bidModal.requestId);
 
@@ -185,13 +184,13 @@ export const SubstituteMarketplacePage: React.FC = () => {
     try {
         // substitutes-rad er allerede sikret i useEffect (get-or-create).
 
-        // POLYMORFI-GJELD (Fase 4B → Fase 5): assignments.family_id kan
-        // holde enten families.id eller substitutes.id. Ryddes i Fase 5.
+        // Vikar-assignment skrives til substitute_id (Fase 5). family_id
+        // forblir NULL — assignments_actor_xor CHECK krever nøyaktig én.
         const { error: assignError } = await supabase
             .from('assignments')
             .insert({
                 shift_id: job.shiftId,
-                family_id: currentSubstituteId,
+                substitute_id: currentSubstituteId,
                 status: 'assigned'
             });
 
@@ -310,9 +309,9 @@ export const SubstituteMarketplacePage: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                {job.bidStatus === 'pending' && job.bidFamilyId === currentSubstituteId ? (
+                                {job.bidStatus === 'pending' && job.bidSubstituteId === currentSubstituteId ? (
                                     <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.bidAmount} kr)</span>
-                                ) : job.bidStatus === 'accepted' && job.bidFamilyId === currentSubstituteId ? (
+                                ) : job.bidStatus === 'accepted' && job.bidSubstituteId === currentSubstituteId ? (
                                     <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', padding: '6px 12px', background: '#dcfce7', borderRadius: '8px' }}>✅ Bud akseptert!</span>
                                 ) : (
                                     <>
