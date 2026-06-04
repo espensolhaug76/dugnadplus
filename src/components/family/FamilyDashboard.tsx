@@ -30,7 +30,10 @@ interface Shift {
   substituteRequestId?: string;
   bidAmount?: number;
   bidMessage?: string;
+  // Polymorf bud-aktør (Fase 5): nøyaktig én av disse er satt per aktivt bud.
+  // Familier byr på swap (bidFamilyId), vikarer byr på substitute (bidSubstituteId).
   bidFamilyId?: string;
+  bidSubstituteId?: string;
   bidStatus?: string;
   description?: string;
 }
@@ -203,6 +206,7 @@ export const FamilyDashboard: React.FC = () => {
             bidAmount: activeReq?.bid_amount,
             bidMessage: activeReq?.bid_message,
             bidFamilyId: activeReq?.bid_family_id,
+            bidSubstituteId: activeReq?.bid_substitute_id,
             bidStatus: activeReq?.bid_status
         };
       }) || [];
@@ -271,12 +275,26 @@ export const FamilyDashboard: React.FC = () => {
     else { if (!confirm('Søke etter vikar?')) return; await supabase.from('requests').insert({ shift_id: shiftId, from_family_id: currentFamily.id, type: 'substitute', is_active: true }); }
     fetchCloudData();
   };
-  const handleAcceptBid = async (requestId: string, bidFamilyId: string, shiftId: string, amount: number) => {
+  const handleAcceptBid = async (
+    requestId: string,
+    bidFamilyId: string | undefined,
+    bidSubstituteId: string | undefined,
+    shiftId: string,
+    amount: number
+  ) => {
     if (!confirm(`Akseptere budet på ${amount} kr?`)) return;
     // Aksepter bud
     await supabase.from('requests').update({ bid_status: 'accepted', is_active: false }).eq('id', requestId);
-    // Opprett assignment for vikar
-    await supabase.from('assignments').insert({ shift_id: shiftId, family_id: bidFamilyId, status: 'assigned' });
+
+    // Velg riktig assignments-kolonne basert på hvem som la budet.
+    // assignments_actor_xor CHECK krever nøyaktig én av family_id og
+    // substitute_id satt. bid-mutex-CHECK på requests garanterer at
+    // bidder er enten en familie ELLER en vikar, ikke begge.
+    const assignmentPayload = bidSubstituteId
+      ? { shift_id: shiftId, substitute_id: bidSubstituteId, status: 'assigned' }
+      : { shift_id: shiftId, family_id: bidFamilyId, status: 'assigned' };
+
+    await supabase.from('assignments').insert(assignmentPayload);
     alert(`✅ Bud akseptert! Betal ${amount} kr via Vipps.`);
     fetchCloudData();
   };
@@ -457,7 +475,7 @@ export const FamilyDashboard: React.FC = () => {
                                     </div>
                                     <div style={{ display: 'flex', gap: '6px' }}>
                                         <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬</button>
-                                        <button onClick={() => handleAcceptBid(shift.substituteRequestId!, shift.bidFamilyId!, shift.id, shift.bidAmount!)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
+                                        <button onClick={() => handleAcceptBid(shift.substituteRequestId!, shift.bidFamilyId, shift.bidSubstituteId, shift.id, shift.bidAmount!)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
                                     </div>
                                 </div>
                             )}
