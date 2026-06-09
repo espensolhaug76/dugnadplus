@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
+import { displayTeamWithClub } from '../../utils/teamSlug';
 
 const COLORS = {
   bg: '#faf8f4',
@@ -25,10 +26,18 @@ interface ProfileData {
   family_id: string;
 }
 
+interface ChildTeamRow {
+  childId: string;
+  childName: string;
+  teamId: string | null;
+  teamDisplay: string;
+}
+
 export const ProfilePage: React.FC = () => {
   const fam = useCurrentFamily();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [authEmail, setAuthEmail] = useState<string>('');
+  const [childTeams, setChildTeams] = useState<ChildTeamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
@@ -48,7 +57,7 @@ export const ProfilePage: React.FC = () => {
     const { data: { user } } = await supabase.auth.getUser();
     setAuthEmail(user?.email || '');
 
-    if (!fam.parentRowId) { setLoading(false); return; }
+    if (!fam.parentRowId || !user) { setLoading(false); return; }
     const { data } = await supabase
       .from('family_members')
       .select('id, name, email, phone, family_id')
@@ -56,6 +65,58 @@ export const ProfilePage: React.FC = () => {
       .maybeSingle();
 
     if (data) setProfile(data as ProfileData);
+
+    // Hent alle parent-rader for innlogget bruker (forelder kan
+    // ha barn på flere lag representert som flere families-rader
+    // — vi viser barn fra ALLE disse familiene). family_members.team_id
+    // er kanonisk kilde per spec — overlever en fremtidig families-
+    // konsolidering uendret.
+    const { data: parentRows } = await supabase
+      .from('family_members')
+      .select('family_id')
+      .eq('auth_user_id', user.id)
+      .eq('role', 'parent');
+
+    const familyIds = Array.from(new Set((parentRows || []).map((r: any) => r.family_id).filter(Boolean)));
+    if (familyIds.length === 0) {
+      setChildTeams([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data: children } = await supabase
+      .from('family_members')
+      .select('id, name, team_id')
+      .in('family_id', familyIds)
+      .eq('role', 'child')
+      .order('name');
+
+    const teamIds = Array.from(new Set((children || []).map((c: any) => c.team_id).filter(Boolean))) as string[];
+
+    // Slå opp klubb-navn via team_members.club_id → clubs.name.
+    // Antar én klubb per team_id-slug (verifisert 2026-06-09 i prod:
+    // 0 homonymer). Hvis homonyme team_ids noensinne dukker opp,
+    // returnerer LIMIT 1-pattern her vilkårlig en klubb — kjent
+    // svakhet, ingen FK fra families/family_members til clubs ennå.
+    const clubByTeam = new Map<string, string>();
+    if (teamIds.length > 0) {
+      const { data: clubLinks } = await supabase
+        .from('team_members')
+        .select('team_id, club:clubs(name)')
+        .in('team_id', teamIds);
+      for (const row of clubLinks || []) {
+        const cn = (row as any).club?.name;
+        if (cn && !clubByTeam.has(row.team_id)) clubByTeam.set(row.team_id, cn);
+      }
+    }
+
+    setChildTeams((children || []).map((c: any) => ({
+      childId: c.id,
+      childName: c.name || '—',
+      teamId: c.team_id || null,
+      teamDisplay: displayTeamWithClub(c.team_id ? clubByTeam.get(c.team_id) || null : null, c.team_id),
+    })));
+
     setLoading(false);
   };
 
@@ -155,6 +216,34 @@ export const ProfilePage: React.FC = () => {
             <Row label="E-post" value={authEmail || profile?.email || '—'} />
             <Row label="Telefon" value={profile?.phone || '—'} />
           </div>
+        </section>
+
+        {/* Mine barn og lag */}
+        <section
+          style={{
+            background: '#fff',
+            border: `0.5px solid ${COLORS.border}`,
+            borderRadius: 12,
+            padding: 20,
+            marginBottom: 20,
+          }}
+        >
+          <h2 style={{ fontFamily: FONT_SERIF, fontSize: 18, fontWeight: 500, margin: '0 0 14px' }}>Mine barn og lag</h2>
+          {childTeams.length === 0 ? (
+            <p style={{ fontSize: 13, color: COLORS.muted, margin: 0 }}>Ingen barn er registrert på din konto ennå.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {childTeams.map(row => (
+                <div
+                  key={`${row.childId}-${row.teamId || 'none'}`}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, fontSize: 14 }}
+                >
+                  <span style={{ fontWeight: 500 }}>{row.childName}</span>
+                  <span style={{ color: COLORS.secondary, textAlign: 'right' }}>{row.teamDisplay}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Eksporter */}

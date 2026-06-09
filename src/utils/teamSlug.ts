@@ -142,6 +142,30 @@ function capitalize(s: string): string {
 }
 
 /**
+ * Intern parsing av team-slug til {sport, teamSuffix}. Delt mellom
+ * displayTeamName (gir "sport suffix" sammenslått) og displayTeamWithClub
+ * (gir "klubb · sport · suffix" med separator mellom alle tre).
+ */
+function parseTeamSlug(slug: string): { sport: string; teamSuffix: string } | null {
+  const parts = slug.split('-').filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const sport = SPORT_DISPLAY[parts[0]] || capitalize(parts[0]);
+  const rest = parts.slice(1);
+
+  // Lag-sports-format: gender + year
+  if (rest.length >= 1 && GENDER_DISPLAY[rest[0]]) {
+    const gender = GENDER_DISPLAY[rest[0]];
+    const year = rest[1] || '';
+    return { sport, teamSuffix: `${gender} ${year}`.trim() };
+  }
+
+  // Custom-name format (dans etc): capitalize hver del
+  const customName = rest.map(capitalize).join(' ');
+  return { sport, teamSuffix: customName };
+}
+
+/**
  * Konverter en team-slug til et menneskelig lesbart navn for
  * bekreftelse-skjermer og lignende UI.
  *
@@ -156,22 +180,41 @@ function capitalize(s: string): string {
  */
 export function displayTeamName(slug: string | null | undefined): string {
   if (!slug) return 'Ukjent lag';
-  const parts = slug.split('-').filter(Boolean);
-  if (parts.length === 0) return 'Ukjent lag';
+  const parsed = parseTeamSlug(slug);
+  if (!parsed) return 'Ukjent lag';
+  return parsed.teamSuffix ? `${parsed.sport} ${parsed.teamSuffix}` : parsed.sport;
+}
 
-  const sport = SPORT_DISPLAY[parts[0]] || capitalize(parts[0]);
-  const rest = parts.slice(1);
-
-  // Gjenkjenn lag-sports-formatet: gender + year
-  if (rest.length >= 1 && GENDER_DISPLAY[rest[0]]) {
-    const gender = GENDER_DISPLAY[rest[0]];
-    const year = rest[1] || '';
-    return `${sport} ${gender} ${year}`.trim();
+/**
+ * Konverter klubbnavn + team-slug til 'Klubb · idrett · lag'-format
+ * for foreldre-vendte skjermer der vi vil tydeliggjøre hvilken klubb
+ * et lag tilhører.
+ *
+ *   displayTeamWithClub('Kongsvinger IL', 'football-gutter-2016')
+ *     -> 'Kongsvinger IL · Fotball · Gutter 2016'
+ *   displayTeamWithClub('Sønnerud SK', 'dans-victory-dance')
+ *     -> 'Sønnerud SK · Dans · Victory Dance'
+ *   displayTeamWithClub(null, 'handball-gutter-2016')
+ *     -> 'Håndball Gutter 2016'   (fallback til displayTeamName-format)
+ *   displayTeamWithClub('Kongsvinger IL', null)
+ *     -> 'Kongsvinger IL'
+ *   displayTeamWithClub(null, null)
+ *     -> 'Ukjent lag'
+ */
+export function displayTeamWithClub(
+  clubName: string | null | undefined,
+  slug: string | null | undefined
+): string {
+  const parsed = slug ? parseTeamSlug(slug) : null;
+  if (clubName && parsed) {
+    const tail = parsed.teamSuffix ? `${parsed.sport} · ${parsed.teamSuffix}` : parsed.sport;
+    return `${clubName} · ${tail}`;
   }
-
-  // Custom-name format (dans etc): capitalize hver del
-  const customName = rest.map(capitalize).join(' ');
-  return customName ? `${sport} ${customName}` : sport;
+  if (clubName) return clubName;
+  if (parsed) {
+    return parsed.teamSuffix ? `${parsed.sport} ${parsed.teamSuffix}` : parsed.sport;
+  }
+  return 'Ukjent lag';
 }
 
 /**
