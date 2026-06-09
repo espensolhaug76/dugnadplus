@@ -27,6 +27,7 @@ interface Shift {
   date: string;
   location: string;
   teamDisplay?: string;
+  hasVikarAssigned?: boolean;
   isConfirmed: boolean;
   swapRequestId?: string;
   substituteRequestId?: string;
@@ -213,6 +214,22 @@ export const FamilyDashboard: React.FC = () => {
           setIncomingProposals(proposals);
       }
 
+      // Detekter vakter hvor en vikar har tatt jobben (acceptJob direkte
+      // eller akseptert bud). Når vikar er tildelt skal familie IKKE
+      // kunne sette opp ny swap/vikar-søk — akseptert/tatt avtale er
+      // endelig. Polymorfi-merknad: assignments med substitute_id IS NOT
+      // NULL representerer vikar-tildelte vakter (Fase 5-skille).
+      const familyShiftIds = (assignments || []).map((a: any) => a.shift.id);
+      let vikarShiftIds = new Set<string>();
+      if (familyShiftIds.length > 0) {
+        const { data: vikarAssignments } = await supabase
+          .from('assignments')
+          .select('shift_id')
+          .in('shift_id', familyShiftIds)
+          .not('substitute_id', 'is', null);
+        vikarShiftIds = new Set((vikarAssignments || []).map((a: any) => a.shift_id));
+      }
+
       // Behandle mine vakter
       const formattedShifts = assignments?.map((a: any) => {
         const activeReq = myRequests?.find((r: any) => r.shift_id === a.shift.id);
@@ -228,6 +245,7 @@ export const FamilyDashboard: React.FC = () => {
             date: a.shift.event.date,
             location: a.shift.event.location,
             teamDisplay: teamDisplayFor(a.shift.event.team_id),
+            hasVikarAssigned: vikarShiftIds.has(a.shift.id),
             description: a.shift.description,
             isConfirmed: a.status === 'confirmed',
             swapRequestId: activeReq?.type === 'swap' ? activeReq.id : undefined,
@@ -541,6 +559,11 @@ export const FamilyDashboard: React.FC = () => {
                                     </div>
                                     {shift.description && <div style={{marginTop:'8px', fontSize:'13px', background:'#faf8f4', padding:'8px', borderRadius:'4px', color:'#4a5e50', fontStyle:'italic'}}>ℹ️ {shift.description}</div>}
                                 </div>
+                                {shift.hasVikarAssigned && (
+                                  <div style={{ marginBottom: '12px', padding: '10px 12px', background: '#e8f5ef', border: '1px solid #b8dfc9', borderRadius: '8px', fontSize: '13px', color: '#2d6a4f' }}>
+                                    ✅ Vikar tildelt — avtalen er endelig
+                                  </div>
+                                )}
                                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                     {!shift.isConfirmed && !isCritical && (
                                       <button onClick={() => handleConfirmShift(shift.assignmentId)} style={{ flex: 1, background: '#2d6a4f', minWidth: '120px', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
@@ -548,16 +571,18 @@ export const FamilyDashboard: React.FC = () => {
                                         <div style={{ fontSize: '12px', fontWeight: '600' }}>Jeg kommer</div>
                                       </button>
                                     )}
-                                    {!isCritical && (
+                                    {!isCritical && !shift.hasVikarAssigned && (
                                       <button onClick={() => handleSwapToggle(shift.id, shift.swapRequestId)} style={{ flex: 1, border: '0.5px solid #dedddd', minWidth: '100px', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
                                         <div style={{ fontSize: '16px' }}>{isSwapRequested ? '↩️' : '↔️'}</div>
                                         <div style={{ fontSize: '11px', color: '#4a5e50' }}>{isSwapRequested ? 'Avbryt bytte' : 'Bytt med noen'}</div>
                                       </button>
                                     )}
-                                    <button onClick={() => handleSubstituteToggle(shift.id, shift.substituteRequestId)} style={{ flex: 1, border: '0.5px solid #dedddd', minWidth: '100px', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
-                                      <div style={{ fontSize: '16px' }}>{isSubstituteRequested ? '↩️' : '🙋'}</div>
-                                      <div style={{ fontSize: '11px', color: '#4a5e50' }}>{isSubstituteRequested ? 'Avbryt vikar-søk' : 'Finn vikar'}</div>
-                                    </button>
+                                    {!shift.hasVikarAssigned && (
+                                      <button onClick={() => handleSubstituteToggle(shift.id, shift.substituteRequestId)} style={{ flex: 1, border: '0.5px solid #dedddd', minWidth: '100px', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                                        <div style={{ fontSize: '16px' }}>{isSubstituteRequested ? '↩️' : '🙋'}</div>
+                                        <div style={{ fontSize: '11px', color: '#4a5e50' }}>{isSubstituteRequested ? 'Avbryt vikar-søk' : 'Finn vikar'}</div>
+                                      </button>
+                                    )}
                                     <button onClick={() => addToCalendar(shift)} style={{ flex: 1, background: '#fff', border: '0.5px solid #dedddd', minWidth: '100px', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
                                       <div style={{ fontSize: '16px' }}>📅</div>
                                       <div style={{ fontSize: '11px', color: '#4a5e50' }}>Legg i kalender</div>
