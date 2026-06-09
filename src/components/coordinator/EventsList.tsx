@@ -219,8 +219,23 @@ export const EventsList: React.FC = () => {
 
     // Filtrer bort skjermede familier og bygg kandidatliste
     const shieldedFull = families.filter(f => (f.shield_level || 'none') === 'full' || f.exempt_from_shifts);
+
+    // KJENT FELLES ROT (dokumentert 2026-06-09): duplikate families-rader
+    // (samme reelle familie representert som én rad per lag) er kilden
+    // til stable-bug-en der "samme person" får flere vakter, lotteri-
+    // team-mismatch, og forelder-lagsynlighet-mismatch. Konsolidering
+    // tas i egen sprint.
+    //
+    // Inntil da: team-filtrer kandidatene via family_members.team_id =
+    // event.team_id, slik at en families-rad på et annet lag ikke regnes
+    // som en separat kandidat for dette eventet. family_members.team_id
+    // er kanonisk kilde (samme valg som forelder-lagsynlighet-fasen) —
+    // overlever en fremtidig families-konsolidering uendret.
     const familiesWithNeeds = families
       .filter(f => (f.shield_level || 'none') !== 'full' && !f.exempt_from_shifts)
+      .filter(f =>
+        f.family_members?.some((m: any) => m.role === 'child' && m.team_id === event.team_id)
+      )
       .map(f => {
         const childCount = f.family_members?.filter((m: any) => m.role === 'child').length || 1;
         const isReduced = (f.shield_level || 'none') === 'reduced';
@@ -311,7 +326,11 @@ export const EventsList: React.FC = () => {
             if (b!.prefScore !== a!.prefScore) return b!.prefScore - a!.prefScore;
             // 2. 👍 randomiseres innbyrdes, resten etter lavest poeng
             if (a!.prefScore > 0) return a!.rand - b!.rand;
-            return a!.points - b!.points;
+            // 3. Lavest poeng først; randomisert tie-break når poeng
+            //    er like — hindrer alfabetisk favorisering når alle
+            //    har 0p (eks. ny klubb der ingen vakter er gjennomført).
+            if (a!.points !== b!.points) return a!.points - b!.points;
+            return a!.rand - b!.rand;
           });
 
         const best = scoredCandidates[0];
@@ -357,10 +376,16 @@ export const EventsList: React.FC = () => {
             const hasOverlap = mySlots.some(slot => isOverlap(slot.start, slot.end, shift.startTime, shift.endTime));
             if (!allowOverlap && hasOverlap) return null;
 
-            return { idx, points: f.currentPoints + f.shiftsAssigned * 100, hasOverlap };
+            return { idx, points: f.currentPoints + f.shiftsAssigned * 100, hasOverlap, rand: Math.random() };
           })
           .filter(c => c !== null)
-          .sort((a, b) => a!.points - b!.points);
+          .sort((a, b) => {
+            // Lavest score først; randomisert tie-break ved likt
+            // score (samme grunn som STEG 2 — alle 0p i ny klubb
+            // skulle ikke favorisere alfabetisk).
+            if (a!.points !== b!.points) return a!.points - b!.points;
+            return a!.rand - b!.rand;
+          });
 
         for (const cand of extraCandidates) {
           if (spotsToFill <= 0) break;
