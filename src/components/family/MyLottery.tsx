@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
+import { displayTeamWithClub } from '../../utils/teamSlug';
 
 interface Prize {
   id: string;
@@ -15,6 +16,7 @@ export const MyLottery: React.FC = () => {
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [mySales, setMySales] = useState(0);
   const [currentFamilyId, setCurrentFamilyId] = useState<string>('');
+  const [teamDisplay, setTeamDisplay] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'sell' | 'donate'>('sell');
   const [loading, setLoading] = useState(true);
 
@@ -62,6 +64,19 @@ export const MyLottery: React.FC = () => {
             setLoading(false);
             return;
         }
+
+        // 2b. Slå opp klubb-navn for lag-merking ("Klubb · idrett · lag").
+        // For forelder med barn på flere lag er det viktig å vite
+        // hvilket lotteri som hører til hvilket lag. Antar én klubb
+        // per team_id (verifisert 2026-06-09: 0 homonymer).
+        const { data: clubLink } = await supabase
+            .from('team_members')
+            .select('club:clubs(name)')
+            .eq('team_id', familyTeamId)
+            .limit(1)
+            .maybeSingle();
+        const clubName = (clubLink as any)?.club?.name || null;
+        setTeamDisplay(displayTeamWithClub(clubName, familyTeamId));
 
         // 3. Hent aktivt lotteri for familiens team
         const { data: lotteryData } = await supabase
@@ -174,6 +189,9 @@ export const MyLottery: React.FC = () => {
       <div style={{ background: '#1e3a2f', padding: '24px', color: 'white' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: 'white' }}>Min Loddbok</h1>
         <p style={{ color: 'rgba(255,255,255,0.6)', margin: '4px 0 0 0' }}>{lottery.name}</p>
+        {teamDisplay && (
+          <p style={{ color: 'rgba(255,255,255,0.55)', margin: '6px 0 0 0', fontSize: '13px' }}>{teamDisplay}</p>
+        )}
       </div>
 
       {/* Tabs */}
