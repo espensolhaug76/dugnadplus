@@ -163,12 +163,33 @@ export const SubstituteMarketplacePage: React.FC = () => {
 
     // Vikar-bud skrives til bid_substitute_id (Fase 5). bid_family_id
     // forblir NULL — requests_bid_actor_mutex CHECK krever maks én satt.
-    await supabase.from('requests').update({
+    //
+    // Bruker .select() for å få tilbake oppdaterte rader. Hvis ingen
+    // rad returneres er enten RLS-policy (sesjons-miks, feil vikar
+    // innlogget) eller request-ID-en utdatert — vis pen feilmelding
+    // istedenfor falsk "Bud sendt".
+    const { data: updated, error } = await supabase.from('requests').update({
       bid_amount: amount,
       bid_message: bidMessage || null,
       bid_substitute_id: currentSubstituteId,
       bid_status: 'pending'
-    }).eq('id', bidModal.requestId);
+    }).eq('id', bidModal.requestId).select();
+
+    if (error) {
+      alert('Kunne ikke sende bud: ' + error.message);
+      return;
+    }
+
+    if (!updated || updated.length === 0) {
+      alert(
+        'Bud ble ikke registrert. Mulige årsaker:\n\n' +
+        '• Du er logget inn som feil vikar (sjekk inkognito-faner)\n' +
+        '• Vakta er ikke lenger tilgjengelig\n\n' +
+        'Hard refresh siden og prøv igjen.'
+      );
+      fetchMarketplaceData(currentSubstituteId, currentMunicipality);
+      return;
+    }
 
     setBidModal(null);
     setBidAmount('200');
