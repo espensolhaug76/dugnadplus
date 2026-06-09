@@ -99,6 +99,13 @@ export const SubstituteProfilePage: React.FC = () => {
     } catch (error) { console.error('Feil ved lasting av profil:', error); } finally { setLoading(false); }
   };
 
+  const handleLogout = async () => {
+    if (!confirm('Logge ut?')) return;
+    await supabase.auth.signOut();
+    try { localStorage.removeItem('dugnad_user'); } catch {}
+    window.location.href = '/';
+  };
+
   const handleSave = async () => {
     if (!profile.id) return;
     try {
@@ -209,6 +216,24 @@ export const SubstituteProfilePage: React.FC = () => {
         </div>
 
         <button onClick={handleSave} className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '16px' }}>💾 Lagre profil</button>
+
+        <button
+          onClick={handleLogout}
+          style={{
+            width: '100%',
+            marginTop: '12px',
+            padding: '14px',
+            background: 'transparent',
+            color: '#c0392b',
+            border: '1px solid #c0392b',
+            borderRadius: 'var(--radius-md, 8px)',
+            fontSize: '14px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          Logg ut
+        </button>
       </div>
 
       <div className="bottom-nav">
