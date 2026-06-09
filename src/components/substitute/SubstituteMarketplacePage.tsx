@@ -181,35 +181,34 @@ export const SubstituteMarketplacePage: React.FC = () => {
     if (!currentSubstituteId) return alert('Du må være logget inn.');
     if (!confirm(`Vil du ta dette oppdraget?\n\nDu overtar ansvaret for vakten "${job.shiftName}".\nFamilien vil få beskjed.`)) return;
 
-    try {
-        // substitutes-rad er allerede sikret i useEffect (get-or-create).
+    // Atomisk RPC (migration 20260609): låser request FOR UPDATE,
+    // sjekker is_active, INSERTer assignment + setter is_active=false
+    // i samme transaksjon. Forhindrer at to vikarer rekker å ta samme
+    // vakt mellom de gamle INSERT- og UPDATE-stegene.
+    const { data: result, error } = await supabase.rpc('take_substitute_request', {
+      p_request_id: job.requestId
+    });
 
-        // Vikar-assignment skrives til substitute_id (Fase 5). family_id
-        // forblir NULL — assignments_actor_xor CHECK krever nøyaktig én.
-        const { error: assignError } = await supabase
-            .from('assignments')
-            .insert({
-                shift_id: job.shiftId,
-                substitute_id: currentSubstituteId,
-                status: 'assigned'
-            });
-
-        if (assignError) throw assignError;
-
-        const { error: reqError } = await supabase
-            .from('requests')
-            .update({ is_active: false })
-            .eq('id', job.requestId);
-
-        if (reqError) throw reqError;
-
-        alert('✅ Oppdrag akseptert! Vakten ligger nå under "Mine jobber".');
-        fetchMarketplaceData(currentSubstituteId, currentMunicipality);
-
-    } catch (error: any) {
-        console.error('Feil ved aksept:', error);
-        alert('Noe gikk galt: ' + error.message);
+    if (error) {
+      console.error('Feil ved aksept:', error);
+      alert('Noe gikk galt: ' + error.message);
+      fetchMarketplaceData(currentSubstituteId, currentMunicipality);
+      return;
     }
+
+    if (result === 'ok') {
+      alert('✅ Oppdrag akseptert! Vakten ligger nå under "Mine jobber".');
+    } else if (result === 'already_taken') {
+      alert('En annen vikar rakk å ta vakta først. Vi henter inn børsen på nytt.');
+    } else if (result === 'not_substitute') {
+      alert('Du må være registrert som vikar.');
+    } else if (result === 'not_found') {
+      alert('Fant ikke vakten lenger.');
+    } else {
+      alert('Kunne ikke ta vakta: ' + result);
+    }
+
+    fetchMarketplaceData(currentSubstituteId, currentMunicipality);
   };
 
   if (loading) return <div style={{padding: '40px', textAlign:'center'}}>Laster markedet... ☁️</div>;

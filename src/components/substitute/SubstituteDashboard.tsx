@@ -195,33 +195,34 @@ export const SubstituteDashboard: React.FC = () => {
 
         if (!confirm('Vil du ta dette oppdraget?')) return;
 
-        try {
-            // Vikar-assignment skrives til substitute_id (Fase 5).
-            // family_id forblir NULL — XOR-CHECK krever nøyaktig én satt.
-            const { error: assignError } = await supabase
-                .from('assignments')
-                .insert({
-                    shift_id: offer.shiftId,
-                    substitute_id: currentUser.id,
-                    status: 'assigned'
-                });
+        // Atomisk RPC (migration 20260609): låser request FOR UPDATE,
+        // sjekker is_active, INSERTer assignment + setter is_active=false
+        // i samme transaksjon. Samme funksjon som Marketplace.acceptJob
+        // bruker — forhindrer race ved samtidig aksept.
+        const { data: result, error } = await supabase.rpc('take_substitute_request', {
+            p_request_id: offer.requestId
+        });
 
-            if (assignError) throw assignError;
-
-            const { error: reqError } = await supabase
-                .from('requests')
-                .update({ is_active: false })
-                .eq('id', offer.requestId);
-
-            if (reqError) throw reqError;
-
-            alert('✅ Jobb akseptert!');
-            loadData(); 
-
-        } catch (e: any) {
-            console.error(e);
-            alert('Noe gikk galt: ' + e.message);
+        if (error) {
+            console.error(error);
+            alert('Noe gikk galt: ' + error.message);
+            loadData();
+            return;
         }
+
+        if (result === 'ok') {
+            alert('✅ Jobb akseptert!');
+        } else if (result === 'already_taken') {
+            alert('Vakta er allerede tatt.');
+        } else if (result === 'not_substitute') {
+            alert('Du må være registrert som vikar.');
+        } else if (result === 'not_found') {
+            alert('Fant ikke vakten lenger.');
+        } else {
+            alert('Kunne ikke ta vakta: ' + result);
+        }
+
+        loadData();
 
     } else {
         if (!confirm('Vil du avslå tilbudet? Jobben vil da gå tilbake til det åpne markedet.')) return;
