@@ -161,40 +161,39 @@ export const SubstituteMarketplacePage: React.FC = () => {
     if (amount <= 0) { alert('Sett en pris.'); return; }
     if (amount > 500) { alert('Makspris er 500 kr per vakt.'); return; }
 
-    // Vikar-bud skrives til bid_substitute_id (Fase 5). bid_family_id
-    // forblir NULL — requests_bid_actor_mutex CHECK krever maks én satt.
-    //
-    // Bruker .select() for å få tilbake oppdaterte rader. Hvis ingen
-    // rad returneres er enten RLS-policy (sesjons-miks, feil vikar
-    // innlogget) eller request-ID-en utdatert — vis pen feilmelding
-    // istedenfor falsk "Bud sendt".
-    const { data: updated, error } = await supabase.from('requests').update({
-      bid_amount: amount,
-      bid_message: bidMessage || null,
-      bid_substitute_id: currentSubstituteId,
-      bid_status: 'pending'
-    }).eq('id', bidModal.requestId).select();
+    // Atomisk RPC (migration 20260609_place_and_accept_substitute_bid):
+    // bypasser RLS via SECURITY DEFINER siden vikar ikke har direkte
+    // SELECT-tilgang til open requests (kun via list_open_substitute_jobs).
+    // RPC validerer caller er vikar, request er aktiv, og skriver budet
+    // atomisk innenfor FOR UPDATE-lås.
+    const { data: result, error } = await supabase.rpc('place_substitute_bid', {
+      p_request_id: bidModal.requestId,
+      p_amount: amount,
+      p_message: bidMessage || null
+    });
 
     if (error) {
       alert('Kunne ikke sende bud: ' + error.message);
       return;
     }
 
-    if (!updated || updated.length === 0) {
-      alert(
-        'Bud ble ikke registrert. Mulige årsaker:\n\n' +
-        '• Du er logget inn som feil vikar (sjekk inkognito-faner)\n' +
-        '• Vakta er ikke lenger tilgjengelig\n\n' +
-        'Hard refresh siden og prøv igjen.'
-      );
-      fetchMarketplaceData(currentSubstituteId, currentMunicipality);
-      return;
+    if (result === 'ok') {
+      setBidModal(null);
+      setBidAmount('200');
+      setBidMessage('');
+      alert('✅ Bud sendt! Familien kan nå se ditt tilbud.');
+    } else if (result === 'already_taken') {
+      alert('Vakta er allerede tatt.');
+    } else if (result === 'not_substitute') {
+      alert('Du må være registrert som vikar.');
+    } else if (result === 'not_found') {
+      alert('Fant ikke vakten lenger.');
+    } else if (result === 'invalid_amount') {
+      alert('Ugyldig beløp.');
+    } else {
+      alert('Kunne ikke sende bud: ' + result);
     }
 
-    setBidModal(null);
-    setBidAmount('200');
-    setBidMessage('');
-    alert('✅ Bud sendt! Familien kan nå se ditt tilbud.');
     fetchMarketplaceData(currentSubstituteId, currentMunicipality);
   };
 

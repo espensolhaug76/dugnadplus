@@ -324,25 +324,45 @@ export const FamilyDashboard: React.FC = () => {
   };
   const handleAcceptBid = async (
     requestId: string,
-    bidFamilyId: string | undefined,
-    bidSubstituteId: string | undefined,
-    shiftId: string,
+    _bidFamilyId: string | undefined,
+    _bidSubstituteId: string | undefined,
+    _shiftId: string,
     amount: number
   ) => {
     if (!confirm(`Akseptere budet på ${amount} kr?`)) return;
-    // Aksepter bud
-    await supabase.from('requests').update({ bid_status: 'accepted', is_active: false }).eq('id', requestId);
 
-    // Velg riktig assignments-kolonne basert på hvem som la budet.
-    // assignments_actor_xor CHECK krever nøyaktig én av family_id og
-    // substitute_id satt. bid-mutex-CHECK på requests garanterer at
-    // bidder er enten en familie ELLER en vikar, ikke begge.
-    const assignmentPayload = bidSubstituteId
-      ? { shift_id: shiftId, substitute_id: bidSubstituteId, status: 'assigned' }
-      : { shift_id: shiftId, family_id: bidFamilyId, status: 'assigned' };
+    // Atomisk RPC (migration 20260609_place_and_accept_substitute_bid):
+    // bypasser RLS siden familie ikke har INSERT-rett på assignments
+    // med substitute_id (kun coordinator eller vikar selv kan).
+    // RPC validerer eierskap (from_family_id = caller), INSERTer
+    // assignment med riktig actor-kolonne, og oppdaterer bud-status
+    // atomisk.
+    const { data: result, error } = await supabase.rpc('accept_substitute_bid', {
+      p_request_id: requestId
+    });
 
-    await supabase.from('assignments').insert(assignmentPayload);
-    alert(`✅ Bud akseptert! Betal ${amount} kr via Vipps.`);
+    if (error) {
+      alert('Kunne ikke akseptere bud: ' + error.message);
+      fetchCloudData();
+      return;
+    }
+
+    if (result === 'ok') {
+      alert(`✅ Bud akseptert! Betal ${amount} kr via Vipps.`);
+    } else if (result === 'no_bid') {
+      alert('Ingen aktivt bud på denne vakta.');
+    } else if (result === 'already_handled') {
+      alert('Budet er allerede håndtert.');
+    } else if (result === 'not_owner') {
+      alert('Du eier ikke denne vakta.');
+    } else if (result === 'not_family') {
+      alert('Du må være registrert som familie.');
+    } else if (result === 'not_found') {
+      alert('Fant ikke vakten lenger.');
+    } else {
+      alert('Kunne ikke akseptere: ' + result);
+    }
+
     fetchCloudData();
   };
 
