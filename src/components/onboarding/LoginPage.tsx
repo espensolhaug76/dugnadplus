@@ -56,8 +56,15 @@ export const LoginPage: React.FC = () => {
       } else if (roles.includes('parent')) {
         role = 'parent';
       } else {
-        // Ingen team_members-rad — bruker trenger onboarding
-        role = '';
+        // Vikar-fallback. Vikar er klubbløs (Fase 4) og har ingen
+        // team_members-rad — må slås opp i substitutes-tabellen.
+        // Parent vinner over substitute hvis brukeren har begge.
+        const { data: sub } = await supabase
+          .from('substitutes')
+          .select('id')
+          .eq('auth_user_id', data.user.id)
+          .maybeSingle();
+        role = sub ? 'substitute' : '';
       }
 
       // 3. Oppdater localStorage med ferske data fra DB-oppslaget,
@@ -102,6 +109,8 @@ export const LoginPage: React.FC = () => {
         window.location.href = '/club-admin-dashboard';
       } else if (role === 'parent') {
         window.location.href = '/family-dashboard';
+      } else if (role === 'substitute') {
+        window.location.href = '/substitute-dashboard';
       } else {
         window.location.href = '/role-selection';
       }
