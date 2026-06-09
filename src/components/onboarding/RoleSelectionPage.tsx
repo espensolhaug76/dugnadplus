@@ -37,7 +37,10 @@ export const RoleSelectionPage: React.FC = () => {
       return;
     }
     if (selectedRole === 'substitute') {
-      window.location.href = '/substitute-marketplace';
+      // Konsistent med LoginPage-redirect (etter login-fiks): vikar
+      // havner alltid på /substitute-dashboard som kanonisk hjem,
+      // uansett om de kom hit via login-fallback eller manuelt valg.
+      window.location.href = '/substitute-dashboard';
       return;
     }
     if (selectedRole === 'family') {
