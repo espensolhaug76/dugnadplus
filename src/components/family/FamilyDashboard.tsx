@@ -3,6 +3,7 @@ import { supabase } from '../../services/supabaseClient';
 import { VikarChat } from '../substitute/VikarChat';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { displayTeamWithClub } from '../../utils/teamSlug';
 
 interface SwapProposal {
   id: string;
@@ -25,6 +26,7 @@ interface Shift {
   eventId: string;
   date: string;
   location: string;
+  teamDisplay?: string;
   isConfirmed: boolean;
   swapRequestId?: string;
   substituteRequestId?: string;
@@ -42,6 +44,7 @@ interface PendingEvent {
     id: string;
     name: string;
     date: string;
+    teamDisplay?: string;
 }
 
 export const FamilyDashboard: React.FC = () => {
@@ -125,7 +128,8 @@ export const FamilyDashboard: React.FC = () => {
                     name,
                     date,
                     location,
-                    assignment_mode
+                    assignment_mode,
+                    team_id
                 )
             )
         `)
@@ -142,10 +146,34 @@ export const FamilyDashboard: React.FC = () => {
       const myEventIds = new Set(assignments?.map((a: any) => a.shift.event.id));
       const missingEvents = allFutureEvents?.filter((e: any) => !myEventIds.has(e.id)) || [];
 
+      // Bygg team_id → "Klubb · idrett · lag"-display-map for alle
+      // event/shift-team_ids vi vil rendre. Forelder med barn på
+      // flere lag trenger lag-merking for å vite hva som hører hvor.
+      // Klubb-oppslag via team_members → clubs (én klubb per team_id,
+      // verifisert 2026-06-09 i prod: 0 homonymer).
+      const allTeamIds = Array.from(new Set([
+        ...(assignments || []).map((a: any) => a.shift?.event?.team_id).filter(Boolean),
+        ...missingEvents.map((e: any) => e.team_id).filter(Boolean),
+      ])) as string[];
+      const clubByTeam = new Map<string, string>();
+      if (allTeamIds.length > 0) {
+        const { data: clubLinks } = await supabase
+          .from('team_members')
+          .select('team_id, club:clubs(name)')
+          .in('team_id', allTeamIds);
+        for (const row of clubLinks || []) {
+          const cn = (row as any).club?.name;
+          if (cn && !clubByTeam.has(row.team_id)) clubByTeam.set(row.team_id, cn);
+        }
+      }
+      const teamDisplayFor = (teamId: string | null | undefined) =>
+        teamId ? displayTeamWithClub(clubByTeam.get(teamId) || null, teamId) : undefined;
+
       setPendingEvents(missingEvents.map((e:any) => ({
           id: e.id,
           name: e.name,
-          date: e.date
+          date: e.date,
+          teamDisplay: teamDisplayFor(e.team_id),
       })));
 
       // Hent requests (for swap status)
@@ -199,6 +227,7 @@ export const FamilyDashboard: React.FC = () => {
             eventId: a.shift.event.id,
             date: a.shift.event.date,
             location: a.shift.event.location,
+            teamDisplay: teamDisplayFor(a.shift.event.team_id),
             description: a.shift.description,
             isConfirmed: a.status === 'confirmed',
             swapRequestId: activeReq?.type === 'swap' ? activeReq.id : undefined,
@@ -434,7 +463,12 @@ export const FamilyDashboard: React.FC = () => {
                 <div style={{ padding: '20px', border: '2px solid #fac775', background: '#fff8e6', borderRadius: '8px' }}>
                     <p style={{ marginBottom: '16px', fontWeight: '600', color: '#854f0b' }}>Du har {pendingEvents.length} arrangementer hvor du må velge vakt:</p>
                     <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#854f0b' }}>
-                        {pendingEvents.map(e => <li key={e.id}>{e.name} ({new Date(e.date).toLocaleDateString()})</li>)}
+                        {pendingEvents.map(e => (
+                            <li key={e.id}>
+                                {e.name} ({new Date(e.date).toLocaleDateString()})
+                                {e.teamDisplay && <span style={{ fontSize: '12px', fontWeight: 400, opacity: 0.75 }}> — {e.teamDisplay}</span>}
+                            </li>
+                        ))}
                     </ul>
                     <button onClick={() => window.location.href = '/my-shifts'} style={{ width: '100%', background: '#854f0b', border: 'none', color: '#fff', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Gå til vaktvalg →</button>
                 </div>
@@ -486,10 +520,15 @@ export const FamilyDashboard: React.FC = () => {
                                 </div>
                             )}
                             <div style={{ background: 'rgba(0,0,0,0.03)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ fontWeight: '700', color: '#1a2e1f' }}>{new Date(shift.date).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' })}</span>
                                     <span style={{ color: '#6b7f70' }}>•</span>
                                     <span style={{ fontSize: '14px', fontWeight: '500', color: '#1a2e1f' }}>{shift.eventName}</span>
+                                    {shift.teamDisplay && (
+                                        <span style={{ fontSize: '11px', color: '#4a5e50', background: '#fff', padding: '2px 8px', borderRadius: '10px', border: '0.5px solid #dedddd' }}>
+                                            {shift.teamDisplay}
+                                        </span>
+                                    )}
                                 </div>
                                 {shift.isConfirmed ? <span style={{ background: '#e8f5ef', color: '#2d6a4f', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Bekreftet</span> : <span style={{ background: '#fff8e6', color: '#854f0b', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Må bekreftes</span>}
                             </div>

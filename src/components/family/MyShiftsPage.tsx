@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 import { GuideButton } from '../../utils/guides/GuideButton';
+import { displayTeamWithClub } from '../../utils/teamSlug';
 
 interface SwapRequest {
   id?: string;
@@ -43,6 +44,8 @@ interface Event {
   date: string;
   location?: string;
   sport?: string;
+  teamId?: string;
+  teamDisplay?: string;
   shifts: Shift[];
   assignmentMode?: string;
   selfServiceOpenDate?: string;
@@ -145,12 +148,34 @@ export const MyShiftsPage: React.FC = () => {
             .order('date', { ascending: true });
 
         if (eventsData) {
+            // Bygg team_id → "Klubb · idrett · lag"-display-map for
+            // alle event-team_ids. Forelder med barn på flere lag
+            // trenger lag-merking for å vite hva som hører hvor.
+            // Klubb-oppslag via team_members → clubs (én klubb per
+            // team_id, verifisert 2026-06-09: 0 homonymer).
+            const eventTeamIds = Array.from(new Set(
+                (eventsData as any[]).map((e: any) => e.team_id).filter(Boolean)
+            )) as string[];
+            const clubByTeam = new Map<string, string>();
+            if (eventTeamIds.length > 0) {
+                const { data: clubLinks } = await supabase
+                    .from('team_members')
+                    .select('team_id, club:clubs(name)')
+                    .in('team_id', eventTeamIds);
+                for (const row of clubLinks || []) {
+                    const cn = (row as any).club?.name;
+                    if (cn && !clubByTeam.has(row.team_id)) clubByTeam.set(row.team_id, cn);
+                }
+            }
+
             const mappedEvents: Event[] = eventsData.map((e: any) => ({
                 id: e.id,
                 eventName: e.name,
                 date: e.date,
                 location: e.location,
                 sport: e.sport,
+                teamId: e.team_id,
+                teamDisplay: e.team_id ? displayTeamWithClub(clubByTeam.get(e.team_id) || null, e.team_id) : undefined,
                 assignmentMode: e.assignment_mode,
                 selfServiceOpenDate: e.self_service_open_date,
                 shifts: e.shifts.map((s: any) => {
@@ -492,9 +517,16 @@ export const MyShiftsPage: React.FC = () => {
 
                   {group.map((event: Event) => (
                     <div key={event.id} style={{ marginBottom: '24px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', background: '#e8f5ef', color: '#1a2e1f', padding: '8px 12px', borderRadius: '4px', display: 'inline-block' }}>
-                        📅 {new Date(event.date).toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}
-                      </h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0, background: '#e8f5ef', color: '#1a2e1f', padding: '8px 12px', borderRadius: '4px', display: 'inline-block' }}>
+                          📅 {new Date(event.date).toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        </h3>
+                        {event.teamDisplay && (
+                          <span style={{ fontSize: '12px', color: '#4a5e50', background: '#fff', padding: '4px 10px', borderRadius: '10px', border: '0.5px solid #dedddd' }}>
+                            {event.teamDisplay}
+                          </span>
+                        )}
+                      </div>
                       {activeTab === 'available' && !isSelfServiceOpen(event) && event.selfServiceOpenDate && (
                         <div style={{ padding: '10px 14px', background: '#fff8e6', borderRadius: '8px', border: '1px solid #fac775', marginBottom: '12px', fontSize: '13px', color: '#854f0b' }}>
                           🕐 Selvvalg av vakter åpner <strong>{formatOpenDate(event.selfServiceOpenDate)}</strong>. Du kan se vaktene, men ikke velge ennå.
