@@ -65,21 +65,33 @@ export const MySubstituteJobsPage: React.FC = () => {
         if (error) throw error;
 
         if (assignments) {
-            const formattedJobs: MyJob[] = assignments.map((a: any) => ({
-                assignmentId: a.id,
-                status: a.status,
-                shiftId: a.shift.id,
-                shiftName: a.shift.name,
-                startTime: a.shift.start_time?.slice(0, 5),
-                endTime: a.shift.end_time?.slice(0, 5),
-                eventId: a.shift.event.id,
-                eventName: a.shift.event.name,
-                date: a.shift.event.date,
-                location: a.shift.event.location || 'Sted ikke angitt'
-            }));
+            // Defensiv mapping: PostgREST returnerer shift=null hvis RLS
+            // nekter SELECT på shifts (eller event=null på events). Vi
+            // logger og hopper over slike rader istedenfor å krasje hele
+            // listen med TypeError.
+            const formattedJobs: MyJob[] = (assignments as any[])
+                .map((a: any) => {
+                    if (!a.shift || !a.shift.event) {
+                        console.warn('MySubstituteJobsPage: hopper over assignment med manglende shift/event-data', { assignmentId: a.id, shift: a.shift });
+                        return null;
+                    }
+                    return {
+                        assignmentId: a.id,
+                        status: a.status,
+                        shiftId: a.shift.id,
+                        shiftName: a.shift.name,
+                        startTime: a.shift.start_time?.slice(0, 5),
+                        endTime: a.shift.end_time?.slice(0, 5),
+                        eventId: a.shift.event.id,
+                        eventName: a.shift.event.name,
+                        date: a.shift.event.date,
+                        location: a.shift.event.location || 'Sted ikke angitt'
+                    };
+                })
+                .filter((j): j is MyJob => j !== null);
 
             formattedJobs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-            
+
             setMyJobs(formattedJobs);
         }
 
