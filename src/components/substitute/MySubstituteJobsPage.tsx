@@ -91,7 +91,7 @@ export const MySubstituteJobsPage: React.FC = () => {
 
         if (assignments) {
             const formattedJobs: MyJob[] = (assignments as any[])
-                .map((a: any) => {
+                .map((a: any): MyJob | null => {
                     if (!a.shift || !a.shift.event) {
                         console.warn('MySubstituteJobsPage: hopper over assignment med manglende shift/event-data', { assignmentId: a.id, shift: a.shift });
                         return null;
@@ -112,7 +112,7 @@ export const MySubstituteJobsPage: React.FC = () => {
                         fromFamilyName: req?.familyName || undefined,
                     };
                 })
-                .filter((j): j is MyJob => j !== null);
+                .filter((j: MyJob | null): j is MyJob => j !== null);
 
             formattedJobs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
