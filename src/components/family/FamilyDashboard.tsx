@@ -60,7 +60,7 @@ export const FamilyDashboard: React.FC = () => {
   const [currentFamily, setCurrentFamily] = useState<any>(null);
   const [displayName, setDisplayName] = useState('');
   const [sponsorsVisible, setSponsorsVisible] = useState(false);
-  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
+  const [chatOpen, setChatOpen] = useState<{ requestId: string; substituteId: string; otherName: string } | null>(null);
 
   const fam = useCurrentFamily();
 
@@ -546,15 +546,17 @@ export const FamilyDashboard: React.FC = () => {
                                         {shift.bidMessage && <div style={{ fontSize: '11px', color: '#854f0b' }}>"{shift.bidMessage}"</div>}
                                     </div>
                                     <div style={{ display: 'flex', gap: '6px' }}>
-                                        <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬</button>
+                                        {shift.bidSubstituteId && (
+                                          <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, substituteId: shift.bidSubstituteId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬</button>
+                                        )}
                                         <button onClick={() => handleAcceptBid(shift.substituteRequestId!, shift.bidFamilyId, shift.bidSubstituteId, shift.id, shift.bidAmount!)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
                                     </div>
                                 </div>
                             )}
-                            {shift.bidStatus === 'accepted' && shift.substituteRequestId && (
+                            {shift.bidStatus === 'accepted' && shift.substituteRequestId && shift.bidSubstituteId && (
                                 <div style={{ padding: '10px 16px', background: '#e8f5ef', borderBottom: '1px solid #b8dfc9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#2d6a4f' }}>Vikar bekreftet</div>
-                                    <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 14px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬 Chat med vikar</button>
+                                    <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, substituteId: shift.bidSubstituteId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 14px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬 Chat med vikar</button>
                                 </div>
                             )}
                             <div style={{ background: 'rgba(0,0,0,0.03)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -653,8 +655,8 @@ export const FamilyDashboard: React.FC = () => {
       {chatOpen && currentFamily && (
         <VikarChat
           requestId={chatOpen.requestId}
-          currentUserId={currentFamily.id}
-          currentUserName={displayName}
+          substituteId={chatOpen.substituteId}
+          myRole="family"
           otherName={chatOpen.otherName}
           onClose={() => setChatOpen(null)}
         />

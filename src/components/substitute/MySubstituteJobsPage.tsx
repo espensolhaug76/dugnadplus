@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { VikarChat } from './VikarChat';
 
 interface MyJob {
   assignmentId: string;
@@ -12,12 +13,16 @@ interface MyJob {
   date: string;
   location: string;
   status: string;
+  requestId?: string;
+  fromFamilyName?: string;
 }
 
 export const MySubstituteJobsPage: React.FC = () => {
   const [myJobs, setMyJobs] = useState<MyJob[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [currentSubstituteId, setCurrentSubstituteId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
 
   useEffect(() => {
     fetchMyJobs();
@@ -40,6 +45,7 @@ export const MySubstituteJobsPage: React.FC = () => {
             .maybeSingle();
 
         if (!sub) { setLoading(false); return; }
+        setCurrentSubstituteId(sub.id);
 
         const { data: assignments, error } = await supabase
             .from('assignments')
@@ -64,17 +70,33 @@ export const MySubstituteJobsPage: React.FC = () => {
 
         if (error) throw error;
 
+        // Hent tilhørende request-iD per shift slik at chat-knappen
+        // kan kobles til riktig tråd. Tråden = (request_id, sub.id).
+        // RLS lar vikar se requests via bid_substitute_id / target_substitute_id.
+        const shiftIds = (assignments || []).map((a: any) => a.shift?.id).filter(Boolean);
+        const requestByShift = new Map<string, { id: string; familyName: string | null }>();
+        if (shiftIds.length > 0) {
+            const { data: requests } = await supabase
+                .from('requests')
+                .select('id, shift_id, from_family_id, family:from_family_id(name)')
+                .in('shift_id', shiftIds)
+                .or(`bid_substitute_id.eq.${sub.id},target_substitute_id.eq.${sub.id}`);
+            for (const r of requests || []) {
+                requestByShift.set((r as any).shift_id, {
+                    id: (r as any).id,
+                    familyName: (r as any).family?.name || null,
+                });
+            }
+        }
+
         if (assignments) {
-            // Defensiv mapping: PostgREST returnerer shift=null hvis RLS
-            // nekter SELECT på shifts (eller event=null på events). Vi
-            // logger og hopper over slike rader istedenfor å krasje hele
-            // listen med TypeError.
             const formattedJobs: MyJob[] = (assignments as any[])
                 .map((a: any) => {
                     if (!a.shift || !a.shift.event) {
                         console.warn('MySubstituteJobsPage: hopper over assignment med manglende shift/event-data', { assignmentId: a.id, shift: a.shift });
                         return null;
                     }
+                    const req = requestByShift.get(a.shift.id);
                     return {
                         assignmentId: a.id,
                         status: a.status,
@@ -85,7 +107,9 @@ export const MySubstituteJobsPage: React.FC = () => {
                         eventId: a.shift.event.id,
                         eventName: a.shift.event.name,
                         date: a.shift.event.date,
-                        location: a.shift.event.location || 'Sted ikke angitt'
+                        location: a.shift.event.location || 'Sted ikke angitt',
+                        requestId: req?.id,
+                        fromFamilyName: req?.familyName || undefined,
                     };
                 })
                 .filter((j): j is MyJob => j !== null);
@@ -141,6 +165,16 @@ export const MySubstituteJobsPage: React.FC = () => {
                             <div style={{ fontSize: '14px', fontFamily: 'monospace', background: '#edf2f7', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
                                 ⏰ {job.startTime} - {job.endTime}
                             </div>
+                            {job.requestId && (
+                                <div style={{ marginTop: '12px' }}>
+                                    <button
+                                        onClick={() => setChatOpen({ requestId: job.requestId!, otherName: job.fromFamilyName || 'Familien' })}
+                                        style={{ fontSize: '13px', padding: '8px 16px', background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                        💬 Chat med familien
+                                    </button>
+                                </div>
+                            )}
                             <div style={{ marginTop: '16px', fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                                 Husk å avtale betaling direkte med familien som la ut vakten.
                             </div>
@@ -165,6 +199,16 @@ export const MySubstituteJobsPage: React.FC = () => {
           <div className="bottom-nav-icon">👤</div>Profil
         </button>
       </div>
+
+      {chatOpen && currentSubstituteId && (
+        <VikarChat
+          requestId={chatOpen.requestId}
+          substituteId={currentSubstituteId}
+          myRole="substitute"
+          otherName={chatOpen.otherName}
+          onClose={() => setChatOpen(null)}
+        />
+      )}
     </div>
   );
 };
