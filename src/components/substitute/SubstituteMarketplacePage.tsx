@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { VikarChat } from './VikarChat';
 
 // Hjelpefunksjoner
 const getInitials = (name: string) => {
@@ -154,6 +155,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [bidModal, setBidModal] = useState<any>(null);
   const [bidAmount, setBidAmount] = useState('200');
   const [bidMessage, setBidMessage] = useState('');
+  const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
 
   const sendBid = async () => {
     if (!bidModal || !currentSubstituteId) return;
@@ -201,10 +203,6 @@ export const SubstituteMarketplacePage: React.FC = () => {
     if (!currentSubstituteId) return alert('Du må være logget inn.');
     if (!confirm(`Vil du ta dette oppdraget?\n\nDu overtar ansvaret for vakten "${job.shiftName}".\nFamilien vil få beskjed.`)) return;
 
-    // Atomisk RPC (migration 20260609): låser request FOR UPDATE,
-    // sjekker is_active, INSERTer assignment + setter is_active=false
-    // i samme transaksjon. Forhindrer at to vikarer rekker å ta samme
-    // vakt mellom de gamle INSERT- og UPDATE-stegene.
     const { data: result, error } = await supabase.rpc('take_substitute_request', {
       p_request_id: job.requestId
     });
@@ -329,9 +327,25 @@ export const SubstituteMarketplacePage: React.FC = () => {
 
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 {job.bidStatus === 'pending' && job.bidSubstituteId === currentSubstituteId ? (
-                                    <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.bidAmount} kr)</span>
+                                    <>
+                                        <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.bidAmount} kr)</span>
+                                        <button
+                                            onClick={() => setChatOpen({ requestId: job.requestId, otherName: job.requestingFamilyName })}
+                                            style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                                        >
+                                            💬 Chat
+                                        </button>
+                                    </>
                                 ) : job.bidStatus === 'accepted' && job.bidSubstituteId === currentSubstituteId ? (
-                                    <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', padding: '6px 12px', background: '#dcfce7', borderRadius: '8px' }}>✅ Bud akseptert!</span>
+                                    <>
+                                        <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', padding: '6px 12px', background: '#dcfce7', borderRadius: '8px' }}>✅ Bud akseptert!</span>
+                                        <button
+                                            onClick={() => setChatOpen({ requestId: job.requestId, otherName: job.requestingFamilyName })}
+                                            style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                                        >
+                                            💬 Chat
+                                        </button>
+                                    </>
                                 ) : (
                                     <>
                                         <button
@@ -386,6 +400,16 @@ export const SubstituteMarketplacePage: React.FC = () => {
         <button className="bottom-nav-item" onClick={() => window.location.href = '/my-substitute-jobs'}><div className="bottom-nav-icon">✅</div>Jobber</button>
         <button className="bottom-nav-item" onClick={() => window.location.href = '/substitute-profile'}><div className="bottom-nav-icon">👤</div>Profil</button>
       </div>
+
+      {chatOpen && currentSubstituteId && (
+        <VikarChat
+          requestId={chatOpen.requestId}
+          substituteId={currentSubstituteId}
+          myRole="substitute"
+          otherName={chatOpen.otherName}
+          onClose={() => setChatOpen(null)}
+        />
+      )}
     </div>
   );
 };
