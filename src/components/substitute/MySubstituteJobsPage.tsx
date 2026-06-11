@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { VikarChat } from './VikarChat';
+import { useVikarUnread, threadKey, unreadBadgeStyle } from '../../hooks/useVikarUnread';
 
 interface MyJob {
   assignmentId: string;
@@ -23,6 +24,7 @@ export const MySubstituteJobsPage: React.FC = () => {
   const [currentSubstituteId, setCurrentSubstituteId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
+  const unread = useVikarUnread(!!currentSubstituteId);
 
   useEffect(() => {
     fetchMyJobs();
@@ -72,15 +74,16 @@ export const MySubstituteJobsPage: React.FC = () => {
 
         // Hent tilhørende request-iD per shift slik at chat-knappen
         // kan kobles til riktig tråd. Tråden = (request_id, sub.id).
-        // RLS lar vikar se requests via bid_substitute_id / target_substitute_id.
+        // RLS (requests_select_substitute_own) begrenser til requests
+        // rettet mot vikaren (target_substitute_id) eller der vikaren
+        // har bud i substitute_bids — ingen client-side or-filter nødvendig.
         const shiftIds = (assignments || []).map((a: any) => a.shift?.id).filter(Boolean);
         const requestByShift = new Map<string, { id: string; familyName: string | null }>();
         if (shiftIds.length > 0) {
             const { data: requests } = await supabase
                 .from('requests')
                 .select('id, shift_id, from_family_id, family:from_family_id(name)')
-                .in('shift_id', shiftIds)
-                .or(`bid_substitute_id.eq.${sub.id},target_substitute_id.eq.${sub.id}`);
+                .in('shift_id', shiftIds);
             for (const r of requests || []) {
                 requestByShift.set((r as any).shift_id, {
                     id: (r as any).id,
@@ -172,6 +175,9 @@ export const MySubstituteJobsPage: React.FC = () => {
                                         style={{ fontSize: '13px', padding: '8px 16px', background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
                                     >
                                         💬 Chat med familien
+                                        {(unread.counts.get(threadKey(job.requestId!, currentSubstituteId)) || 0) > 0 && (
+                                            <span style={unreadBadgeStyle}>{unread.counts.get(threadKey(job.requestId!, currentSubstituteId))}</span>
+                                        )}
                                     </button>
                                 </div>
                             )}
@@ -206,7 +212,7 @@ export const MySubstituteJobsPage: React.FC = () => {
           substituteId={currentSubstituteId}
           myRole="substitute"
           otherName={chatOpen.otherName}
-          onClose={() => setChatOpen(null)}
+          onClose={() => { setChatOpen(null); void unread.refresh(); }}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { VikarChat } from './VikarChat';
+import { useVikarUnread, threadKey, unreadBadgeStyle } from '../../hooks/useVikarUnread';
 
 // Hjelpefunksjoner
 const getInitials = (name: string) => {
@@ -22,10 +23,10 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]);
   const [filterSport, setFilterSport] = useState('all');
 
-  // currentSubstituteId = substitutes.id. Skrives nå til de dedikerte
-  // substitute-kolonnene (Fase 5): bid_substitute_id i requests og
-  // substitute_id i assignments. CHECK-constraints i DB garanterer at
-  // family- og substitute-kolonnene er gjensidig utelukkende per rolle.
+  // currentSubstituteId = substitutes.id. Bud lever i substitute_bids
+  // (multi-bid-modellen, migration 20260612) — én pending-rad per
+  // (request, vikar). Assignments bruker fortsatt den dedikerte
+  // substitute_id-kolonnen (Fase 5).
   const [currentSubstituteId, setCurrentSubstituteId] = useState('');
   const [currentMunicipality, setCurrentMunicipality] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,6 +95,22 @@ export const SubstituteMarketplacePage: React.FC = () => {
         });
         if (error) throw error;
 
+        // Egne pending-bud fra substitute_bids (multi-bid-modellen).
+        // RLS-policy substitute_bids_select_substitute gir kun egne
+        // rader; eq-filteret er belte-og-bukser. Aksepterte bud vises
+        // ikke her — da lukkes requesten og forsvinner fra lista
+        // (vakta ligger i stedet under «Mine oppdrag»).
+        const { data: myBids, error: bidsError } = await supabase
+            .from('substitute_bids')
+            .select('id, request_id, amount, message')
+            .eq('substitute_id', substituteId)
+            .eq('status', 'pending');
+        if (bidsError) throw bidsError;
+        const bidByRequest = new Map<string, { id: string; amount: number; message: string | null }>();
+        for (const b of myBids || []) {
+            bidByRequest.set(b.request_id, { id: b.id, amount: b.amount, message: b.message });
+        }
+
         // RPC returnerer alle aktive substitute-requests i (evt.) kommunen,
         // også de med target_family_id satt til andre vikarer. Vi
         // filtrerer client-side til åpne + de rettet mot oss.
@@ -135,10 +152,9 @@ export const SubstituteMarketplacePage: React.FC = () => {
                     isDirectOffer: isForMe,
                     isUrgent,
                     duration,
-                    bidAmount: row.bid_amount,
-                    bidMessage: row.bid_message,
-                    bidSubstituteId: row.bid_substitute_id,
-                    bidStatus: row.bid_status || 'none'
+                    // Mitt eget pending-bud på denne requesten (om noe).
+                    // Andre vikarers bud er ikke synlige for meg (B1).
+                    myBid: bidByRequest.get(row.request_id) || null
                 };
             })
             .filter(Boolean);
@@ -156,6 +172,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
   const [bidAmount, setBidAmount] = useState('200');
   const [bidMessage, setBidMessage] = useState('');
   const [chatOpen, setChatOpen] = useState<{ requestId: string; otherName: string } | null>(null);
+  const unread = useVikarUnread(!!currentSubstituteId);
 
   const sendBid = async () => {
     if (!bidModal || !currentSubstituteId) return;
@@ -163,12 +180,12 @@ export const SubstituteMarketplacePage: React.FC = () => {
     if (amount <= 0) { alert('Sett en pris.'); return; }
     if (amount > 500) { alert('Makspris er 500 kr per vakt.'); return; }
 
-    // Atomisk RPC (migration 20260609_place_and_accept_substitute_bid):
-    // bypasser RLS via SECURITY DEFINER siden vikar ikke har direkte
-    // SELECT-tilgang til open requests (kun via list_open_substitute_jobs).
-    // RPC validerer caller er vikar, request er aktiv, og skriver budet
-    // atomisk innenfor FOR UPDATE-lås.
-    const { data: result, error } = await supabase.rpc('place_substitute_bid', {
+    // Atomisk RPC (migration 20260612_multi_bid_02_rpcs): INSERTer rad
+    // i substitute_bids innenfor FOR UPDATE-lås på requesten. Hver
+    // vikar kan ha ett pending-bud per vakt — flere vikarer kan by
+    // samtidig. Feil signaliseres som exceptions med norske meldinger
+    // (f.eks. «Du har allerede et aktivt bud på denne vakta.»).
+    const { error } = await supabase.rpc('place_substitute_bid', {
       p_request_id: bidModal.requestId,
       p_amount: amount,
       p_message: bidMessage || null
@@ -176,26 +193,27 @@ export const SubstituteMarketplacePage: React.FC = () => {
 
     if (error) {
       alert('Kunne ikke sende bud: ' + error.message);
+      fetchMarketplaceData(currentSubstituteId, currentMunicipality);
       return;
     }
 
-    if (result === 'ok') {
-      setBidModal(null);
-      setBidAmount('200');
-      setBidMessage('');
-      alert('✅ Bud sendt! Familien kan nå se ditt tilbud.');
-    } else if (result === 'already_taken') {
-      alert('Vakta er allerede tatt.');
-    } else if (result === 'not_substitute') {
-      alert('Du må være registrert som vikar.');
-    } else if (result === 'not_found') {
-      alert('Fant ikke vakten lenger.');
-    } else if (result === 'invalid_amount') {
-      alert('Ugyldig beløp.');
-    } else {
-      alert('Kunne ikke sende bud: ' + result);
-    }
+    setBidModal(null);
+    setBidAmount('200');
+    setBidMessage('');
+    alert('✅ Bud sendt! Familien kan nå se ditt tilbud.');
+    fetchMarketplaceData(currentSubstituteId, currentMunicipality);
+  };
 
+  const withdrawBid = async (bidId: string) => {
+    if (!confirm('Vil du trekke budet ditt?')) return;
+
+    // withdraw_bid (migration 20260612_multi_bid_02_rpcs): setter
+    // status='withdrawn' på eget pending-bud. Eierskap og status
+    // valideres server-side.
+    const { error } = await supabase.rpc('withdraw_bid', { p_bid_id: bidId });
+    if (error) {
+      alert('Kunne ikke trekke budet: ' + error.message);
+    }
     fetchMarketplaceData(currentSubstituteId, currentMunicipality);
   };
 
@@ -295,25 +313,24 @@ export const SubstituteMarketplacePage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                {job.bidStatus === 'pending' && job.bidSubstituteId === currentSubstituteId ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                {job.myBid ? (
                                     <>
-                                        <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.bidAmount} kr)</span>
+                                        <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: '600', padding: '6px 12px', background: '#fef3c7', borderRadius: '8px' }}>⏳ Bud sendt ({job.myBid.amount} kr)</span>
                                         <button
                                             onClick={() => setChatOpen({ requestId: job.requestId, otherName: job.requestingFamilyName })}
                                             style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
                                         >
                                             💬 Chat
+                                            {(unread.counts.get(threadKey(job.requestId, currentSubstituteId)) || 0) > 0 && (
+                                                <span style={unreadBadgeStyle}>{unread.counts.get(threadKey(job.requestId, currentSubstituteId))}</span>
+                                            )}
                                         </button>
-                                    </>
-                                ) : job.bidStatus === 'accepted' && job.bidSubstituteId === currentSubstituteId ? (
-                                    <>
-                                        <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', padding: '6px 12px', background: '#dcfce7', borderRadius: '8px' }}>✅ Bud akseptert!</span>
                                         <button
-                                            onClick={() => setChatOpen({ requestId: job.requestId, otherName: job.requestingFamilyName })}
-                                            style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                                            onClick={() => withdrawBid(job.myBid.id)}
+                                            style={{ background: 'var(--card-bg, white)', color: '#dc2626', border: '1.5px solid #dc2626', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
                                         >
-                                            💬 Chat
+                                            Trekk bud
                                         </button>
                                     </>
                                 ) : (
@@ -369,7 +386,7 @@ export const SubstituteMarketplacePage: React.FC = () => {
           substituteId={currentSubstituteId}
           myRole="substitute"
           otherName={chatOpen.otherName}
-          onClose={() => setChatOpen(null)}
+          onClose={() => { setChatOpen(null); void unread.refresh(); }}
         />
       )}
     </div>

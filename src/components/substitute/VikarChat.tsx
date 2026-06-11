@@ -39,6 +39,9 @@ export const VikarChat: React.FC<VikarChatProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Antall meldinger sist gang vi markerte tråden som lest. -1 →
+  // marker også ved åpning av tom tråd (nullstiller badge uansett).
+  const lastMarkedCountRef = useRef(-1);
 
   useEffect(() => {
     void fetchMessages();
@@ -61,7 +64,20 @@ export const VikarChat: React.FC<VikarChatProps> = ({
       return;
     }
     setLoadError(null);
-    setMessages((data || []) as Message[]);
+    const msgs = (data || []) as Message[];
+    setMessages(msgs);
+
+    // Marker tråden som lest når chatten er åpen — ved åpning og hver
+    // gang nye meldinger kommer inn mens den står oppe. RPC er en
+    // idempotent upsert av last_read_at (migration 20260612_chat_reads_05).
+    if (msgs.length !== lastMarkedCountRef.current) {
+      lastMarkedCountRef.current = msgs.length;
+      const { error: markError } = await supabase.rpc('mark_thread_read', {
+        p_request_id: requestId,
+        p_substitute_id: substituteId,
+      });
+      if (markError) console.warn('mark_thread_read feilet:', markError.message);
+    }
   };
 
   const sendMessage = async () => {

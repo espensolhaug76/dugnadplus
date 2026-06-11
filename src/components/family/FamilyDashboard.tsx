@@ -4,6 +4,7 @@ import { VikarChat } from '../substitute/VikarChat';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 import { GuideButton } from '../../utils/guides/GuideButton';
 import { displayTeamWithClub } from '../../utils/teamSlug';
+import { useVikarUnread, threadKey, unreadBadgeStyle } from '../../hooks/useVikarUnread';
 
 interface SwapProposal {
   id: string;
@@ -13,6 +14,16 @@ interface SwapProposal {
   type: 'swap' | 'offer';
   shiftId: string;
   fromFamilyId: string;
+}
+
+// Vikarbud fra substitute_bids (multi-bid-modellen, migration 20260612).
+// Familien ser alle pending-bud per vakt og velger blant dem.
+interface VikarBid {
+  id: string;
+  requestId: string;
+  substituteId: string;
+  amount: number;
+  message: string | null;
 }
 
 interface Shift {
@@ -31,13 +42,10 @@ interface Shift {
   isConfirmed: boolean;
   swapRequestId?: string;
   substituteRequestId?: string;
-  bidAmount?: number;
-  bidMessage?: string;
-  // Polymorf bud-aktør (Fase 5): nøyaktig én av disse er satt per aktivt bud.
-  // Familier byr på swap (bidFamilyId), vikarer byr på substitute (bidSubstituteId).
-  bidFamilyId?: string;
-  bidSubstituteId?: string;
-  bidStatus?: string;
+  pendingBids: VikarBid[];
+  // Akseptert bud — requesten er da lukket (is_active=false), men
+  // chatten med den valgte vikaren skal fortsatt være tilgjengelig.
+  acceptedBid?: VikarBid;
   description?: string;
 }
 
@@ -63,6 +71,7 @@ export const FamilyDashboard: React.FC = () => {
   const [chatOpen, setChatOpen] = useState<{ requestId: string; substituteId: string; otherName: string } | null>(null);
 
   const fam = useCurrentFamily();
+  const unread = useVikarUnread(!!fam.familyId);
 
   useEffect(() => {
     if (fam.loading) return;
@@ -177,12 +186,41 @@ export const FamilyDashboard: React.FC = () => {
           teamDisplay: teamDisplayFor(e.team_id),
       })));
 
-      // Hent requests (for swap status)
+      // Hent requests (for swap-status + vikarbud). Også inaktive:
+      // en akseptert vikar-request lukkes (is_active=false), men
+      // chatten med den valgte vikaren skal fortsatt nås herfra.
       const { data: myRequests } = await supabase
         .from('requests')
         .select('*')
-        .eq('from_family_id', family.id)
-        .eq('is_active', true);
+        .eq('from_family_id', family.id);
+
+      // Vikarbud per request fra substitute_bids (multi-bid).
+      // RLS-policy substitute_bids_select_family gir kun bud på
+      // requests familien selv eier.
+      const substituteReqIds = (myRequests || [])
+        .filter((r: any) => r.type === 'substitute')
+        .map((r: any) => r.id);
+      const bidsByRequest = new Map<string, { pending: VikarBid[]; accepted?: VikarBid }>();
+      if (substituteReqIds.length > 0) {
+        const { data: bids } = await supabase
+          .from('substitute_bids')
+          .select('id, request_id, substitute_id, amount, message, status')
+          .in('request_id', substituteReqIds)
+          .in('status', ['pending', 'accepted']);
+        for (const b of bids || []) {
+          const entry = bidsByRequest.get(b.request_id) || { pending: [] };
+          const bid: VikarBid = {
+            id: b.id,
+            requestId: b.request_id,
+            substituteId: b.substitute_id,
+            amount: b.amount,
+            message: b.message,
+          };
+          if (b.status === 'accepted') entry.accepted = bid;
+          else entry.pending.push(bid);
+          bidsByRequest.set(b.request_id, entry);
+        }
+      }
 
       // Hent innkommende forslag
       const { data: incomingReqs } = await supabase
@@ -232,7 +270,12 @@ export const FamilyDashboard: React.FC = () => {
 
       // Behandle mine vakter
       const formattedShifts = assignments?.map((a: any) => {
-        const activeReq = myRequests?.find((r: any) => r.shift_id === a.shift.id);
+        const activeReq = myRequests?.find((r: any) => r.shift_id === a.shift.id && r.is_active);
+        // Akseptert bud kan ligge på en lukket request for samme vakt.
+        const acceptedBid = (myRequests || [])
+          .filter((r: any) => r.shift_id === a.shift.id && r.type === 'substitute')
+          .map((r: any) => bidsByRequest.get(r.id)?.accepted)
+          .find(Boolean);
         return {
             id: a.shift.id,
             assignmentId: a.id,
@@ -250,11 +293,10 @@ export const FamilyDashboard: React.FC = () => {
             isConfirmed: a.status === 'confirmed',
             swapRequestId: activeReq?.type === 'swap' ? activeReq.id : undefined,
             substituteRequestId: activeReq?.type === 'substitute' ? activeReq.id : undefined,
-            bidAmount: activeReq?.bid_amount,
-            bidMessage: activeReq?.bid_message,
-            bidFamilyId: activeReq?.bid_family_id,
-            bidSubstituteId: activeReq?.bid_substitute_id,
-            bidStatus: activeReq?.bid_status
+            pendingBids: activeReq?.type === 'substitute'
+              ? (bidsByRequest.get(activeReq.id)?.pending || [])
+              : [],
+            acceptedBid
         };
       }) || [];
 
@@ -322,45 +364,23 @@ export const FamilyDashboard: React.FC = () => {
     else { if (!confirm('Søke etter vikar?')) return; await supabase.from('requests').insert({ shift_id: shiftId, from_family_id: currentFamily.id, type: 'substitute', is_active: true }); }
     fetchCloudData();
   };
-  const handleAcceptBid = async (
-    requestId: string,
-    _bidFamilyId: string | undefined,
-    _bidSubstituteId: string | undefined,
-    _shiftId: string,
-    amount: number
-  ) => {
-    if (!confirm(`Akseptere budet på ${amount} kr?`)) return;
+  const handleAcceptBid = async (bid: VikarBid) => {
+    if (!confirm(`Akseptere budet på ${bid.amount} kr?`)) return;
 
-    // Atomisk RPC (migration 20260609_place_and_accept_substitute_bid):
-    // bypasser RLS siden familie ikke har INSERT-rett på assignments
-    // med substitute_id (kun coordinator eller vikar selv kan).
-    // RPC validerer eierskap (from_family_id = caller), INSERTer
-    // assignment med riktig actor-kolonne, og oppdaterer bud-status
-    // atomisk.
-    const { data: result, error } = await supabase.rpc('accept_substitute_bid', {
-      p_request_id: requestId
+    // Atomisk RPC (migration 20260612_multi_bid_02_rpcs): aksepterer
+    // ETT spesifikt bud. Server-side skjer alt i samme transaksjon:
+    // valgt bud → accepted, andre pending-bud på vakta → rejected,
+    // assignment opprettes, requesten lukkes, og vikarens øvrige
+    // pending-bud med tidskollisjon trekkes (withdrawn_conflict).
+    // Feil signaliseres som exceptions med norske meldinger.
+    const { error } = await supabase.rpc('accept_substitute_bid', {
+      p_bid_id: bid.id
     });
 
     if (error) {
       alert('Kunne ikke akseptere bud: ' + error.message);
-      fetchCloudData();
-      return;
-    }
-
-    if (result === 'ok') {
-      alert(`✅ Bud akseptert! Betal ${amount} kr via Vipps.`);
-    } else if (result === 'no_bid') {
-      alert('Ingen aktivt bud på denne vakta.');
-    } else if (result === 'already_handled') {
-      alert('Budet er allerede håndtert.');
-    } else if (result === 'not_owner') {
-      alert('Du eier ikke denne vakta.');
-    } else if (result === 'not_family') {
-      alert('Du må være registrert som familie.');
-    } else if (result === 'not_found') {
-      alert('Fant ikke vakten lenger.');
     } else {
-      alert('Kunne ikke akseptere: ' + result);
+      alert(`✅ Bud akseptert! Betal ${bid.amount} kr via Vipps.`);
     }
 
     fetchCloudData();
@@ -539,24 +559,34 @@ export const FamilyDashboard: React.FC = () => {
                                     {isSubstituteRequested ? '📢 Søker vikar' : '🔄 På byttebørsen'}
                                 </div>
                             )}
-                            {shift.bidStatus === 'pending' && shift.bidAmount && (
-                                <div style={{ padding: '10px 16px', background: '#fff8e6', borderBottom: '1px solid #fac775', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            {shift.pendingBids.map((bid, bidIdx) => (
+                                <div key={bid.id} style={{ padding: '10px 16px', background: '#fff8e6', borderBottom: '1px solid #fac775', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                     <div>
-                                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#854f0b' }}>💰 Bud mottatt: {shift.bidAmount} kr</div>
-                                        {shift.bidMessage && <div style={{ fontSize: '11px', color: '#854f0b' }}>"{shift.bidMessage}"</div>}
+                                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#854f0b' }}>
+                                            💰 Bud {shift.pendingBids.length > 1 ? `${bidIdx + 1} av ${shift.pendingBids.length}` : 'mottatt'}: {bid.amount} kr
+                                        </div>
+                                        {bid.message && <div style={{ fontSize: '11px', color: '#854f0b' }}>"{bid.message}"</div>}
                                     </div>
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                        {shift.bidSubstituteId && (
-                                          <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, substituteId: shift.bidSubstituteId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬</button>
-                                        )}
-                                        <button onClick={() => handleAcceptBid(shift.substituteRequestId!, shift.bidFamilyId, shift.bidSubstituteId, shift.id, shift.bidAmount!)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
+                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                        <button onClick={() => setChatOpen({ requestId: bid.requestId, substituteId: bid.substituteId, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 12px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>
+                                            💬
+                                            {(unread.counts.get(threadKey(bid.requestId, bid.substituteId)) || 0) > 0 && (
+                                                <span style={unreadBadgeStyle}>{unread.counts.get(threadKey(bid.requestId, bid.substituteId))}</span>
+                                            )}
+                                        </button>
+                                        <button onClick={() => handleAcceptBid(bid)} style={{ fontSize: '12px', padding: '6px 14px', background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Aksepter</button>
                                     </div>
                                 </div>
-                            )}
-                            {shift.bidStatus === 'accepted' && shift.substituteRequestId && shift.bidSubstituteId && (
+                            ))}
+                            {shift.acceptedBid && (
                                 <div style={{ padding: '10px 16px', background: '#e8f5ef', borderBottom: '1px solid #b8dfc9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#2d6a4f' }}>Vikar bekreftet</div>
-                                    <button onClick={() => setChatOpen({ requestId: shift.substituteRequestId!, substituteId: shift.bidSubstituteId!, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 14px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>💬 Chat med vikar</button>
+                                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#2d6a4f' }}>Vikar bekreftet ({shift.acceptedBid.amount} kr)</div>
+                                    <button onClick={() => setChatOpen({ requestId: shift.acceptedBid!.requestId, substituteId: shift.acceptedBid!.substituteId, otherName: 'Vikar' })} style={{ fontSize: '12px', padding: '6px 14px', background: '#fff', border: '0.5px solid #dedddd', borderRadius: '8px', cursor: 'pointer', color: '#1a2e1f' }}>
+                                        💬 Chat med vikar
+                                        {(unread.counts.get(threadKey(shift.acceptedBid.requestId, shift.acceptedBid.substituteId)) || 0) > 0 && (
+                                            <span style={unreadBadgeStyle}>{unread.counts.get(threadKey(shift.acceptedBid.requestId, shift.acceptedBid.substituteId))}</span>
+                                        )}
+                                    </button>
                                 </div>
                             )}
                             <div style={{ background: 'rgba(0,0,0,0.03)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -658,7 +688,7 @@ export const FamilyDashboard: React.FC = () => {
           substituteId={chatOpen.substituteId}
           myRole="family"
           otherName={chatOpen.otherName}
-          onClose={() => setChatOpen(null)}
+          onClose={() => { setChatOpen(null); void unread.refresh(); }}
         />
       )}
     </div>

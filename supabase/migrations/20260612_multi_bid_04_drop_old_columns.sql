@@ -2,8 +2,12 @@
 -- KJØRES SIST — etter verifisert prod-test av substitute_bids
 -- =============================================================
 -- Dato: 2026-06-12
--- Avhengighet: 20260612_multi_bid_01..03 + verifisert at frontend
---              har gått over til substitute_bids som sannhetskilde.
+-- Avhengighet: 20260612_multi_bid_01..03 + 06 (legacy RPCer/policies)
+--              + verifisert at frontend har gått over til
+--              substitute_bids som sannhetskilde.
+--
+-- VIKTIG: 06 MÅ kjøres før denne — fire RLS-policies på requests
+-- refererte bid_*-kolonnene og ville blokkert DROP COLUMN her.
 --
 -- Dropper bid_*-kolonnene på requests siden substitute_bids er
 -- kanonisk for vikarbud nå. bid_family_id og requests_bid_actor_mutex
@@ -13,7 +17,7 @@
 -- auksjon senere.
 --
 -- KJØR DENNE BARE NÅR:
---   1. Migrasjon 01-03 + 05 er kjørt og verifisert
+--   1. Migrasjon 01-03 + 05 + 06 er kjørt og verifisert
 --   2. Frontend-deploy med substitute_bids er live
 --   3. Manuell test av place/accept/withdraw og chat har vært grønn
 -- =============================================================
