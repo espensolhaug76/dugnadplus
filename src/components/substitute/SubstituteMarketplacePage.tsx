@@ -199,36 +199,6 @@ export const SubstituteMarketplacePage: React.FC = () => {
     fetchMarketplaceData(currentSubstituteId, currentMunicipality);
   };
 
-  const acceptJob = async (job: any) => {
-    if (!currentSubstituteId) return alert('Du må være logget inn.');
-    if (!confirm(`Vil du ta dette oppdraget?\n\nDu overtar ansvaret for vakten "${job.shiftName}".\nFamilien vil få beskjed.`)) return;
-
-    const { data: result, error } = await supabase.rpc('take_substitute_request', {
-      p_request_id: job.requestId
-    });
-
-    if (error) {
-      console.error('Feil ved aksept:', error);
-      alert('Noe gikk galt: ' + error.message);
-      fetchMarketplaceData(currentSubstituteId, currentMunicipality);
-      return;
-    }
-
-    if (result === 'ok') {
-      alert('✅ Oppdrag akseptert! Vakten ligger nå under "Mine jobber".');
-    } else if (result === 'already_taken') {
-      alert('En annen vikar rakk å ta vakta først. Vi henter inn børsen på nytt.');
-    } else if (result === 'not_substitute') {
-      alert('Du må være registrert som vikar.');
-    } else if (result === 'not_found') {
-      alert('Fant ikke vakten lenger.');
-    } else {
-      alert('Kunne ikke ta vakta: ' + result);
-    }
-
-    fetchMarketplaceData(currentSubstituteId, currentMunicipality);
-  };
-
   if (loading) return <div style={{padding: '40px', textAlign:'center'}}>Laster markedet... ☁️</div>;
 
   return (
@@ -347,20 +317,12 @@ export const SubstituteMarketplacePage: React.FC = () => {
                                         </button>
                                     </>
                                 ) : (
-                                    <>
-                                        <button
-                                            onClick={() => { setBidModal(job); setBidAmount(String(Math.min(500, Math.round((job.duration / 60) * 200)))); }}
-                                            style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
-                                        >
-                                            💰 Send bud
-                                        </button>
-                                        <button
-                                            onClick={() => acceptJob(job)}
-                                            style={{ background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
-                                        >
-                                            Ta direkte
-                                        </button>
-                                    </>
+                                    <button
+                                        onClick={() => { setBidModal(job); setBidAmount(String(Math.min(500, Math.round((job.duration / 60) * 200)))); }}
+                                        style={{ background: 'var(--card-bg, white)', color: 'var(--color-primary)', border: '1.5px solid var(--color-primary)', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                        💰 Send bud
+                                    </button>
                                 )}
                             </div>
                         </div>
