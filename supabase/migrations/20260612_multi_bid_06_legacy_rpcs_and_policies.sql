@@ -9,7 +9,8 @@
 -- Migrasjon 04 dropper requests.bid_*-kolonnene, men fire RLS-
 -- policies på requests og to RPCer refererer dem fortsatt:
 --
---   policies: requests_select_family, requests_update_family,
+--   policies: requests_insert_authenticated (WITH CHECK),
+--             requests_select_family, requests_update_family,
 --             requests_select_substitute_own,
 --             requests_update_substitute_bid
 --   RPCer:    list_open_substitute_jobs, get_substitute_public_profile
@@ -58,6 +59,16 @@ COMMENT ON FUNCTION public.substitute_bid_request_ids() IS
 -- ------------------------------------------------------------
 -- 2. requests-policies uten bid_*-kolonner
 -- ------------------------------------------------------------
+
+-- Familie oppretter requests med seg selv som avsender. Den gamle
+-- bid_family_id-grenen tillot INSERT av familie-swap-bud direkte på
+-- raden — den modellen forsvinner med kolonnene i 04, og ingen
+-- frontend-flyt bruker den (swap/vikar-søk setter from_family_id).
+DROP POLICY IF EXISTS requests_insert_authenticated ON public.requests;
+CREATE POLICY requests_insert_authenticated ON public.requests
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (from_family_id = auth_user_family_id());
 
 DROP POLICY IF EXISTS requests_select_family ON public.requests;
 CREATE POLICY requests_select_family ON public.requests
@@ -248,14 +259,18 @@ DECLARE
   v_def text;
   v_bad int;
 BEGIN
-  -- Ingen requests-policy skal lenger referere bid_*-kolonner
+  -- Ingen requests-policy skal lenger referere bid_*-kolonnene som
+  -- droppes i 04. Match på eksakte kolonnenavn — generisk '%bid_%'
+  -- ga falsk positiv på helper-navnet substitute_bid_request_ids().
   SELECT count(*) INTO v_bad
   FROM pg_policy
   WHERE polrelid = 'public.requests'::regclass
-    AND (pg_get_expr(polqual, polrelid) ILIKE '%bid_%'
-         OR pg_get_expr(polwithcheck, polrelid) ILIKE '%bid_%');
+    AND (
+      COALESCE(pg_get_expr(polqual, polrelid), '')
+        || ' ' || COALESCE(pg_get_expr(polwithcheck, polrelid), '')
+    ) ~* '\m(bid_substitute_id|bid_family_id|bid_amount|bid_message|bid_status)\M';
   IF v_bad > 0 THEN
-    RAISE EXCEPTION '% requests-policies refererer fortsatt bid_*', v_bad;
+    RAISE EXCEPTION '% requests-policies refererer fortsatt bid_*-kolonner', v_bad;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'requests_update_substitute_decline') THEN
