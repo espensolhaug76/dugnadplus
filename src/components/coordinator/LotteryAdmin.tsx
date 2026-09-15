@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { csvRow, sanitizeCsvFilename } from '../../utils/csvSafe';
 import { validateRequired, scrollToFirstError, ERROR_COLOR, type FormErrors } from '../../utils/formValidation';
+import { countsAsSold, isDeeplinkSale } from '../../utils/lotterySales';
 
 const errorBorder = (hasError: boolean): React.CSSProperties =>
   hasError ? { border: `1px solid ${ERROR_COLOR}` } : {};
@@ -83,19 +84,20 @@ interface Transaction {
   payment_method: string;
   sellerName: string;
   status: string;
+  vipps_reference: string | null;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const VALIDATE_FN_URL = `${SUPABASE_URL}/functions/v1/vipps-validate-merchant`;
 
-// Statusene som teller som "lodd er solgt og betalt".
-// AUTHORIZED inkluderes fordi auto-capture er fire-and-forget — hvis
-// captura feiler teknisk, beholder vi AUTHORIZED og må telle den.
-// 'cash' (kontantsalg) lagres uten Vipps-status; vi inkluderer alle
-// rader hvor payment_method='cash' uavhengig av status-feltet.
-const PAID_STATUSES = new Set(['AUTHORIZED', 'CAPTURED']);
-const isPaid = (s: any) => PAID_STATUSES.has(s.status) || s.payment_method === 'cash';
+// Telleregelen ligger i utils/lotterySales.ts og deles med MyLottery
+// og CampaignOverviewPage, slik at forelder og koordinator ser samme
+// tall. AUTHORIZED teller fordi auto-capture er fire-and-forget: hvis
+// captura feiler teknisk, blir raden stående AUTHORIZED.
+// MERK: alle spørringer under må selecte vipps_reference — uten det
+// ser ePayment-rader ut som deeplink-rader for countsAsSold.
+const isPaid = countsAsSold;
 const isPending = (s: any) =>
   s.status === 'CREATED' && s.payment_method !== 'cash' &&
   Date.now() - new Date(s.created_at).getTime() < 10 * 60 * 1000;
@@ -245,7 +247,7 @@ export const LotteryAdmin: React.FC = () => {
             // som "Venter".
             const { data: sellerSales } = await supabase
                 .from('lottery_sales')
-                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, status, seller_family_id, families(name, family_members(name, role))')
+                .select('id, created_at, buyer_name, buyer_phone, tickets, amount, payment_method, status, vipps_reference, seller_family_id, families(name, family_members(name, role))')
                 .eq('lottery_id', lotteryData.id)
                 .order('created_at', { ascending: false });
 
@@ -285,6 +287,7 @@ export const LotteryAdmin: React.FC = () => {
                         amount: s.amount,
                         payment_method: s.payment_method || 'vipps',
                         status: s.status || 'CREATED',
+                        vipps_reference: s.vipps_reference ?? null,
                         sellerName: sName,
                     });
                 });
@@ -349,7 +352,7 @@ export const LotteryAdmin: React.FC = () => {
         //    være med i trekningen.
         const { data: rawSales, error } = await supabase
             .from('lottery_sales')
-            .select('buyer_name, buyer_phone, tickets, status, payment_method')
+            .select('buyer_name, buyer_phone, tickets, status, payment_method, vipps_reference')
             .eq('lottery_id', lottery.id);
 
         if (error) throw error;
@@ -567,6 +570,48 @@ export const LotteryAdmin: React.FC = () => {
     alert(`💵 Kontantsalg registrert: ${cashTickets} lodd (${amount} kr)`);
   };
 
+  // Fjern ett enkelt salg. Bruksområdet er avstemming: kjøperen
+  // trykket "Betal", men fullførte aldri i Vipps, så raden blir
+  // liggende og forstyrrer oversikten.
+  //
+  // Tilgang: /lottery-admin ligger bak CoordinatorLayout, som slipper
+  // inn kun coordinator/club_admin. Serverside håndheves det samme av
+  // lottery_sales_delete_coordinator (step_f), som krever rolle i det
+  // laget lotteriet tilhører.
+  const deleteSale = async (tx: Transaction) => {
+    if (!lottery) return;
+
+    const counted = isPaid(tx);
+    const drawn = lottery.prizes.some(p => p.winner_name);
+
+    let msg = 'Fjerne dette salget permanent?\n\n'
+      + `${tx.buyer_name}${tx.buyer_phone ? ` (${tx.buyer_phone})` : ''}\n`
+      + `${tx.tickets} lodd — ${tx.amount} kr\n`
+      + `Selger: ${tx.sellerName}`;
+    if (counted) msg += '\n\n⚠️ Salget teller som betalt og trekkes fra totalen.';
+    if (counted && drawn) msg += '\n⚠️ Premier er allerede trukket — trekningsgrunnlaget vil ikke lenger stemme med salgslista.';
+    msg += '\n\nHandlingen kan ikke angres.';
+
+    if (!confirm(msg)) return;
+
+    // .select() så vi ser om raden faktisk ble truffet: blokkerer RLS
+    // slettingen, returnerer Supabase 0 rader uten å sette error.
+    const { data, error } = await supabase
+      .from('lottery_sales')
+      .delete()
+      .eq('id', tx.id)
+      .select('id');
+
+    if (error) { alert('Kunne ikke fjerne salget: ' + error.message); return; }
+    if (!data || data.length === 0) {
+      alert('Salget ble ikke fjernet. Enten mangler du rettigheter til dette lotteriet, eller så er raden allerede slettet.');
+      fetchActiveLottery();
+      return;
+    }
+
+    fetchActiveLottery();
+  };
+
   const exportBuyersCsv = () => {
     // CSV-injection-beskyttelse: buyers-raden kommer fra lottery_sales, som
     // er skrivbar fra den ANONYME LotteryShop-flyten (Vipps deep link, ingen
@@ -592,7 +637,7 @@ export const LotteryAdmin: React.FC = () => {
 
   const fetchArchivedLotteries = async () => {
     const teamId = getActiveTeamId();
-    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, status, payment_method)').eq('is_active', false);
+    let query = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, status, payment_method, vipps_reference)').eq('is_active', false);
     if (teamId) query = query.eq('team_id', teamId);
     const { data } = await query.order('created_at', { ascending: false });
     if (data) {
@@ -1028,12 +1073,17 @@ export const LotteryAdmin: React.FC = () => {
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Betaling</th>
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Status</th>
                                         <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px' }}>Selger</th>
+                                        <th style={{ padding: '8px 6px', color: '#4a5e50', fontWeight: '600', fontSize: '11px', textAlign: 'right' }}>Handling</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredTx.map(tx => {
                                       const statusBadge = (() => {
                                         if (tx.payment_method === 'cash') return { label: 'Betalt', bg: '#e8f5ef', fg: '#2d6a4f' };
+                                        // Deeplink: teller som solgt, men Vipps har aldri
+                                        // bekreftet den. Egen etikett så koordinator ser
+                                        // hva som må avstemmes mot Vipps-kontoen.
+                                        if (isDeeplinkSale(tx)) return { label: 'Registrert', bg: '#fff8e6', fg: '#854f0b' };
                                         switch (tx.status) {
                                           case 'CAPTURED': return { label: 'Betalt', bg: '#e8f5ef', fg: '#2d6a4f' };
                                           case 'AUTHORIZED': return { label: 'Bekreftet', bg: '#fff8e6', fg: '#854f0b' };
@@ -1064,6 +1114,15 @@ export const LotteryAdmin: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td style={{ padding: '8px 6px', fontSize: '11px', color: '#6b7f70' }}>{tx.sellerName}</td>
+                                            <td style={{ padding: '8px 6px', textAlign: 'right' }}>
+                                                <button
+                                                    onClick={() => deleteSale(tx)}
+                                                    title="Fjern salget fra loddboka"
+                                                    style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: '1px solid #fecaca', background: '#fff5f5', color: '#ef4444', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                                >
+                                                    Fjern
+                                                </button>
+                                            </td>
                                         </tr>
                                       );
                                     })}

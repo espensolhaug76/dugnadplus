@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { countsAsSold } from '../../utils/lotterySales';
 
 interface CampaignItem {
   id: string;
@@ -107,12 +108,13 @@ export const CampaignOverviewPage: React.FC = () => {
 
     // --- LOTTERIES ---
     try {
-      let lq = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, created_at)');
+      let lq = supabase.from('lotteries').select('*, prizes(*), lottery_sales(tickets, amount, created_at, status, payment_method, vipps_reference)');
       if (teamId) lq = lq.eq('team_id', teamId);
       const { data: lotteries } = await lq;
       if (lotteries) {
         for (const l of lotteries) {
-          const sales = l.lottery_sales || [];
+          // Samme telleregel som LotteryAdmin og MyLottery.
+          const sales = (l.lottery_sales || []).filter(countsAsSold);
           const revenue = sales.reduce((s: number, r: any) => s + (r.amount || 0), 0);
           const totalSold = sales.reduce((s: number, r: any) => s + (r.tickets || 0), 0);
           const winnersDrawn = (l.prizes || []).filter((p: any) => p.winner_name).length;

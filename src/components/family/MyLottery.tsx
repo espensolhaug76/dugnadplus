@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useCurrentFamily } from '../../hooks/useCurrentFamily';
 import { displayTeamWithClub } from '../../utils/teamSlug';
+import { countsAsSold } from '../../utils/lotterySales';
 
 interface Prize {
   id: string;
@@ -107,14 +108,21 @@ export const MyLottery: React.FC = () => {
 
             // 4. Hent salgstall for denne familien
             if (familyId) {
+                // Samme telleregel som koordinatoren bruker i
+                // LotteryAdmin (utils/lotterySales.ts). Tidligere
+                // summerte denne ALLE rader, også avbrutte og
+                // mislykkede betalinger, så forelderen så et høyere
+                // tall enn koordinatoren for samme lotteri.
                 const { data: salesData } = await supabase
                     .from('lottery_sales')
-                    .select('tickets')
+                    .select('tickets, status, payment_method, vipps_reference')
                     .eq('lottery_id', lotteryData.id)
                     .eq('seller_family_id', familyId);
 
                 if (salesData) {
-                    const total = salesData.reduce((sum, sale) => sum + (sale.tickets || 0), 0);
+                    const total = salesData
+                        .filter(countsAsSold)
+                        .reduce((sum, sale) => sum + (sale.tickets || 0), 0);
                     setMySales(total);
                 }
             }

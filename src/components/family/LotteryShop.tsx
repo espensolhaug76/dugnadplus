@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
+// Betalingsmodus per lotteri. Kolonnen lotteries.payment_mode er
+// valgfri: mangler den (eller er NULL), kjører lotteriet deeplink.
+// ePayment krever altså et eksplisitt payment_mode='epayment'.
+type PaymentMode = 'deeplink' | 'epayment';
+
 interface Lottery {
   id: string;
   name: string;
@@ -9,6 +14,7 @@ interface Lottery {
   vippsNumber: string;
   prizes: any[];
   vippsValidationFailedAt: string | null;
+  paymentMode: PaymentMode;
 }
 
 const TICKET_PACKAGES = [
@@ -33,6 +39,12 @@ const TICKET_PACKAGES = [
 //                          Nødvendig fordi webhook-race kan gjøre at
 //                          en avbrutt betaling ser ut som CREATED i
 //                          hele polling-vinduet.
+//
+// Deeplink-modus (2026-09-15) bruker bare to av dem:
+//   shop                 — samme kjøpsskjema
+//   deeplink_registered  — raden er lagret, Vipps er åpnet. Vi får
+//                          aldri noe svar tilbake fra Vipps, så det
+//                          finnes ingen success/failed-tilstand her.
 type Phase =
   | 'shop'
   | 'initiating'
@@ -41,7 +53,8 @@ type Phase =
   | 'success'
   | 'cancelled'
   | 'failed'
-  | 'pending_confirmation';
+  | 'pending_confirmation'
+  | 'deeplink_registered';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -94,6 +107,9 @@ export const LotteryShop: React.FC = () => {
             ticketPrice: lotteryData.ticket_price,
             vippsNumber: lotteryData.vipps_number,
             vippsValidationFailedAt: lotteryData.vipps_validation_failed_at || null,
+            // Alt annet enn eksplisitt 'epayment' er deeplink — også
+            // NULL og en kolonne som ikke finnes i skjemaet ennå.
+            paymentMode: lotteryData.payment_mode === 'epayment' ? 'epayment' : 'deeplink',
             prizes: (lotteryData.prizes || []).sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0)),
           });
         }
@@ -209,7 +225,7 @@ export const LotteryShop: React.FC = () => {
     resetForNewPurchase();
   };
 
-  // Steg 1: kall vipps-initiate-payment, send brukeren til Vipps.
+  // Felles inngang: validerer skjemaet og ruter til riktig modus.
   const handlePurchase = async () => {
     if (!lottery) return;
     if (!buyerName.trim() || !buyerPhone.trim()) {
@@ -221,6 +237,82 @@ export const LotteryShop: React.FC = () => {
       alert('Mobilnummer må være 8 sifre.');
       return;
     }
+
+    if (lottery.paymentMode === 'deeplink') {
+      await startDeeplinkPurchase(phoneClean);
+      return;
+    }
+    await startEpaymentPurchase(phoneClean);
+  };
+
+  // === DEEPLINK-MODUS (standard) ===============================
+  // Vipps har ingen callback for deep links. Vi lagrer derfor raden
+  // FØR vi åpner appen, med vipps_reference NULL — det er den eneste
+  // måten salget havner i loddboka i det hele tatt. Konsekvensen er
+  // at raden er en registrering, ikke en bekreftet betaling:
+  // koordinator avstemmer mot Vipps-kontoen og kan fjerne rader som
+  // aldri ble betalt.
+  const startDeeplinkPurchase = async (phoneClean: string) => {
+    if (!lottery) return;
+
+    const totalAmount = ticketCount * lottery.ticketPrice;
+
+    // Defensiv validering: NaN/0/negativ amt gir Vipps-feil, og et
+    // lotteri uten Vipps-nummer gir forelderen ingen å betale til.
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      alert('Beløpet er ugyldig. Velg antall lodd og prøv igjen.');
+      return;
+    }
+    if (!lottery.vippsNumber) {
+      setErrorMessage('Lotteriet mangler Vipps-nummer. Klubben må fylle det inn før du kan betale.');
+      setPhase('failed');
+      return;
+    }
+
+    setErrorMessage('');
+    setResultBuyer(buyerName.trim());
+    setPhase('initiating');
+
+    const { error } = await supabase.from('lottery_sales').insert({
+      lottery_id: lottery.id,
+      seller_family_id: sellerId || null,
+      buyer_name: buyerName.trim(),
+      buyer_phone: phoneClean,
+      tickets: ticketCount,
+      amount: totalAmount,
+      payment_method: 'vipps',
+      status: 'CREATED',
+      // vipps_reference utelates bevisst → NULL. Det er skillet
+      // mellom deeplink-rader og ePayment-rader i telleregelen
+      // (se utils/lotterySales.ts).
+    });
+
+    if (error) {
+      console.error('[deeplink] insert feilet', error);
+      setErrorMessage('Vi fikk ikke registrert loddene. Prøv igjen, eller kontakt selgeren.');
+      setPhase('failed');
+      return;
+    }
+
+    setResultTickets(ticketCount);
+    setResultAmount(totalAmount);
+    setPhase('deeplink_registered');
+
+    // Deep link i samme format som kiosken brukte i prod:
+    // vipps://?amt=<kr>&msg=<tekst>. Formatet har ingen parameter for
+    // mottaker — Vipps støtter ikke det for privat-/alias-numre — så
+    // lottery.vipps_number vises på skjermen under i stedet.
+    // På mobil hopper appen ut til Vipps; på desktop skjer ingenting
+    // (forventet, Vipps har ingen desktop-app), og da står
+    // kvitteringsskjermen igjen med nummer og beløp.
+    const message = `Lodd ${sellerName}`.trim();
+    window.location.href = `vipps://?amt=${totalAmount}&msg=${encodeURIComponent(message)}`;
+  };
+
+  // === EPAYMENT-MODUS (uendret) ================================
+  // Steg 1: kall vipps-initiate-payment, send brukeren til Vipps.
+  const startEpaymentPurchase = async (phoneClean: string) => {
+    if (!lottery) return;
 
     setErrorMessage('');
     setResultBuyer(buyerName.trim());
@@ -299,7 +391,11 @@ export const LotteryShop: React.FC = () => {
   );
 
   // ===== Lotteri midlertidig utilgjengelig pga. ugyldig Vipps-nummer =====
-  if (lottery.vippsValidationFailedAt && phase === 'shop') {
+  // Gjelder kun ePayment: flagget settes når Vipps' API avviser
+  // klubbens MSN. Deeplink-modus snakker aldri med API-et, og et
+  // deeplink-nummer er et vanlig Vipps-nummer, ikke et MSN — da sier
+  // flagget ingenting om hvorvidt forelder kan betale.
+  if (lottery.paymentMode === 'epayment' && lottery.vippsValidationFailedAt && phase === 'shop') {
     return (
       <CenteredCard>
         <div style={{ textAlign: 'center' }}>
@@ -336,6 +432,39 @@ export const LotteryShop: React.FC = () => {
           <p style={{ marginTop: '12px', fontSize: '13px', color: '#4a5e50' }}>
             Hvis Vipps ikke åpner automatisk, sjekk om appen er installert eller lim inn lenken manuelt.
           </p>
+        </div>
+      </CenteredCard>
+    );
+  }
+
+  // ===== DEEPLINK REGISTRERT =====
+  // Vi vet at loddene er registrert, men ikke om betalingen fullføres
+  // — teksten lover derfor ikke mer enn det.
+  if (phase === 'deeplink_registered') {
+    return (
+      <CenteredCard>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎟️</div>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#1a2e1f' }}>Loddene er registrert. Fullfør betalingen i Vipps.</h2>
+          <p style={{ marginTop: '16px', fontSize: '14px', color: '#4a5e50', lineHeight: '1.6' }}>
+            {resultTickets} lodd{resultBuyer ? ` på ${resultBuyer}` : ''} — <strong>{resultAmount} kr</strong>.
+          </p>
+          <div style={{ marginTop: '16px', background: '#faf8f4', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ fontSize: '13px', color: '#4a5e50' }}>Betal til Vipps-nummer</div>
+            <div style={{ fontSize: '26px', fontWeight: '800', color: '#2d6a4f', letterSpacing: '.02em' }}>{lottery.vippsNumber}</div>
+            <div style={{ fontSize: '12px', color: '#6b7f70', marginTop: '6px' }}>
+              Merk betalingen «Lodd {sellerName}».
+            </div>
+          </div>
+          <p style={{ marginTop: '16px', fontSize: '12px', color: '#6b7f70', lineHeight: '1.6' }}>
+            Åpnet ikke Vipps automatisk? Åpne appen selv og betal beløpet over.
+          </p>
+          <button
+            onClick={resetForNewPurchase}
+            style={{ marginTop: '24px', width: '100%', background: '#2d6a4f', color: 'white', border: 'none', fontSize: '16px', padding: '14px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            Kjøp flere lodd
+          </button>
         </div>
       </CenteredCard>
     );
