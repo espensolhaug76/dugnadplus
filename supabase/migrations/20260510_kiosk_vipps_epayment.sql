@@ -117,9 +117,7 @@ DROP POLICY IF EXISTS kiosk_sales_insert_anon ON public.kiosk_sales;
 CREATE POLICY kiosk_sales_insert_anon ON public.kiosk_sales
   FOR INSERT
   WITH CHECK (true);
--- TODO (steg 8): Tighten til:
---   WITH CHECK (status = 'CREATED' AND vipps_reference LIKE 'kiosk-%')
--- etter at KioskShop alltid sender vipps_reference.
+-- Innstramming gjennomført i 20260511_kiosk_tighten_insert_anon.sql (verifisert i prod 2026-09-15).
 
 -- Anon SELECT via vipps_reference: KioskShop poller status etter
 -- retur fra Vipps. Reference er ugjettbar UUID. RLS tillater SELECT
